@@ -1,0 +1,55 @@
+# --- Ключи и секреты: ТЗ 3.4 прямо запрещает их в репозитории ---
+*.jks
+*.keystore
+key.properties
+keystore.properties
+*.p12
+*.pem
+.env
+.env.*
+google-services.json
+
+# --- Сборка ---
+build/
+dist/
+out/
+*.apk
+*.aab
+*.ipa
+
+# --- Android / Gradle ---
+.gradle/
+local.properties
+captures/
+.cxx/
+app/build/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+
+# --- Node / React Native ---
+node_modules/
+npm-debug.log*
+yarn-error.log*
+.metro-health-check*
+*.tsbuildinfo
+.expo/
+
+# --- Flutter / Dart ---
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+ios/Pods/
+
+# --- IDE ---
+.idea/
+*.iml
+.vscode/
+*.swp
+
+# --- macOS ---
+.DS_Store
