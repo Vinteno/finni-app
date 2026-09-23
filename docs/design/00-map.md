@@ -20,6 +20,7 @@
 | что-то с предметом, ценой, категорией | `items.md` |
 | вёрстку, цвет, шрифт, компонент | `style-guide.md` |
 | анимацию | `animation-howto.md` |
+| графику: что сгенерировать и как сдать | `art-brief.md` |
 | проверку доступности | `ui-constraints.md` |
 | прогон перед показом | `test-cases.md` |
 | главы 2 и 3 | `scenario-chapter-2.md`, `scenario-chapter-3.md` |
