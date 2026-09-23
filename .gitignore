@@ -15,35 +15,17 @@ dist/
 out/
 *.apk
 *.aab
-*.ipa
 
 # --- Android / Gradle ---
 .gradle/
+.kotlin/
 local.properties
 captures/
 .cxx/
-app/build/
-android/.gradle/
-android/build/
-android/app/build/
-android/local.properties
-
-# --- Node / React Native ---
-node_modules/
-npm-debug.log*
-yarn-error.log*
-.metro-health-check*
-*.tsbuildinfo
-.expo/
-
-# --- Flutter / Dart ---
-.dart_tool/
-.flutter-plugins
-.flutter-plugins-dependencies
-.packages
-.pub-cache/
-.pub/
-ios/Pods/
+.externalNativeBuild/
+*.hprof
+app/release/
+/signing/
 
 # --- IDE ---
 .idea/

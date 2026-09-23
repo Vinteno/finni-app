@@ -1,0 +1,17 @@
+{
+  "_source": "docs/design/items.md, версия 1.8. Цены [КОНЦЕПТ], менять нельзя.",
+  "items": [
+    { "id": "kasha",   "name": "Каша",            "accusative": "кашу",    "category": "need", "price": 5,  "type": "consumable", "impact": "fed" },
+    { "id": "krupa",   "name": "Крупа",           "accusative": "крупу",   "category": "need", "price": 3,  "type": "consumable", "impact": "fed" },
+    { "id": "mylo",    "name": "Мыло",            "accusative": "мыло",    "category": "need", "price": 3,  "type": "consumable", "impact": "clean" },
+    { "id": "yagody",  "name": "Ягоды",           "accusative": "ягоды",   "category": "want", "price": 3,  "type": "consumable", "impact": "fed",   "addonOf": "kasha" },
+    { "id": "pena",    "name": "Пена",            "accusative": "пену",    "category": "want", "price": 2,  "type": "consumable", "impact": "clean", "addonOf": "mylo" },
+    { "id": "myachik", "name": "Мячик",           "accusative": "мячик",   "category": "want", "price": 15, "type": "thing" },
+    { "id": "kacheli", "name": "Качели",          "accusative": "качели",  "category": "want", "price": 15, "type": "thing" }
+  ],
+  "goals": [
+    { "id": "podarok_myach",   "name": "Мяч для Киры",     "price": 30, "chapter": 1 },
+    { "id": "podarok_kniga",   "name": "Книжка для Киры",  "price": 40, "chapter": 1 },
+    { "id": "podarok_samokat", "name": "Самокат для Киры", "price": 45, "chapter": 1 }
+  ]
+}

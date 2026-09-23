@@ -1,0 +1,104 @@
+package ru.vinteno.finni.ui
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import ru.vinteno.finni.core.model.GameState
+import ru.vinteno.finni.core.model.Phase
+import ru.vinteno.finni.ui.screens.CreatePetScreen
+import ru.vinteno.finni.ui.screens.EventScreen
+import ru.vinteno.finni.ui.screens.GoalScreen
+import ru.vinteno.finni.ui.screens.HomeScreen
+import ru.vinteno.finni.ui.screens.HomeTarget
+import ru.vinteno.finni.ui.screens.IntroScreen
+import ru.vinteno.finni.ui.screens.PiggyScreen
+import ru.vinteno.finni.ui.screens.PlanScreen
+import ru.vinteno.finni.ui.screens.ShopScreen
+import ru.vinteno.finni.ui.screens.SummaryScreen
+import ru.vinteno.finni.ui.theme.FinniColors
+import ru.vinteno.finni.ui.theme.FinniMotion
+
+/**
+ * Экраны прототипа — screen-map.md §2 минус снятое build-plan.md §2: «Выбор масштаба», прогресс,
+ * раздел взрослого, плашка перехода, конец игры. Экрана ситуации в неделях 1 и 2 нет:
+ * выбор ступеньки сделан на полке магазина.
+ */
+enum class Screen(val hasBack: Boolean) {
+    INTRO(false), CREATE_PET(false), GOAL(false),
+    HOME(false), PLAN(true), SHOP(true), PIGGY(true), SUMMARY(true),
+    EVENT(false),
+}
+
+/** Первый запуск проигрывается один раз; дальше точка возврата — Дом. */
+fun startScreen(s: GameState): Screen = when {
+    !s.profile.introSeen -> Screen.INTRO
+    !s.profile.created -> Screen.CREATE_PET
+    s.chapter.goalId == null -> Screen.GOAL
+    s.phase == Phase.EVENT -> Screen.EVENT
+    else -> Screen.HOME
+}
+
+/**
+ * Навигация глубиной два уровня от дома. «Назад» стоит на одном месте и всегда ведёт на Дом;
+ * первый запуск и событие назад не отматываются — screen-map.md §3. Переход — горизонтальный
+ * сдвиг 320 мс (animation-howto §7.5), без анимаций — мгновенно.
+ */
+@Composable
+fun FinniNavHost(state: GameState) {
+    var chosen by rememberSaveable { mutableStateOf(Screen.HOME) }
+    val onboarding = startScreen(state).takeIf { it != Screen.HOME && it != Screen.EVENT }
+    val screen = onboarding ?: if (state.phase == Phase.EVENT && chosen != Screen.SUMMARY) Screen.EVENT else chosen
+    val home = { chosen = Screen.HOME }
+    BackHandler(enabled = screen.hasBack) { home() }
+
+    Box(Modifier.fillMaxSize().background(FinniColors.BgSand).systemBarsPadding()) {
+        AnimatedContent(
+            targetState = screen,
+            transitionSpec = {
+                val spec = if (state.profile.animationOn) tween<androidx.compose.ui.unit.IntOffset>(FinniMotion.SCREEN_MS, easing = FastOutSlowInEasing) else snap()
+                val forward = targetState.ordinal > initialState.ordinal
+                slideInHorizontally(spec) { if (forward) it else -it } togetherWith slideOutHorizontally(spec) { if (forward) -it else it }
+            },
+            label = "screen",
+        ) { sc ->
+            Box(Modifier.fillMaxSize().background(FinniColors.BgSand)) {
+                when (sc) {
+                    Screen.INTRO -> IntroScreen()
+                    Screen.CREATE_PET -> CreatePetScreen()
+                    Screen.GOAL -> GoalScreen()
+                    Screen.HOME -> HomeScreen(state) { target ->
+                        chosen = when (target) {
+                            HomeTarget.PLAN -> Screen.PLAN
+                            HomeTarget.SHOP -> Screen.SHOP
+                            HomeTarget.PIGGY -> Screen.PIGGY
+                            HomeTarget.SUMMARY -> Screen.SUMMARY
+                            HomeTarget.EVENT -> Screen.EVENT
+                        }
+                    }
+                    Screen.PLAN -> PlanScreen(state, onBack = home, onConfirmed = home)
+                    Screen.SHOP -> ShopScreen(state, onLeave = home)
+                    Screen.PIGGY -> PiggyScreen(state, onBack = home)
+                    Screen.SUMMARY -> SummaryScreen(state, onBack = home, onDone = {
+                        chosen = Screen.HOME
+                    })
+                    Screen.EVENT -> EventScreen(state, onDone = home)
+                }
+            }
+        }
+    }
+}

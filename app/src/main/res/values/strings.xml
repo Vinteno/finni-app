@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Только имя приложения для лаунчера. Все тексты игры — в core/src/main/resources/content/texts.ru.json. -->
+<resources>
+    <string name="app_name">Финни</string>
+</resources>

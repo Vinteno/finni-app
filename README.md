@@ -15,10 +15,10 @@
 | | |
 |---|---|
 | Платформа | Android 8.0 (API 26) и выше, портретная ориентация от 360 dp |
-| Клиент | {СТЕК} |
-| Хранение | локальное, {ХРАНИЛИЩЕ}; сервера нет |
-| Имя пакета | `{PACKAGE}` |
-| Версия | `{VERSION}` (build `{BUILD}`) |
+| Клиент | Kotlin 2.2, Jetpack Compose (BOM 2025.11), `minSdk 26`, `compileSdk 36` |
+| Хранение | локальное, JSON-файл во внутренней памяти приложения; сервера нет |
+| Имя пакета | `ru.vinteno.finni` |
+| Версия | `0.1.0` (build `1`) |
 
 Интернет основному игровому циклу не нужен. Персональные данные не собираются,
 аккаунт не требуется.
@@ -26,7 +26,10 @@
 ## Быстрый запуск
 
 ```bash
-# {ЗАПОЛНИТЬ ПОСЛЕ ВЫБОРА СТЕКА}
+# Нужны JDK 17 и Android SDK (платформа 36); путь к SDK — в local.properties
+./gradlew :core:test                 # экономика и проверка текстов, без устройства
+./gradlew :app:recordRoborazziDebug  # снимки экранов 360 dp, шрифт ×1 и ×2 → app/build/shots/
+./gradlew :app:assembleDebug         # app/build/outputs/apk/debug/app-debug.apk
 ```
 
 Готовый APK: {ССЫЛКА}
@@ -50,6 +53,7 @@
 | [Реестр предметов](docs/design/items.md) | цены, типы, где продаётся |
 | [Гайд](docs/design/style-guide.md) | цвета, типографика, компоненты, язык |
 | [Анимация](docs/design/animation-howto.md) | персонаж и предметы |
+| [Бриф на изображения](docs/design/art-brief.md) | что нарисовать и как сдать |
 | [Ограничения интерфейса](docs/design/ui-constraints.md) | ТЗ 3.6 |
 | [Тест-кейсы](docs/design/test-cases.md) | ТЗ 3.4, 5.10 |
 | [Открытые вопросы](docs/design/open-questions.md) | что ещё не решено |

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Фон окна bg-sand до первого кадра Compose, без белой вспышки при запуске. -->
+    <style name="Theme.Finni" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/bg_sand</item>
+        <item name="android:statusBarColor">@color/bg_sand</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+    <color name="bg_sand">#FBF3E7</color>
+</resources>
