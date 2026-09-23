@@ -149,13 +149,14 @@ fun EventScreen(s: GameState, onDone: () -> Unit) {
         backDescription = a.t("common.back"),
         bottom = { MainButton(a.t("event.next"), onClick = { a.act(g::playEvent); onDone() }) },
     ) {
-        Row(Modifier.fillMaxWidth().wrapContentWidth(), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-            Finni(s.profile.fur, s.profile.accessory, Modifier.width(110.dp),
+        // Все три фигуры в один ряд: на экране 360 × 640 dp строки события помещаются без прокрутки.
+        Row(Modifier.fillMaxWidth().wrapContentWidth(), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Finni(s.profile.fur, s.profile.accessory, Modifier.width(80.dp),
                 reaction = Reaction.HAPPY, reactionKey = 1, animate = s.profile.animationOn)
+            if (given) Picture(s.chapter.goalId ?: "", 56.dp)
             // Кира появляется здесь впервые — по правилу появления §7.1.
-            Appear("kira") { Picture("kira", 120.dp) }
+            Appear("kira") { Picture("kira", 96.dp) }
         }
-        if (given) Picture(s.chapter.goalId ?: "", 72.dp)
         lines.forEach { Txt(it, FinniText.Subtitle) }
     }
 }

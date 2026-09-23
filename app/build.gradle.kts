@@ -25,6 +25,14 @@ android {
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
+        // Сборка для показа детям и замеров: оптимизирована как выпускная, подписана отладочным
+        // ключом Android Studio (он лежит вне репозитория). Ставится на любой телефон без среды.
+        // Ключ подписи для сдачи — отдельно, его создаёт команда (build-plan, этап 0).
+        create("prototype") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
+        }
     }
 
     compileOptions {

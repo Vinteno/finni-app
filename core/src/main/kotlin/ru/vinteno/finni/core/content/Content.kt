@@ -98,6 +98,12 @@ data class ChapterContent(
 @Serializable
 private data class Catalog(val items: List<Item>, val goals: List<Goal>)
 
+/**
+ * Незаполненный `{ключ}`. Закрывающая скобка экранирована: движок регулярных выражений Android (ICU)
+ * без этого падает, хотя обычная Java такое выражение принимает.
+ */
+private val UNFILLED = Regex("""\{[a-z_]+\}""")
+
 @Serializable
 data class Texts(val plural: Map<String, List<String>>, val strings: Map<String, String>) {
     operator fun get(key: String): String = strings[key] ?: error("Нет строки «$key» в texts.ru.json")
@@ -128,7 +134,7 @@ data class Texts(val plural: Map<String, List<String>>, val strings: Map<String,
         }
         var s = get(key)
         for ((k, v) in map) s = s.replace("{$k}", v)
-        check(!Regex("\\{[a-z_]+}").containsMatchIn(s)) { "Не подставлено в «$key»: $s" }
+        check(!UNFILLED.containsMatchIn(s)) { "Не подставлено в «$key»: $s" }
         return s
     }
 }

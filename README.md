@@ -30,7 +30,8 @@
 # путь к SDK — в local.properties, Android Studio пропишет его сама
 ./gradlew :core:test                 # экономика и проверка текстов, без устройства
 ./gradlew :app:recordRoborazziDebug  # снимки экранов 360 dp, шрифт ×1 и ×2 → app/build/shots/
-./gradlew :app:assembleDebug         # app/build/outputs/apk/debug/app-debug.apk
+./gradlew :app:assembleDebug         # для отладки в Android Studio
+./gradlew :app:assemblePrototype     # быстрая сборка для показа детям: app/build/outputs/apk/prototype/
 ```
 
 Готовый APK: {ССЫЛКА}

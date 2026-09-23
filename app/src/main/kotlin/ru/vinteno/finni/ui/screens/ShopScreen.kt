@@ -112,7 +112,9 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
             backDescription = a.t("common.back"),
             titleAside = { PetHead(s, live = true) },
             bottom = if (cart.isEmpty()) null else ({
-                CartBox(s, cart)
+                // Внизу — только сумма и «Купить»: на экране 360 × 640 dp полный список корзины
+                // закрывал полку с мылом. Сам список с ценами и метками стоит под полками.
+                Txt(a.f("shop.cart.total", "n" to g.quote(s, cart).total), FinniText.Subtitle)
                 MainButton(a.t("shop.buy"), onClick = { proceed(g.quote(s, cart), false) })
             }),
         ) {
@@ -127,18 +129,27 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
             }
             ballPlate?.let { lines -> SlideUp(true) { ExplainPlate(lines, onClose = { ballPlate = null }) { PetIcon(s) } } }
             Txt(a.f("shop.hint", "n" to g.needLeft(s).coerceAtLeast(0)), FinniText.Subtitle)
-            week.shelves.forEach { shelf ->
-                ShelfRow(s, shelf, tiers[shelf.id]) { i -> if (tiers[shelf.id] == i) tiers.remove(shelf.id) else tiers[shelf.id] = i }
-            }
-            if (!g.owns(s, wantId)) {
+            val wantCard: (@Composable (Modifier, Boolean) -> Unit)? = if (g.owns(s, wantId)) null else { m, wide ->
                 val item = g.content.item(wantId)
-                if (bigFont()) {
-                    ItemCard(wantId, item.name, item.price, null, wantPicked, Modifier.fillMaxWidth(), Direction.WANT, wide = true) { wantPicked = !wantPicked }
-                } else Row(horizontalArrangement = Arrangement.spacedBy(FinniDimens.CardGap)) {
-                    ItemCard(wantId, item.name, item.price, null, wantPicked, Modifier.weight(1f), labelDirection = Direction.WANT) { wantPicked = !wantPicked }
+                ItemCard(wantId, item.name, item.price, null, wantPicked, m, Direction.WANT, wide = wide) { wantPicked = !wantPicked }
+            }
+            // Хотелка встаёт в свободную клетку последней полки, если над полкой нет подписи:
+            // иначе подпись «Оба одинаково моют» читалась бы и про качели.
+            val last = week.shelves.last()
+            val inline = wantCard != null && !bigFont() && last.caption == null && last.tiers.size < 3
+            week.shelves.forEach { shelf ->
+                ShelfRow(s, shelf, tiers[shelf.id], extra = if (inline && shelf === last) wantCard else null) { i ->
+                    if (tiers[shelf.id] == i) tiers.remove(shelf.id) else tiers[shelf.id] = i
+                }
+            }
+            if (wantCard != null && !inline) {
+                if (bigFont()) wantCard(Modifier.fillMaxWidth(), true)
+                else Row(horizontalArrangement = Arrangement.spacedBy(FinniDimens.CardGap)) {
+                    wantCard(Modifier.weight(1f), false)
                     Box(Modifier.weight(2f))
                 }
             }
+            if (cart.isNotEmpty()) CartBox(s, cart)
         }
 
         val q = if (cart.isEmpty()) null else g.quote(s, cart)
@@ -183,7 +194,13 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
 
 /** Полка: подпись над полкой видна без нажатия, ступеньки одного размера, одна иконка влияния на всю полку. */
 @Composable
-private fun ShelfRow(s: GameState, shelf: Shelf, picked: Int?, onPick: (Int) -> Unit) {
+private fun ShelfRow(
+    s: GameState,
+    shelf: Shelf,
+    picked: Int?,
+    extra: (@Composable (Modifier, Boolean) -> Unit)? = null,
+    onPick: (Int) -> Unit,
+) {
     val a = app()
     shelf.caption?.let { Txt(a.t(it)) }
     val big = bigFont()
@@ -201,7 +218,8 @@ private fun ShelfRow(s: GameState, shelf: Shelf, picked: Int?, onPick: (Int) -> 
     } else {
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(FinniDimens.CardGap)) {
             shelf.tiers.forEachIndexed { i, tier -> card(i, tier, Modifier.weight(1f).fillMaxHeight()) }
-            repeat(3 - shelf.tiers.size) { Box(Modifier.weight(1f)) }
+            extra?.invoke(Modifier.weight(1f).fillMaxHeight(), false)
+            repeat(3 - shelf.tiers.size - (if (extra != null) 1 else 0)) { Box(Modifier.weight(1f)) }
         }
     }
 }
@@ -259,7 +277,7 @@ private fun ItemCard(
     }
 }
 
-/** Корзина: строка «Каша 5» и метка категории, итог «Всего N». У надбавки метка «Хочу» (I25). */
+/** Корзина: строка «Каша 5» и метка категории. Итог «Всего N» — внизу у кнопки. У надбавки метка «Хочу» (I25). */
 @Composable
 private fun CartBox(s: GameState, cart: List<String>) {
     val a = app()
@@ -277,7 +295,6 @@ private fun CartBox(s: GameState, cart: List<String>) {
                 DirectionLabel(st.icon, st.color, a.t(st.labelKey))
             }
         }
-        Txt(a.f("shop.cart.total", "n" to q.total), FinniText.Subtitle)
     }
 }
 
