@@ -26,7 +26,8 @@
 ## Быстрый запуск
 
 ```bash
-# Нужны JDK 17 и Android SDK (платформа 36); путь к SDK — в local.properties
+# Нужны JDK 17 или новее (подходит встроенная в Android Studio) и Android SDK, платформа 36;
+# путь к SDK — в local.properties, Android Studio пропишет его сама
 ./gradlew :core:test                 # экономика и проверка текстов, без устройства
 ./gradlew :app:recordRoborazziDebug  # снимки экранов 360 dp, шрифт ×1 и ×2 → app/build/shots/
 ./gradlew :app:assembleDebug         # app/build/outputs/apk/debug/app-debug.apk
