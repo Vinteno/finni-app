@@ -22,6 +22,9 @@ import ru.vinteno.finni.ui.components.Picture
 import ru.vinteno.finni.ui.components.ProgressCells
 import ru.vinteno.finni.ui.components.SecondaryButton
 import ru.vinteno.finni.ui.components.Txt
+import ru.vinteno.finni.ui.motion.Appear
+import ru.vinteno.finni.ui.motion.CoinTarget
+import ru.vinteno.finni.ui.motion.anchor
 import ru.vinteno.finni.ui.pet.Finni
 import ru.vinteno.finni.ui.pet.Reaction
 import ru.vinteno.finni.ui.theme.FinniText
@@ -48,9 +51,14 @@ fun PiggyScreen(s: GameState, onBack: () -> Unit) {
         backDescription = a.t("common.back"),
         titleAside = { PetHead(s, live = true) },
         bottom = if (!g.canDeposit(s)) null else ({
-            MainButton(a.f("piggy.deposit", "n" to s.week!!.plan.save), onClick = {
+            val save = s.week!!.plan.save
+            MainButton(a.f("piggy.deposit", "n" to save), onClick = {
                 // `доволен` одинаков для любой суммы взноса — разная реакция была бы оценкой.
-                if (a.act(g::deposit)) a.react(Reaction.HAPPY)
+                if (a.act(g::deposit)) {
+                    a.react(Reaction.HAPPY)
+                    // Монеты летят из кошелька в копилку; клетки заполняются по мере прилёта.
+                    a.flights.launch("wallet", "piggy", save, CoinTarget.SAVINGS, s.profile.animationOn)
+                }
             })
         }),
     ) {
@@ -62,7 +70,8 @@ fun PiggyScreen(s: GameState, onBack: () -> Unit) {
             }
         }
         val cells = (goal.price + COINS_PER_CELL - 1) / COINS_PER_CELL
-        ProgressCells(minOf(saved, goal.price) / COINS_PER_CELL, cells, cell = 24.dp)
+        val arrived = (saved - a.flights.savingsPending).coerceAtLeast(0)
+        ProgressCells(minOf(arrived, goal.price) / COINS_PER_CELL, cells, Modifier.anchor(a.flights, "piggy"), cell = 24.dp)
         Txt(if (reached) a.f("piggy.ready", "n" to saved) else a.f("piggy.saved", "n" to saved), FinniText.Subtitle)
     }
 }
@@ -143,7 +152,8 @@ fun EventScreen(s: GameState, onDone: () -> Unit) {
         Row(Modifier.fillMaxWidth().wrapContentWidth(), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
             Finni(s.profile.fur, s.profile.accessory, Modifier.width(110.dp),
                 reaction = Reaction.HAPPY, reactionKey = 1, animate = s.profile.animationOn)
-            Box { Picture("kira", 120.dp) }
+            // Кира появляется здесь впервые — по правилу появления §7.1.
+            Appear("kira") { Picture("kira", 120.dp) }
         }
         if (given) Picture(s.chapter.goalId ?: "", 72.dp)
         lines.forEach { Txt(it, FinniText.Subtitle) }

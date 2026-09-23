@@ -45,6 +45,7 @@ import ru.vinteno.finni.ui.components.PressCard
 import ru.vinteno.finni.ui.components.SecondaryButton
 import ru.vinteno.finni.ui.components.Txt
 import ru.vinteno.finni.ui.components.bigFont
+import ru.vinteno.finni.ui.motion.SlideUp
 import ru.vinteno.finni.ui.components.directionStyle
 import ru.vinteno.finni.ui.pet.Reaction
 import ru.vinteno.finni.ui.theme.FinniColors
@@ -124,7 +125,7 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
                     ballPlate = a.explain.afterBall(a.state.value, took)
                 }
             }
-            ballPlate?.let { lines -> ExplainPlate(lines, onClose = { ballPlate = null }) { PetIcon(s) } }
+            ballPlate?.let { lines -> SlideUp(true) { ExplainPlate(lines, onClose = { ballPlate = null }) { PetIcon(s) } } }
             Txt(a.f("shop.hint", "n" to g.needLeft(s).coerceAtLeast(0)), FinniText.Subtitle)
             week.shelves.forEach { shelf ->
                 ShelfRow(s, shelf, tiers[shelf.id]) { i -> if (tiers[shelf.id] == i) tiers.remove(shelf.id) else tiers[shelf.id] = i }

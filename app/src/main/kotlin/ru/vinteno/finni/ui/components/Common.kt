@@ -20,7 +20,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.graphicsLayer
+import ru.vinteno.finni.ui.motion.anchor
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -66,11 +73,15 @@ fun Coin(size: Dp, modifier: Modifier = Modifier) {
     }
 }
 
-/** Кошелёк на каждом игровом экране, правый верхний угол, 48 dp: монета и число — §7.4. */
+/**
+ * Кошелёк на каждом игровом экране, правый верхний угол, 48 dp: монета и число — §7.4.
+ * Число растёт синхронно с прилётом монет, а не после (animation-howto §7.2).
+ */
 @Composable
 fun Wallet(amount: Int, modifier: Modifier = Modifier) {
+    val flights = ru.vinteno.finni.ui.app().flights
     Row(
-        modifier.heightIn(min = FinniDimens.WalletHeight)
+        modifier.anchor(flights, "wallet").heightIn(min = FinniDimens.WalletHeight)
             .background(FinniColors.Surface, RoundedCornerShape(FinniDimens.RadiusButton))
             .border(FinniDimens.Outline, FinniColors.CoinEdge, RoundedCornerShape(FinniDimens.RadiusButton))
             .padding(horizontal = 12.dp),
@@ -78,7 +89,7 @@ fun Wallet(amount: Int, modifier: Modifier = Modifier) {
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Coin(24.dp)
-        Txt(amount.toString(), FinniText.Title)
+        Txt((amount - flights.walletPending).coerceAtLeast(0).toString(), FinniText.Title)
     }
 }
 
@@ -121,16 +132,34 @@ fun CoinRow(value: Int, scaleMax: Int, modifier: Modifier = Modifier) {
     }
 }
 
-/** Прогресс к цели ячейками, одна ячейка — 5 монет; число — подписью рядом, один раз (§10.9). */
+/**
+ * Прогресс к цели ячейками, одна ячейка — 5 монет; число — подписью рядом, один раз (§10.9).
+ * Новая клетка заполняется так (animation-howto §7.7): масштаб 0,8 → 1,0 с заливкой, 200 мс,
+ * клетки по одной с задержкой 60 мс. Число рядом не анимируется.
+ */
 @Composable
 fun ProgressCells(filled: Int, total: Int, modifier: Modifier = Modifier, cell: Dp = 24.dp) {
+    val animate = ru.vinteno.finni.ui.app().animationOn
+    val shown = remember { mutableIntStateOf(filled) }
+    val from = shown.intValue
+    LaunchedEffect(filled) { shown.intValue = filled }
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         repeat(total) { i ->
+            val on = i < filled
+            val grow = remember(i) { Animatable(1f) }
+            LaunchedEffect(on) {
+                if (on && i >= from && animate) {
+                    grow.snapTo(0.8f)
+                    kotlinx.coroutines.delay(((i - from) * 60).toLong())
+                    grow.animateTo(1f, tween(200, easing = LinearOutSlowInEasing))
+                }
+            }
             val shape = RoundedCornerShape(minOf(FinniDimens.RadiusSmall, cell / 4))
             Box(
                 Modifier.size(cell)
-                    .background(if (i < filled) FinniColors.Coin else FinniColors.Surface, shape)
-                    .border(FinniDimens.Outline, if (i < filled) FinniColors.CoinEdge else FinniColors.StrokeStrong, shape),
+                    .graphicsLayer { scaleX = grow.value; scaleY = grow.value }
+                    .background(if (on) FinniColors.Coin else FinniColors.Surface, shape)
+                    .border(FinniDimens.Outline, if (on) FinniColors.CoinEdge else FinniColors.StrokeStrong, shape),
             )
         }
     }
@@ -171,6 +200,8 @@ fun FinniDialog(lines: List<String>, action: String?, onAction: () -> Unit, canc
         contentAlignment = Alignment.Center,
     ) {
         val shape = RoundedCornerShape(FinniDimens.RadiusCard)
+        // Диалог выезжает так же, как плашка, — §7.4.
+        ru.vinteno.finni.ui.motion.SlideUp(true) {
         Column(
             Modifier.fillMaxWidth().background(FinniColors.Surface, shape).padding(FinniDimens.CardPadding + 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -179,6 +210,7 @@ fun FinniDialog(lines: List<String>, action: String?, onAction: () -> Unit, canc
             Box(Modifier.height(4.dp))
             if (action != null) SecondaryButton(action, onAction)
             MainButton(cancel, onCancel)
+        }
         }
     }
 }

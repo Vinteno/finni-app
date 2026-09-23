@@ -32,6 +32,8 @@ import ru.vinteno.finni.core.model.SummaryChoice
 import ru.vinteno.finni.data.GameStore
 import ru.vinteno.finni.ui.AppModel
 import ru.vinteno.finni.ui.LocalApp
+import ru.vinteno.finni.ui.motion.FlightLayer
+import org.junit.Assert.assertEquals
 import ru.vinteno.finni.ui.screens.CreatePetScreen
 import ru.vinteno.finni.ui.screens.EventScreen
 import ru.vinteno.finni.ui.screens.GoalScreen
@@ -137,5 +139,33 @@ class ScreensShotTest {
         shot("15_dialog_savings", s) { ShopScreen(it) {} }
         listOf("Каша", "Мыло", "Купить").forEach { compose.onNodeWithText(it).performClick() }
         compose.onRoot().captureRoboImage("build/shots/15_dialog_savings.png")
+    }
+
+    /** Посылка с анимациями: монеты летят, кошелёк растёт вместе с прилётом, касание досматривает. */
+    @Test fun parcelFlight() {
+        val s = week1().let { it.copy(profile = it.profile.copy(animationOn = true)) }
+        val store = GameStore(RuntimeEnvironment.getApplication())
+        store.replace(s)
+        val model = AppModel(game, store)
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            val st by store.state.collectAsState()
+            CompositionLocalProvider(LocalApp provides model) {
+                Box(Modifier.fillMaxSize().background(FinniColors.BgSand)) {
+                    HomeScreen(st) {}
+                    FlightLayer()
+                }
+            }
+        }
+        compose.mainClock.advanceTimeBy(500)
+        compose.onNodeWithText("Открой посылку").performClick()
+        compose.mainClock.advanceTimeBy(16)
+        assertEquals(6, model.flights.flights.size)
+        assertEquals(6, model.flights.walletPending)
+        compose.mainClock.advanceTimeBy(200)
+        compose.onRoot().captureRoboImage("build/shots/16_parcel_flight.png")
+        compose.mainClock.advanceTimeBy(1200)
+        assertEquals(0, model.flights.walletPending)
+        assertEquals(30, store.state.value.progress.wallet)
     }
 }

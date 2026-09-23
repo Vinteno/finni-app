@@ -17,7 +17,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import ru.vinteno.finni.ui.motion.FlightLayer
 import ru.vinteno.finni.core.model.GameState
 import ru.vinteno.finni.core.model.Phase
 import ru.vinteno.finni.ui.screens.CreatePetScreen
@@ -66,7 +71,17 @@ fun FinniNavHost(state: GameState) {
     val home = { chosen = Screen.HOME }
     BackHandler(enabled = screen.hasBack) { home() }
 
-    Box(Modifier.fillMaxSize().background(FinniColors.BgSand).systemBarsPadding()) {
+    val flights = app().flights
+    Box(
+        Modifier.fillMaxSize().background(FinniColors.BgSand).systemBarsPadding()
+            // Любое касание досматривает анимацию до конца и переводит экран в конечное состояние (§8).
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    if (flights.flights.isNotEmpty()) flights.finishAll()
+                }
+            },
+    ) {
         AnimatedContent(
             targetState = screen,
             transitionSpec = {
@@ -100,5 +115,6 @@ fun FinniNavHost(state: GameState) {
                 }
             }
         }
+        FlightLayer()
     }
 }

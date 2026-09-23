@@ -114,6 +114,7 @@ fun Finni(
     idle: Boolean = true,
     headOnly: Boolean = false,
     lookRight: Boolean = true,
+    earPoke: Int = 0,
 ) {
     val p = palette(fur)
     val pose = remember { Pose() }
@@ -143,6 +144,15 @@ fun Finni(
             return@LaunchedEffect
         }
         play(pose, reaction, lookRight, onEyes = { eyes = it }, onMouth = { mouthOpen = it })
+    }
+
+    // Касание по фигуре: уши поворачиваются, как в «замечает», — часть холостого состояния (§6.2).
+    LaunchedEffect(earPoke) {
+        if (earPoke == 0 || !live) return@LaunchedEffect
+        coroutineScope {
+            launch { delay(50); pose.earB.animateTo(14f, tween(150, easing = Spring)); pose.earB.animateTo(0f, tween(200)) }
+            launch { delay(70); pose.earF.animateTo(9f, tween(150, easing = Spring)); pose.earF.animateTo(0f, tween(200)) }
+        }
     }
 
     val idleK = if (live) 1f else 0f

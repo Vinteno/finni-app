@@ -11,6 +11,7 @@ import ru.vinteno.finni.core.engine.Game
 import ru.vinteno.finni.core.engine.IllegalMove
 import ru.vinteno.finni.core.model.GameState
 import ru.vinteno.finni.data.GameStore
+import ru.vinteno.finni.ui.motion.CoinFlights
 import ru.vinteno.finni.ui.pet.Reaction
 
 /**
@@ -22,6 +23,15 @@ class AppModel(val game: Game, private val store: GameStore) {
     val texts: Texts get() = game.content.texts
     val explain = Explain(game)
     val state get() = store.state
+
+    /** Монеты в полёте и места на экране, между которыми они летают. */
+    val flights = CoinFlights()
+
+    /** Предметы комнаты, которые уже появились: `появление` играется один раз на предмет. */
+    val seenInRoom = mutableSetOf<String>()
+
+    /** Флаг «Анимации» — animation-howto.md §9. Выключает всё, кроме отклика кнопки. */
+    val animationOn: Boolean get() = state.value.profile.animationOn
 
     /** Плашка объяснения, ждущая показа на Доме: после выхода из магазина. */
     var pendingPlate by mutableStateOf<List<String>?>(null)

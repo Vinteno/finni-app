@@ -63,6 +63,10 @@ import ru.vinteno.finni.ui.components.ProgressCells
 import ru.vinteno.finni.ui.components.Txt
 import ru.vinteno.finni.ui.components.Wallet
 import ru.vinteno.finni.ui.components.bigFont
+import ru.vinteno.finni.ui.motion.Appear
+import ru.vinteno.finni.ui.motion.CoinTarget
+import ru.vinteno.finni.ui.motion.SlideUp
+import ru.vinteno.finni.ui.motion.anchor
 import ru.vinteno.finni.ui.pet.Finni
 import ru.vinteno.finni.ui.pet.Reaction
 import ru.vinteno.finni.ui.theme.FinniColors
@@ -93,6 +97,9 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
     val ballJump = remember { Animatable(0f) }
 
     LaunchedEffect(step) { if (step == Step.EVENT) open(HomeTarget.EVENT) }
+    // Посылка у двери: Финни замечает коробку, 200 мс, затем idle (шаг 1).
+    LaunchedEffect(step == Step.PARCEL, w?.number) { if (step == Step.PARCEL) a.react(Reaction.NOTICE) }
+    var poke by remember { mutableIntStateOf(0) }
     // Объявление ситуации: Финни замечает плашку (шаг 2).
     LaunchedEffect(step, parcelNote) { if (step == Step.ANNOUNCE && !parcelNote) a.react(Reaction.NOTICE) }
     val freePlay = s.phase == Phase.AFTER_SUMMARY || s.phase == Phase.FREE_PLAY
@@ -101,8 +108,13 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
         if (freePlay) { delay(SLEEP_AFTER_MS); sleeping = true }
     }
 
+    /** Коробка открывается, монеты вылетают в кошелёк, счётчик растёт вместе с прилётом (шаг 1). */
     fun openParcel() {
-        if (a.act(g::openParcel)) parcelNote = true
+        val before = s.progress.wallet
+        if (!a.act(g::openParcel)) return
+        parcelNote = true
+        val came = a.state.value.progress.wallet - before
+        a.flights.launch("parcel", "wallet", came, CoinTarget.WALLET, s.profile.animationOn)
     }
 
     /** Кормление: событийное перемещение к миске, до 800 мс, затем `ест` и обратно (animation-howto §6.4). */
@@ -155,14 +167,16 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
 
                 // Посылка у двери, пока не открыта.
                 if (w != null && w.parcel == null) {
-                    Box(Modifier.align(Alignment.BottomEnd).offset(y = (-6).dp).clickable(remember { MutableInteractionSource() }, null) { openParcel() }) {
-                        Picture("posylka", 64.dp)
+                    Appear("parcel:${w.number}", Modifier.align(Alignment.BottomEnd).offset(y = (-6).dp)) {
+                        Box(Modifier.anchor(a.flights, "parcel").clickable(remember { MutableInteractionSource() }, null) { openParcel() }) {
+                            Picture("posylka", 64.dp)
+                        }
                     }
                 }
 
                 // Качели и мячик — купленные вещи остаются навсегда.
                 if ("kacheli" in s.progress.inventory) {
-                    Picture("kacheli", 72.dp, Modifier.align(Alignment.CenterEnd).offset(y = 24.dp))
+                    Appear("kacheli", Modifier.align(Alignment.CenterEnd).offset(y = 24.dp)) { Picture("kacheli", 72.dp) }
                 }
                 if ("myachik" in s.progress.inventory) {
                     Box(
@@ -173,7 +187,7 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
                                 scope.launch { ballJump.animateTo(1f, tween(160)); ballJump.animateTo(0f, tween(160)) }
                                 a.react(Reaction.HAPPY)
                             },
-                    ) { Picture("myachik", 40.dp) }
+                    ) { Appear("myachik") { Picture("myachik", 40.dp) } }
                 }
 
                 // Миска на полу; в ней то, что куплено. Ягоды — слоем.
@@ -184,20 +198,25 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
                         .semantics { contentDescription = a.t("step.care") }
                         .clickable(remember { MutableInteractionSource() }, null) { if (g.canFeed(s)) feed() },
                 ) {
-                    Picture(if (!foodIn) "miska" else if ("yagody" in bought) "kasha_yagody" else "kasha", 56.dp)
+                    // Еда в миске и ягоды слоем появляются по правилу появления, одинаково для любой ступеньки.
+                    val bowl = if (!foodIn) "miska" else if ("yagody" in bought) "kasha_yagody" else "kasha"
+                    Appear("bowl:$bowl:${w?.number}") { Picture(bowl, 56.dp) }
                 }
                 // Мыло на полке — пока куплено и не использовано.
                 // Полка на стене — обстановка; на ней мыло, пока куплено и не использовано.
                 Column(Modifier.align(Alignment.CenterStart).offset(y = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(Modifier.size(48.dp).clickable(remember { MutableInteractionSource() }, null) { if (g.canWash(s)) wash() }) {
-                        if (w != null && g.canWash(s)) Picture("mylo", 48.dp)
+                        if (w != null && g.canWash(s)) Appear("soap:${w.number}") { Picture("mylo", 48.dp) }
                     }
                     Box(Modifier.width(64.dp).height(6.dp).background(FinniColors.StrokeStrong, RoundedCornerShape(3.dp)))
                 }
 
                 // Финни на своём месте, не мельче 96 dp.
                 val toBowl = -(roomW / 2 - 72.dp)
-                Box(Modifier.align(Alignment.BottomCenter).offset(x = toBowl * walk.value)) {
+                Box(
+                    Modifier.align(Alignment.BottomCenter).offset(x = toBowl * walk.value)
+                        .clickable(remember { MutableInteractionSource() }, null) { poke++ },
+                ) {
                     // Финни помещается в комнату при любом шрифте: ширина — от высоты комнаты (пропорция 0,47).
                     val petW = minOf(120.dp, roomH * 0.44f).coerceAtLeast(FinniDimens.PetFull * 0.47f)
                     Finni(
@@ -205,6 +224,7 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
                         reaction = if (sleeping) Reaction.SLEEP else a.reaction, reactionKey = a.reactionKey,
                         animate = s.profile.animationOn,
                         lookRight = step == Step.PARCEL,
+                        earPoke = poke,
                     )
                 }
             }
@@ -235,14 +255,23 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
             step == Step.ANNOUNCE -> g.weekContent(s).announcement.map { a.f(it, "name" to s.profile.petName) }
             else -> null
         }
-        if (plateLines != null) {
-            BottomPlate(plateLines, a.t("common.ok")) {
-                if (parcelNote) parcelNote = false else a.act(g::seeAnnouncement)
+        // Плашка выезжает снизу и уезжает обратно (§7.4); пока уезжает, показывает прежние строки.
+        var lastPlate by remember { mutableStateOf<List<String>>(emptyList()) }
+        if (plateLines != null) lastPlate = plateLines
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+            SlideUp(plateLines != null) {
+                BottomPlate(lastPlate, a.t("common.ok")) {
+                    if (parcelNote) parcelNote = false else a.act(g::seeAnnouncement)
+                }
             }
-        } else a.pendingPlate?.let { lines ->
-            Box(Modifier.fillMaxSize().padding(FinniDimens.ScreenPadding), contentAlignment = Alignment.BottomCenter) {
-                Column(Modifier.padding(bottom = FinniDimens.BottomGap), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    ExplainPlate(lines, onClose = { a.pendingPlate = null }) { PetIcon(s) }
+        }
+        var lastExplain by remember { mutableStateOf<List<String>>(emptyList()) }
+        a.pendingPlate?.let { lastExplain = it }
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+            SlideUp(plateLines == null && a.pendingPlate != null) {
+                Column(Modifier.padding(FinniDimens.ScreenPadding).padding(bottom = FinniDimens.BottomGap - FinniDimens.ScreenPadding),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    ExplainPlate(lastExplain, onClose = { a.pendingPlate = null }) { PetIcon(s) }
                     MainButton(a.t("common.ok"), { a.pendingPlate = null })
                 }
             }
@@ -280,7 +309,7 @@ private fun parcelLines(s: GameState): List<String> {
 /** Плашка снизу: записка бабушки или объявление ситуации. Одна главная кнопка. */
 @Composable
 private fun BottomPlate(lines: List<String>, ok: String, onOk: () -> Unit) {
-    Box(Modifier.fillMaxSize().padding(FinniDimens.ScreenPadding), contentAlignment = Alignment.BottomCenter) {
+    Box(Modifier.fillMaxWidth().padding(FinniDimens.ScreenPadding), contentAlignment = Alignment.BottomCenter) {
         val shape = RoundedCornerShape(FinniDimens.RadiusCard)
         Column(
             Modifier.fillMaxWidth().padding(bottom = FinniDimens.BottomGap - FinniDimens.ScreenPadding)
@@ -349,7 +378,7 @@ private fun PiggyPanel(s: GameState, onClick: () -> Unit) {
     val goal = s.chapter.goalId?.let { a.game.content.goal(it) } ?: return
     PressCard(onClick, Modifier.fillMaxWidth().padding(top = 8.dp)) {
         Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Picture("kopilka", 40.dp)
+            Box(Modifier.anchor(a.flights, "piggy")) { Picture("kopilka", 40.dp) }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 val cells = (goal.price + 4) / 5
                 ProgressCells(minOf(s.progress.savings, goal.price) / 5, cells, cell = 14.dp)
