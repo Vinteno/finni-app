@@ -160,7 +160,7 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
                 // Дверь с вывеской «Магазин» — вход в покупки после подтверждения плана.
                 Column(Modifier.align(Alignment.TopEnd), horizontalAlignment = Alignment.CenterHorizontally) {
                     Txt(a.t("home.shopSign"), FinniText.Caption)
-                    Box(Modifier.clickable(remember { MutableInteractionSource() }, null) { if (w?.planConfirmed == true) open(HomeTarget.SHOP) }) {
+                    Box(Modifier.clickable(remember { MutableInteractionSource() }, null) { if (w?.planConfirmed == true && s.phase == Phase.WEEK) open(HomeTarget.SHOP) }) {
                         Picture("dver", 96.dp, description = a.t("home.shopSign"))
                     }
                 }
@@ -187,7 +187,7 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
                                 scope.launch { ballJump.animateTo(1f, tween(160)); ballJump.animateTo(0f, tween(160)) }
                                 a.react(Reaction.HAPPY)
                             },
-                    ) { Appear("myachik") { Picture("myachik", 40.dp) } }
+                    ) { Appear("myachik") { Box(Modifier.size(FinniDimens.MinTouch), contentAlignment = Alignment.Center) { Picture("myachik", 40.dp) } } }
                 }
 
                 // Миска на полу; в ней то, что куплено. Ягоды — слоем.
@@ -213,8 +213,10 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
 
                 // Финни на своём месте, не мельче 96 dp.
                 val toBowl = -(roomW / 2 - 72.dp)
+                // Событийное перемещение — тремя прыжками, не скольжением (animation-howto §6.4).
+                val hop = kotlin.math.abs(kotlin.math.sin(walk.value * 3f * Math.PI.toFloat()))
                 Box(
-                    Modifier.align(Alignment.BottomCenter).offset(x = toBowl * walk.value)
+                    Modifier.align(Alignment.BottomCenter).offset(x = toBowl * walk.value, y = (-16).dp * hop)
                         .clickable(remember { MutableInteractionSource() }, null) { poke++ },
                 ) {
                     // Финни помещается в комнату при любом шрифте: ширина — от высоты комнаты (пропорция 0,47).
@@ -234,13 +236,15 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
 
             // ---------- Низ: подсказка и одна кнопка ----------
             Column(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = FinniDimens.BottomGap), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (step == Step.CARE) Txt(a.t("home.careHint"))
                 val overlay = parcelNote || step == Step.ANNOUNCE || a.pendingPlate != null
+                // Пока открыта плашка, подсказки нет: экран целиком не длиннее 25 слов.
+                if (step == Step.CARE && !overlay) Txt(a.t("home.careHint"))
                 if (!overlay) when (step) {
                     Step.PARCEL -> MainButton(a.t("step.parcel"), ::openParcel)
                     Step.PLAN -> MainButton(a.t("step.plan"), { open(HomeTarget.PLAN) })
                     Step.SHOP -> MainButton(a.t("step.shop"), { open(HomeTarget.SHOP) })
-                    Step.CARE -> MainButton(a.t("step.care"), { if (g.canFeed(s)) feed() else wash() })
+                    // Кнопка называет то действие, которое сделает: сначала покормить, потом умыть.
+                    Step.CARE -> MainButton(a.t(if (g.canFeed(s)) "step.care" else "step.wash"), { if (g.canFeed(s)) feed() else wash() })
                     Step.SAVE -> MainButton(a.t("step.save"), { open(HomeTarget.PIGGY) })
                     Step.SUMMARY -> MainButton(a.t("step.summary"), { open(HomeTarget.SUMMARY) })
                     Step.NEXT_WEEK -> MainButton(a.t("step.nextWeek"), { a.act(g::nextWeek) })
@@ -286,7 +290,7 @@ private fun TaskNote(s: GameState, modifier: Modifier, onOpen: () -> Unit) {
     val w = s.week ?: return
     val taskId = a.game.weekContent(s).taskId ?: return
     val title = a.t(a.game.content.chapter1.task(taskId).title)
-    PressCard(onClick = { if (w.planConfirmed) onOpen() }, modifier) {
+    PressCard(onClick = { if (w.planConfirmed && s.phase == Phase.WEEK) onOpen() }, modifier) {
         Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Picture("zapiska", 32.dp)
             Txt(title, FinniText.Caption)

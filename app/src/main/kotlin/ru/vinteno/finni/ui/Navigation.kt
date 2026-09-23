@@ -59,6 +59,24 @@ fun startScreen(s: GameState): Screen = when {
 }
 
 /**
+ * Экран, который допускает текущее состояние игры; иначе — Дом. Защита от восстановленного
+ * после смерти процесса экрана, которому состояние уже не соответствует: магазин до плана,
+ * итог без недели и так далее. До подтверждения плана тратить нельзя — инвариант 6.
+ */
+private fun allowed(sc: Screen, s: GameState): Screen {
+    val w = s.week
+    val ok = when (sc) {
+        Screen.PLAN -> w != null && w.announcementSeen
+        Screen.SHOP -> w != null && w.planConfirmed && s.phase == Phase.WEEK
+        Screen.PIGGY -> w != null && w.planConfirmed
+        Screen.SUMMARY -> w != null && w.planConfirmed && s.phase == Phase.WEEK
+        Screen.EVENT -> s.phase == Phase.EVENT
+        else -> true
+    }
+    return if (ok) sc else Screen.HOME
+}
+
+/**
  * Навигация глубиной два уровня от дома. «Назад» стоит на одном месте и всегда ведёт на Дом;
  * первый запуск и событие назад не отматываются — screen-map.md §3. Переход — горизонтальный
  * сдвиг 320 мс (animation-howto §7.5), без анимаций — мгновенно.
@@ -67,7 +85,7 @@ fun startScreen(s: GameState): Screen = when {
 fun FinniNavHost(state: GameState) {
     var chosen by rememberSaveable { mutableStateOf(Screen.HOME) }
     val onboarding = startScreen(state).takeIf { it != Screen.HOME && it != Screen.EVENT }
-    val screen = onboarding ?: if (state.phase == Phase.EVENT && chosen != Screen.SUMMARY) Screen.EVENT else chosen
+    val screen = onboarding ?: if (state.phase == Phase.EVENT && chosen != Screen.SUMMARY) Screen.EVENT else allowed(chosen, state)
     val home = { chosen = Screen.HOME }
     BackHandler(enabled = screen.hasBack) { home() }
 

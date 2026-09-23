@@ -59,6 +59,7 @@
 | [Ограничения интерфейса](docs/design/ui-constraints.md) | ТЗ 3.6 |
 | [Тест-кейсы](docs/design/test-cases.md) | ТЗ 3.4, 5.10 |
 | [Открытые вопросы](docs/design/open-questions.md) | что ещё не решено |
+| [Реестр находок проверки](docs/qa-findings.md) | баги, несостыковки механики, дыры |
 
 **Первоисточники** — `docs/source/`: [ТЗ заказчика](docs/source/tz.md),
 [концепт](docs/source/concept.md),

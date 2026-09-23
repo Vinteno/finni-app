@@ -1,5 +1,6 @@
 package ru.vinteno.finni.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -44,6 +45,8 @@ fun PiggyScreen(s: GameState, onBack: () -> Unit) {
     val goal = g.content.goal(s.chapter.goalId ?: return)
     val saved = s.progress.savings
     val reached = g.goalReached(s)
+    // Системное «назад» закрывает шаг «Отложить» так же, как кнопка на экране.
+    BackHandler { a.act(g::leavePiggy); onBack() }
     GameScreen(
         title = a.t("piggy.title"),
         wallet = s.progress.wallet,

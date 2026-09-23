@@ -13,6 +13,8 @@ import ru.vinteno.finni.ui.theme.FinniDimens
 /**
  * Голова Финни 48 dp рядом с заголовком на плотных экранах — гайд §7.4.
  * На плане и итоге `live = false`: там нет ни одного движения (animation-howto.md §10).
+ * На магазине и копилке `live = true` — только реакция на покупку и взнос; холостого дыхания
+ * нет, потому что это экраны решения, а там зацикленное движение запрещено (U06).
  */
 @Composable
 fun PetHead(s: GameState, live: Boolean = false) {
@@ -20,7 +22,7 @@ fun PetHead(s: GameState, live: Boolean = false) {
     Finni(
         s.profile.fur, s.profile.accessory, Modifier.width(FinniDimens.PetHead),
         reaction = if (live) a.reaction else null, reactionKey = a.reactionKey,
-        animate = live && s.profile.animationOn, idle = live, headOnly = true,
+        animate = live && s.profile.animationOn, idle = false, headOnly = true,
     )
 }
 

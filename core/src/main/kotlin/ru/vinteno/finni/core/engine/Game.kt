@@ -171,6 +171,8 @@ class Game(val content: Content) {
     fun quote(s: GameState, cart: List<String>): Checkout {
         val w = s.requireWeek()
         rule(w.planConfirmed) { "До подтверждения плана тратить нельзя" }
+        // Свободная игра после итога — без дохода, расходов и отметок (сценарий §7).
+        rule(s.phase == Phase.WEEK) { "После итога недели не тратят" }
         val items = cart.map(content::item).filterNot { it.isDurable && owns(s, it.id) }.distinctBy { it.id }
         val needCost = items.filter { direction(it) == Direction.NEED }.sumOf { it.price }
         val wantCost = items.filter { direction(it) == Direction.WANT }.sumOf { it.price }
@@ -238,6 +240,7 @@ class Game(val content: Content) {
     fun leaveShop(s: GameState): GameState {
         val w = s.requireWeek()
         rule(w.planConfirmed) { "До подтверждения плана магазин закрыт" }
+        rule(s.phase == Phase.WEEK) { "После итога недели магазин закрыт" }
         var next = s.copy(week = w.copy(shopVisited = true))
         when (weekTaskTemplate(next)) {
             TaskTemplate.SHOP -> next = completeTask(next)
@@ -290,6 +293,7 @@ class Game(val content: Content) {
     fun chooseBall(s: GameState, take: Boolean): GameState {
         val w = s.requireWeek()
         rule(w.planConfirmed) { "До подтверждения плана тратить нельзя" }
+        rule(s.phase == Phase.WEEK) { "После итога недели не тратят" }
         val offer = ballOffer(s)
         rule(offer.available) { "Выбор не предлагается: в копилке мало монет или задание пройдено" }
         val itemId = ch.task(weekContent(s).taskId!!).itemId!!
@@ -344,7 +348,7 @@ class Game(val content: Content) {
     /** Кнопка откладывает ровно `planSave`; при нуле и при закрытой цели её нет (I7, E16). */
     fun canDeposit(s: GameState): Boolean {
         val w = s.requireWeek()
-        return w.planConfirmed && !w.deposited && w.plan.save > 0 && !goalReached(s)
+        return s.phase == Phase.WEEK && w.planConfirmed && !w.deposited && w.plan.save > 0 && !goalReached(s)
     }
 
     fun deposit(s: GameState): GameState {

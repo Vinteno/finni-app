@@ -14,7 +14,7 @@ class Explain(private val game: Game) {
 
     /** «Ты купил кашу и мыло.» Перечисляются базовые позиции: надбавка видна в миске и на итоге (I8, I15). */
     fun did(itemIds: List<String>): String {
-        val nouns = itemIds.map(game.content::item).filter { it.addonOf == null }.map { it.accusative }
+        val nouns = itemIds.distinct().map(game.content::item).filter { it.addonOf == null }.map { it.accusative }
         return when (nouns.size) {
             0 -> texts["explain.didNothing"]
             1 -> texts.format("explain.did", "what" to nouns[0])

@@ -388,6 +388,24 @@ class EconomyTest {
         assertEquals(Enough.EXACT, game.enoughForGoal(w2))
     }
 
+    @Test fun `QA-B1 после итога и после события деньги не тратятся`() {
+        var s = toPlan(newGame(), Plan(10, 10, 10))
+        s = game.finishWeek(game.leaveShop(s), SummaryChoice.KEEP_PLAN) // взнос не сделан, еда не куплена
+        assertFalse(game.canDeposit(s))
+        assertThrows { game.buy(s, listOf("kasha")) }
+        assertThrows { game.deposit(s) }
+        s = game.finishWeek(game.leaveShop(toPlan(game.nextWeek(s))), SummaryChoice.KEEP_PLAN)
+        s = game.playEvent(s)
+        assertThrows { game.buy(s, listOf("kacheli")) }
+        assertThrows { game.chooseBall(s, true) }
+        assertFalse(game.canDeposit(s))
+    }
+
+    @Test fun `QA-B6 объяснение не повторяет предмет, купленный дважды`() {
+        val ex = ru.vinteno.finni.core.engine.Explain(game)
+        assertEquals("Ты купил крупу и мыло.", ex.did(listOf("krupa", "mylo", "krupa")))
+    }
+
     private fun assertThrows(block: () -> Unit) {
         try {
             block()

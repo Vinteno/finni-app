@@ -54,7 +54,9 @@ fun PlanScreen(s: GameState, onBack: () -> Unit, onConfirmed: () -> Unit) {
     val wallet = s.progress.wallet
     val left = wallet - plan.total
 
-    fun set(p: Plan) = a.act { a.game.setPlan(it, p) }
+    // Инвариант 9: любое число на экране не выше 100, включая «Разложил N из W». Поэтому «+»
+    // не поднимает сумму плана выше 99; превышение кошелька при этом остаётся возможным (E07).
+    fun set(p: Plan) = if (p.total > MAX_NUMBER && p.total > plan.total) false else a.act { a.game.setPlan(it, p) }
 
     GameScreen(
         title = a.t("plan.title"),

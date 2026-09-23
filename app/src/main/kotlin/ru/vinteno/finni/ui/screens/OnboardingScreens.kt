@@ -109,7 +109,8 @@ fun CreatePetScreen() {
                 }
             }
         }
-        NameField(name, a.t("create.nameField")) { name = it.take(16) }
+        // Имя — одно слово: оно стоит подлежащим во фразах до 5 слов (инвариант 10, решение I10).
+        NameField(name, a.t("create.nameField")) { name = it.filter { c -> c.isLetter() || c == '-' }.take(12) }
     }
 }
 

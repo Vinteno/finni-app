@@ -22,7 +22,7 @@
 | анимацию | `animation-howto.md` |
 | графику: что сгенерировать и как сдать | `art-brief.md` |
 | проверку доступности | `ui-constraints.md` |
-| прогон перед показом | `test-cases.md` |
+| прогон перед показом | `test-cases.md`, найденное — `../qa-findings.md` |
 | главы 2 и 3 | `scenario-chapter-2.md`, `scenario-chapter-3.md` |
 
 ## Когда что-то не сходится

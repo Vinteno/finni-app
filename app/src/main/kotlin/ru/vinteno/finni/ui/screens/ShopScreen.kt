@@ -1,5 +1,6 @@
 package ru.vinteno.finni.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -30,6 +31,7 @@ import ru.vinteno.finni.core.content.Shelf
 import ru.vinteno.finni.core.content.TaskTemplate
 import ru.vinteno.finni.core.engine.Checkout
 import ru.vinteno.finni.core.engine.Direction
+import ru.vinteno.finni.core.engine.requireWeek
 import ru.vinteno.finni.core.model.GameState
 import ru.vinteno.finni.ui.app
 import ru.vinteno.finni.ui.components.Coin
@@ -79,10 +81,17 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
         (if (wantPicked && !g.owns(s, wantId)) listOf(wantId) else emptyList())
 
     fun leave() {
+        val firstVisit = !a.state.value.requireWeek().shopVisited
         a.act(g::leaveShop)
-        a.pendingPlate = a.explain.afterShop(a.state.value, boughtThisVisit.toList())
+        // Плашка — о том, что сделано за этот заход. Повторный заход без покупок её не показывает:
+        // «Ты ничего не купил» после утренней покупки было бы неправдой.
+        if (firstVisit || boughtThisVisit.isNotEmpty()) {
+            a.pendingPlate = a.explain.afterShop(a.state.value, boughtThisVisit.toList())
+        }
         onLeave()
     }
+    // Системное «назад» (жест, кнопка телефона) закрывает шаг так же, как кнопка на экране.
+    BackHandler { leave() }
 
     fun buy(q: Checkout, withWant: Boolean, withSavings: Boolean) {
         if (a.act { g.buy(it, cart, agreedWant = withWant, agreedSavings = withSavings) }) {
@@ -118,7 +127,10 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
                 MainButton(a.t("shop.buy"), onClick = { proceed(g.quote(s, cart), false) })
             }),
         ) {
-            // Режим задания F5: выбор стоит первым — это задание недели (сценарий, неделя 2, шаг 4).
+            // Режим задания F5 (сценарий, неделя 2, шаг 4): пока выбор не сделан, на экране только
+            // мячик и копилка — полки появляются после выбора. Иначе экран — 38 слов при потолке 25.
+            val taskMode = week.taskId?.let { g.content.chapter1.task(it) }?.template == TaskTemplate.CHOICE &&
+                !w.taskDone && g.ballOffer(s).available
             val task = week.taskId?.let { g.content.chapter1.task(it) }
             if (task?.template == TaskTemplate.CHOICE && !w.taskDone) BallChoice(s) { took ->
                 if (a.act { g.chooseBall(it, took) }) {
@@ -128,6 +140,7 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
                 }
             }
             ballPlate?.let { lines -> SlideUp(true) { ExplainPlate(lines, onClose = { ballPlate = null }) { PetIcon(s) } } }
+            if (!taskMode) {
             Txt(a.f("shop.hint", "n" to g.needLeft(s).coerceAtLeast(0)), FinniText.Subtitle)
             val wantCard: (@Composable (Modifier, Boolean) -> Unit)? = if (g.owns(s, wantId)) null else { m, wide ->
                 val item = g.content.item(wantId)
@@ -150,6 +163,7 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
                 }
             }
             if (cart.isNotEmpty()) CartBox(s, cart)
+            }
         }
 
         val q = if (cart.isEmpty()) null else g.quote(s, cart)
