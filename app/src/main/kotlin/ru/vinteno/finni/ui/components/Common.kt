@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearOutSlowInEasing
@@ -50,7 +51,17 @@ import ru.vinteno.finni.ui.theme.FinniText
 
 @Composable
 fun Txt(text: String, style: TextStyle = FinniText.Body, modifier: Modifier = Modifier) =
-    BasicText(text, modifier, style)
+    BasicText(typo(text), modifier, style)
+
+/**
+ * Неразрывный пробел после числа и после слова из одной-двух букв, и перед тире: «4 монеты»,
+ * «с ягодами», «из копилки», «нужное —» не разрываются между строками. Начинающий читатель
+ * читает словосочетание целиком, а предлог или число в конце строки теряет (гайд §6.3).
+ * Буквы перечислены явно: Android (ICU) строже JVM к регулярным выражениям (QA-B11).
+ */
+private val glue = Regex("(?<=^|[\\s«(\u00A0])([А-Яа-яЁёA-Za-z]{1,2}|[0-9]+) ")
+
+fun typo(s: String): String = s.replace(glue, "$1\u00A0").replace(" —", "\u00A0—")
 
 @Composable
 fun Icon(vector: ImageVector, tint: Color, size: Dp, modifier: Modifier = Modifier) {
@@ -168,21 +179,21 @@ fun ProgressCells(filled: Int, total: Int, modifier: Modifier = Modifier, cell: 
 
 /**
  * Плашка объяснения — §10.11: `surface`, скругление 24, обводка `stroke-strong`, слева иконка Финни.
- * Три строки одинаковой структуры при любом исходе. Касание закрывает.
+ * Три строки одинаковой структуры при любом исходе. Касание закрывает, если есть что закрывать.
  */
 @Composable
-fun ExplainPlate(lines: List<String>, onClose: () -> Unit, modifier: Modifier = Modifier, petIcon: @Composable () -> Unit) {
+fun ExplainPlate(lines: List<String>, onClose: (() -> Unit)?, modifier: Modifier = Modifier, petIcon: @Composable () -> Unit) {
     val shape = RoundedCornerShape(FinniDimens.RadiusCard)
     Row(
         modifier.fillMaxWidth()
             .background(FinniColors.Surface, shape)
             .border(FinniDimens.Outline, FinniColors.StrokeStrong, shape)
-            .clickable(remember { MutableInteractionSource() }, null, onClick = onClose)
+            .then(if (onClose != null) Modifier.clickable(remember { MutableInteractionSource() }, null, onClick = onClose) else Modifier)
             .padding(FinniDimens.CardPadding),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Box(Modifier.size(24.dp)) { petIcon() }
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             lines.forEach { Txt(it) }
         }
     }
@@ -205,7 +216,10 @@ fun FinniDialog(lines: List<String>, action: String?, onAction: () -> Unit, canc
         // Диалог выезжает так же, как плашка, — §7.4.
         ru.vinteno.finni.ui.motion.SlideUp(true) {
         Column(
-            Modifier.fillMaxWidth().background(FinniColors.Surface, shape).padding(FinniDimens.CardPadding + 8.dp),
+            // При шрифте ×2,0 окно выше экрана — тогда оно прокручивается, а не обрезается.
+            Modifier.fillMaxWidth().background(FinniColors.Surface, shape)
+                .verticalScroll(androidx.compose.foundation.rememberScrollState())
+                .padding(FinniDimens.CardPadding + 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             lines.forEachIndexed { i, l -> Txt(l, if (i == 0) FinniText.Subtitle else FinniText.Body) }
@@ -224,6 +238,24 @@ fun DirectionLabel(icon: ImageVector, color: Color, text: String, modifier: Modi
         horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         Icon(icon, color, 20.dp)
         Txt(text, FinniText.Caption)
+    }
+}
+
+/**
+ * Три числа по направлениям без подписей: порядок всегда Нужное, Хочу, Копилка, у каждого числа
+ * иконка своего направления — как на карточках плана (§5.2, §10.10). Слов не добавляет.
+ */
+@Composable
+fun DirectionNumbers(need: Int, want: Int, save: Int, modifier: Modifier = Modifier) {
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        listOf(ru.vinteno.finni.core.engine.Direction.NEED to need, ru.vinteno.finni.core.engine.Direction.WANT to want, null to save)
+            .forEach { (d, n) ->
+                val st = directionStyle(d)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Icon(st.icon, st.color, 20.dp)
+                    Txt(n.toString(), FinniText.Button)
+                }
+            }
     }
 }
 

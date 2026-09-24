@@ -13,6 +13,7 @@
       "situation": "food",
       "situationShelf": "food",
       "announcement": ["announce.food.1", "announce.food.2", "announce.common.3"],
+      "announceItem": "kasha",
       "shelves": [
         { "id": "food", "caption": "shop.caption.food", "mandatory": true,
           "tiers": [["krupa"], ["kasha"], ["kasha", "yagody"]] },
@@ -26,6 +27,7 @@
       "situation": "wash",
       "situationShelf": "soap",
       "announcement": ["announce.wash.1", "announce.wash.2", "announce.common.3"],
+      "announceItem": "mylo",
       "shelves": [
         { "id": "food", "caption": "shop.caption.food", "mandatory": true,
           "tiers": [["krupa"], ["kasha"]] },

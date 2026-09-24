@@ -6,6 +6,9 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.Hyphens
+import androidx.compose.ui.text.style.LineBreak
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.em
 import ru.vinteno.finni.R
@@ -18,11 +21,21 @@ val Nunito = FontFamily(
     Font(R.font.nunito, FontWeight.ExtraBold, variationSettings = FontVariation.Settings(FontVariation.weight(800))),
 )
 
+/**
+ * Межстрочный из шкалы §6.2 действует только между строками: сверху и снизу блока лишнего
+ * поля нет (`Trim.Both`), поэтому однострочная подпись стоит в карточке по центру, а отступы
+ * между элементами задаёт сетка §7.1, а не шрифт. Переносов нет (§6.3). Строки ломаются
+ * сбалансированно — без одинокого слова на второй строке («Что задумал и что / вышло»):
+ * фразы у нас короткие, абзацев длиннее трёх строк нет.
+ */
 private fun style(size: TextUnit, weight: FontWeight, lineHeight: Float) = TextStyle(
     fontFamily = Nunito,
     fontSize = size,
     fontWeight = weight,
     lineHeight = lineHeight.em,
+    lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.Both),
+    lineBreak = LineBreak.Heading,
+    hyphens = Hyphens.None,
     color = FinniColors.Ink,
 )
 

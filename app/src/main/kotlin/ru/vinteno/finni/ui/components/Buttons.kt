@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -84,7 +85,7 @@ fun MainButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier,
             contentAlignment = Alignment.Center,
         ) {
             BasicText(
-                text,
+                typo(text),
                 style = FinniText.Button.copy(
                     color = if (enabled) Color.White else FinniColors.DisabledInk,
                     textAlign = TextAlign.Center,
@@ -94,9 +95,9 @@ fun MainButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier,
     }
 }
 
-/** Вторичная кнопка: 56 dp, обводка 2 dp `action`, без заливки — §10.2. */
+/** Вторичная кнопка: 56 dp, обводка 2 dp `action`, без заливки — §10.2. Под словами — необязательная строка. */
 @Composable
-fun SecondaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, below: String? = null) {
+fun SecondaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, below: (@Composable () -> Unit)? = null) {
     val shape = RoundedCornerShape(FinniDimens.RadiusButton)
     Pressable(onClick, true, FinniDimens.LipSecondary, FinniColors.Action, shape, modifier.fillMaxWidth(), null) { m ->
         Box(
@@ -107,11 +108,12 @@ fun SecondaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modi
                 .padding(horizontal = FinniDimens.CardPadding, vertical = 8.dp),
             contentAlignment = Alignment.Center,
         ) {
-            androidx.compose.foundation.layout.Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                BasicText(text, style = FinniText.Button.copy(color = FinniColors.Action, textAlign = TextAlign.Center))
-                if (below != null) {
-                    BasicText(below, style = FinniText.Caption.copy(color = FinniColors.Ink, textAlign = TextAlign.Center))
-                }
+            androidx.compose.foundation.layout.Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp),
+            ) {
+                BasicText(typo(text), style = FinniText.Button.copy(color = FinniColors.Action, textAlign = TextAlign.Center))
+                below?.invoke()
             }
         }
     }
@@ -148,7 +150,11 @@ fun BackButton(onClick: () -> Unit, description: String, modifier: Modifier = Mo
     }
 }
 
-/** Нажимаемая карточка: обводка, губа 2 dp. Выбранная — обводка 3 dp и подложка `action-soft` (§10.3). */
+/**
+ * Нажимаемая карточка: обводка, губа 2 dp. Выбранная — обводка 3 dp, подложка `action-soft` (§10.3)
+ * и галочка в углу: «выбрано» читается формой, а не только цветом (§4, принцип 2). Галочка белая
+ * на синем, не зелёная (§9.2).
+ */
 @Composable
 fun PressCard(
     onClick: () -> Unit,
@@ -166,6 +172,14 @@ fun PressCard(
             (if (fillHeight) m.fillMaxHeight() else m).sizeIn(minWidth = FinniDimens.MinTouch, minHeight = FinniDimens.MinTouch)
                 .background(if (selected) FinniColors.ActionSoft else background, shape)
                 .border(if (selected) 3.dp else FinniDimens.Outline, if (selected) FinniColors.Action else outline, shape),
-        ) { content() }
+        ) {
+            content()
+            if (selected) {
+                Box(
+                    Modifier.align(Alignment.TopEnd).padding(6.dp).size(24.dp).background(FinniColors.Action, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Icons.Outlined.Check, Color.White, 18.dp) }
+            }
+        }
     }
 }

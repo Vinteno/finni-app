@@ -3,6 +3,8 @@ package ru.vinteno.finni.ui.screens
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,9 +16,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import ru.vinteno.finni.core.model.EventOutcome
 import ru.vinteno.finni.core.model.GameState
+import ru.vinteno.finni.core.model.Plan
 import ru.vinteno.finni.core.model.SummaryChoice
 import ru.vinteno.finni.ui.app
 import ru.vinteno.finni.ui.components.CoinRow
+import ru.vinteno.finni.ui.components.DirectionNumbers
+import ru.vinteno.finni.ui.components.ExplainPlate
 import ru.vinteno.finni.ui.components.GameScreen
 import ru.vinteno.finni.ui.components.MainButton
 import ru.vinteno.finni.ui.components.Picture
@@ -67,15 +72,20 @@ fun PiggyScreen(s: GameState, onBack: () -> Unit) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Picture(goal.id, 96.dp, description = goal.name)
-            Column(Modifier.weight(1f)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Txt(goal.name, FinniText.Subtitle)
                 Txt(a.f("piggy.goal", "n" to goal.price))
             }
         }
+        // Клетки — во всю ширину экрана: это главный предмет экрана, а не мелкая строка (гайд §10.9).
         val cells = (goal.price + COINS_PER_CELL - 1) / COINS_PER_CELL
         val arrived = (saved - a.flights.savingsPending).coerceAtLeast(0)
-        ProgressCells(minOf(arrived, goal.price) / COINS_PER_CELL, cells, Modifier.anchor(a.flights, "piggy"), cell = 24.dp)
-        Txt(if (reached) a.f("piggy.ready", "n" to saved) else a.f("piggy.saved", "n" to saved), FinniText.Subtitle)
+        BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+            val gap = 4.dp
+            val cell = ((maxWidth - gap * (cells - 1)) / cells).coerceIn(24.dp, 40.dp)
+            ProgressCells(minOf(arrived, goal.price) / COINS_PER_CELL, cells, Modifier.anchor(a.flights, "piggy"), cell = cell)
+        }
+        Txt(a.f(if (reached) "piggy.ready" else "piggy.saved", "n" to saved, "goal" to goal.price), FinniText.Subtitle)
     }
 }
 
@@ -102,26 +112,28 @@ fun SummaryScreen(s: GameState, onBack: () -> Unit, onDone: () -> Unit) {
         onBack = onBack,
         backDescription = a.t("common.back"),
         titleAside = { PetHead(s) },
+        bottomInScroll = true,
         bottom = {
-            SecondaryButton(a.t("summary.keepPlan"), onClick = { choose(SummaryChoice.KEEP_PLAN) })
-            // Три числа по направлениям без подписей: порядок всегда Нужное, Хочу, Копилка.
-            SecondaryButton(
-                a.t("summary.takeActual"),
-                onClick = { choose(SummaryChoice.TAKE_ACTUAL) },
-                below = "${sum.fact.need}   ${sum.fact.want}   ${sum.fact.save}",
-            )
+            // Под каждой кнопкой — план, с которым откроется следующая неделя: три числа с иконками
+            // направлений, без слов. Кнопки одного вида и одной высоты — ни одна не выделена (§10.10).
+            val keep = Plan.DEFAULT
+            SecondaryButton(a.t("summary.keepPlan"), onClick = { choose(SummaryChoice.KEEP_PLAN) },
+                below = { DirectionNumbers(keep.need, keep.want, keep.save) })
+            SecondaryButton(a.t("summary.takeActual"), onClick = { choose(SummaryChoice.TAKE_ACTUAL) },
+                below = { DirectionNumbers(sum.fact.need, sum.fact.want, sum.fact.save) })
         },
     ) {
         FactRow(a.t("summary.planned"), sum.planned, scale)
         FactRow(a.t("summary.actual"), actual, scale)
         FactRow(a.t("summary.reward"), sum.reward, scale)
-        a.explain.summaryLines(s).forEach { Txt(it) }
+        // Объяснение — плашкой §10.11, как везде в игре: откуда разница, словами.
+        ExplainPlate(a.explain.summaryLines(s), onClose = null) { PetIcon(s) }
     }
 }
 
 @Composable
 private fun FactRow(label: String, value: Int, scale: Int) {
-    Column(Modifier.fillMaxWidth()) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Txt(label, FinniText.Subtitle, Modifier.weight(1f))
             Txt(value.toString(), FinniText.Subtitle)

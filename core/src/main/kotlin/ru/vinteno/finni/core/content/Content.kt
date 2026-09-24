@@ -62,6 +62,8 @@ data class WeekContent(
     /** Полка, на которой выбирается ступенька ситуации: в неделях 1 и 2 отдельного экрана ситуации нет. */
     val situationShelf: String,
     val announcement: List<String>,
+    /** Предмет, о котором объявление, — его картинка стоит на плашке рядом с первой строкой. */
+    val announceItem: String? = null,
     val shelves: List<Shelf>,
     val taskId: String? = null,
 )

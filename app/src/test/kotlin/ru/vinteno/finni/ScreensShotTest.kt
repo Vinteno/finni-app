@@ -46,13 +46,13 @@ import ru.vinteno.finni.ui.screens.SummaryScreen
 import ru.vinteno.finni.ui.theme.FinniColors
 
 /**
- * Снимки экранов канонического пути главы 1 на ширине 360 dp — обычным шрифтом и ×2,0
- * (гайд §6.5, чек-лист 9–10). Анимации выключены: снимок — конечное состояние.
+ * Снимки экранов канонического пути главы 1 на 360 × 600 dp — окно игры на телефоне 360 × 640
+ * за вычетом системных полос — обычным шрифтом и ×2,0 (гайд §6.5, чек-лист 9–10). Анимации выключены: снимок — конечное состояние.
  * Запись: ./gradlew :app:recordRoborazziDebug, снимки — app/build/shots/.
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(sdk = [35], qualifiers = "w360dp-h780dp-xxhdpi")
+@Config(sdk = [35], qualifiers = "w360dp-h600dp-xxhdpi")
 class ScreensShotTest {
     @get:Rule val compose = createComposeRule()
 
@@ -91,6 +91,7 @@ class ScreensShotTest {
     @Test fun goal() = shot("03_goal", base()) { GoalScreen() }
     @Test fun homeParcel() = shot("04_home_parcel", week1()) { HomeScreen(it) {} }
     @Test fun homeAnnounce() = shot("05_home_announce", game.openParcel(week1())) { HomeScreen(it) {} }
+    @Test fun homeAnnounceBig() = shot("05b_home_announce_x2", game.openParcel(week1()), 2f) { HomeScreen(it) {} }
     @Test fun plan() = shot("06_plan", planned(week1())) { PlanScreen(it, {}, {}) }
     @Test fun planOver() = shot("07_plan_over", planned(week1(), Plan(14, 10, 10))) { PlanScreen(it, {}, {}) }
     @Test fun planOverBig() = shot("07b_plan_over_x2", planned(week1(), Plan(14, 10, 10)), 2f) { PlanScreen(it, {}, {}) }
@@ -108,6 +109,9 @@ class ScreensShotTest {
 
     @Test fun piggy() = shot("10_piggy", week1Done()) { PiggyScreen(it) {} }
     @Test fun summary() = shot("11_summary", game.leavePiggy(game.deposit(week1Done()))) { SummaryScreen(it, {}, {}) }
+    /** На высоком телефоне кнопки итога стоят внизу экрана, хотя на низком они прокручиваются вместе с текстом. */
+    @Config(qualifiers = "w360dp-h780dp-xxhdpi")
+    @Test fun summaryTall() = shot("11c_summary_tall", game.leavePiggy(game.deposit(week1Done()))) { SummaryScreen(it, {}, {}) }
     @Test fun summaryBig() = shot("11b_summary_x2", game.leavePiggy(game.deposit(week1Done())), 2f) { SummaryScreen(it, {}, {}) }
 
     private fun week2(): GameState {
@@ -130,7 +134,7 @@ class ScreensShotTest {
     /** Окна нехватки: сначала «Хочу», потом копилка — порядок один для любой покупки (E10). */
     @Test fun dialogWant() {
         shot("14_dialog_want", game.confirmPlan(planned(week1()))) { ShopScreen(it) {} }
-        listOf("Каша с ягодами", "Мыло", "Купить").forEach { compose.onNodeWithText(it).performClick() }
+        listOf("Каша с\u00A0ягодами", "Мыло", "Купить").forEach { compose.onNodeWithText(it).performClick() }
         compose.onRoot().captureRoboImage("build/shots/14_dialog_want.png")
     }
 

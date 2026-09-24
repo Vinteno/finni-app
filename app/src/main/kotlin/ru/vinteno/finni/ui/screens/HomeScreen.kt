@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -63,6 +64,7 @@ import ru.vinteno.finni.ui.components.ProgressCells
 import ru.vinteno.finni.ui.components.Txt
 import ru.vinteno.finni.ui.components.Wallet
 import ru.vinteno.finni.ui.components.bigFont
+import ru.vinteno.finni.ui.components.scrollHint
 import ru.vinteno.finni.ui.motion.Appear
 import ru.vinteno.finni.ui.motion.CoinTarget
 import ru.vinteno.finni.ui.motion.SlideUp
@@ -74,6 +76,9 @@ import ru.vinteno.finni.ui.theme.FinniDimens
 import ru.vinteno.finni.ui.theme.FinniText
 
 enum class HomeTarget { PLAN, SHOP, PIGGY, SUMMARY, EVENT }
+
+/** Колонка двери с вывеской «Магазин» в правом верхнем углу комнаты. */
+private val DOOR_COLUMN = 96.dp
 
 /** Свободная игра без касаний дольше 30 секунд — Финни засыпает (сценарий §7, свободная игра). */
 private const val SLEEP_AFTER_MS = 30_000L
@@ -160,21 +165,26 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
             TopBar(s, onWeek = { if (w?.announcementSeen == true) open(HomeTarget.PLAN) else a.react(Reaction.NOTICE) })
 
             // ---------- Комната ----------
-            // При крупном шрифте середина экрана прокручивается: записка встаёт строкой над комнатой,
-            // комната получает постоянную высоту и ничто ни на что не наезжает.
+            // При крупном шрифте записка встаёт строкой над комнатой. При крупном шрифте и на низком
+            // экране середина прокручивается, а комната получает постоянную высоту: ничто ни на что
+            // не наезжает и ничего не обрезается без возможности докрутить.
             val big = bigFont()
-            Column(if (big) Modifier.weight(1f).verticalScroll(rememberScrollState()) else Modifier.weight(1f)) {
+            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+            val compact = big || maxHeight < 300.dp
+            val middleScroll = rememberScrollState()
+            Column(if (compact) Modifier.fillMaxSize().scrollHint(middleScroll).verticalScroll(middleScroll) else Modifier.fillMaxSize()) {
             if (big) TaskNote(s, Modifier.fillMaxWidth().padding(top = 8.dp), ::toShop)
-            BoxWithConstraints((if (big) Modifier.height(320.dp) else Modifier.weight(1f)).fillMaxWidth().padding(top = 8.dp)) {
+            BoxWithConstraints((if (compact) Modifier.height(300.dp) else Modifier.weight(1f)).fillMaxWidth().padding(top = 8.dp)) {
                 val roomW = maxWidth
                 val roomH = maxHeight
                 // Пол — декоративный разделитель `stroke`, фон комнаты — `bg-sand` главы 1.
                 Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(2.dp).offset(y = (-6).dp).background(FinniColors.Stroke))
 
-                if (!big) TaskNote(s, Modifier.align(Alignment.TopStart).widthIn(max = 150.dp), ::toShop)
+                // Записка занимает всё место слева от двери: название задания — одной строкой.
+                if (!big) TaskNote(s, Modifier.align(Alignment.TopStart).widthIn(max = roomW - DOOR_COLUMN - FinniDimens.CardGap), ::toShop)
 
                 // Дверь с вывеской «Магазин» — вход в покупки после подтверждения плана.
-                Column(Modifier.align(Alignment.TopEnd), horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(Modifier.align(Alignment.TopEnd).widthIn(min = DOOR_COLUMN), horizontalAlignment = Alignment.CenterHorizontally) {
                     Txt(a.t("home.shopSign"), FinniText.Caption)
                     Box(Modifier.clickable(remember { MutableInteractionSource() }, null) { toShop() }) {
                         Picture("dver", 96.dp, description = a.t("home.shopSign"))
@@ -231,7 +241,7 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
                             }
                         }
                     }
-                    Box(Modifier.width(64.dp).height(6.dp).background(FinniColors.StrokeStrong, RoundedCornerShape(3.dp)))
+                    Shelf()
                 }
 
                 // Финни на своём месте, не мельче 96 dp.
@@ -243,8 +253,9 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
                     Modifier.align(Alignment.BottomCenter).offset(x = toBowl * walk.value)
                         .clickable(remember { MutableInteractionSource() }, null) { poke++ },
                 ) {
-                    // Финни помещается в комнату при любом шрифте: ширина — от высоты комнаты (пропорция 0,47).
-                    val petW = minOf(120.dp, roomH * 0.44f).coerceAtLeast(FinniDimens.PetFull * 0.47f)
+                    // Финни помещается в комнату при любом шрифте: ширина — от высоты комнаты (пропорция 0,47),
+                    // и уши не заходят на записку и дверь вверху комнаты.
+                    val petW = minOf(120.dp, (roomH - 64.dp) * 0.44f).coerceAtLeast(FinniDimens.PetFull * 0.47f)
                     Finni(
                         s.profile.fur, s.profile.accessory, Modifier.width(petW),
                         reaction = if (sleeping) Reaction.SLEEP else a.reaction, reactionKey = a.reactionKey,
@@ -258,6 +269,7 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
             }
 
             PiggyPanel(s, onClick = { if (s.chapter.goalId != null && s.phase != Phase.FREE_PLAY) open(HomeTarget.PIGGY) })
+            }
             }
 
             // ---------- Низ: подсказка и одна кнопка ----------
@@ -285,21 +297,30 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
             step == Step.ANNOUNCE -> g.weekContent(s).announcement.map { a.f(it, "name" to s.profile.petName) }
             else -> null
         }
+        // Картинка плашки: посылка — у записки бабушки, предмет недели — у объявления (гайд §12.2).
+        val platePicture = when {
+            parcelNote -> "posylka"
+            step == Step.ANNOUNCE -> g.weekContent(s).announceItem
+            else -> null
+        }
         // Плашка выезжает снизу и уезжает обратно (§7.4); пока уезжает, показывает прежние строки.
-        var lastPlate by remember { mutableStateOf<List<String>>(emptyList()) }
-        if (plateLines != null) lastPlate = plateLines
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+        var lastPlate by remember { mutableStateOf<Pair<List<String>, String?>>(emptyList<String>() to null) }
+        if (plateLines != null) lastPlate = plateLines to platePicture
+        BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+            val maxPlate = maxHeight
             SlideUp(plateLines != null) {
-                BottomPlate(lastPlate, a.t("common.ok")) {
+                BottomPlate(lastPlate.first, lastPlate.second, a.t("common.ok"), Modifier.heightIn(max = maxPlate)) {
                     if (parcelNote) parcelNote = false else a.act(g::seeAnnouncement)
                 }
             }
         }
         var lastExplain by remember { mutableStateOf<List<String>>(emptyList()) }
         a.pendingPlate?.let { lastExplain = it }
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+        BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+            val maxPlate = maxHeight
             SlideUp(plateLines == null && a.pendingPlate != null) {
-                Column(Modifier.padding(FinniDimens.ScreenPadding).padding(bottom = FinniDimens.BottomGap - FinniDimens.ScreenPadding),
+                Column(Modifier.heightIn(max = maxPlate).verticalScroll(rememberScrollState())
+                    .padding(FinniDimens.ScreenPadding).padding(bottom = FinniDimens.BottomGap - FinniDimens.ScreenPadding),
                     verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     ExplainPlate(lastExplain, onClose = { a.pendingPlate = null }) { PetIcon(s) }
                     MainButton(a.t("common.ok"), { a.pendingPlate = null })
@@ -338,19 +359,47 @@ private fun parcelLines(s: GameState): List<String> {
     } else listOf(a.t("parcel.none.1"), a.t("parcel.none.2"))
 }
 
-/** Плашка снизу: записка бабушки или объявление ситуации. Одна главная кнопка. */
+/**
+ * Плашка снизу: записка бабушки или объявление ситуации. Одна главная кнопка. Первая строка —
+ * главная, крупнее; остальные — основным текстом, как в окне §10.8: так видно, с чего начинать
+ * читать. Рядом с первой строкой — картинка того, о чём речь. При шрифте ×2,0 плашка прокручивается.
+ */
 @Composable
-private fun BottomPlate(lines: List<String>, ok: String, onOk: () -> Unit) {
-    Box(Modifier.fillMaxWidth().padding(FinniDimens.ScreenPadding), contentAlignment = Alignment.BottomCenter) {
+private fun BottomPlate(lines: List<String>, picture: String?, ok: String, modifier: Modifier, onOk: () -> Unit) {
+    Box(modifier.fillMaxWidth().padding(FinniDimens.ScreenPadding), contentAlignment = Alignment.BottomCenter) {
         val shape = RoundedCornerShape(FinniDimens.RadiusCard)
         Column(
             Modifier.fillMaxWidth().padding(bottom = FinniDimens.BottomGap - FinniDimens.ScreenPadding)
                 .background(FinniColors.Surface, shape).border(FinniDimens.Outline, FinniColors.StrokeStrong, shape)
+                .verticalScroll(rememberScrollState())
                 .padding(FinniDimens.CardPadding),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            lines.forEach { Txt(it, FinniText.Subtitle) }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                picture?.let { Picture(it, 48.dp) }
+                lines.firstOrNull()?.let { Txt(it, FinniText.Subtitle, Modifier.weight(1f)) }
+            }
+            lines.drop(1).forEach { Txt(it) }
+            Box(Modifier.height(4.dp))
             MainButton(ok, onOk)
+        }
+    }
+}
+
+/** Полка на стене — обстановка комнаты: доска на двух кронштейнах, а не черта в воздухе. */
+@Composable
+private fun Shelf() {
+    androidx.compose.foundation.Canvas(Modifier.width(72.dp).height(16.dp)) {
+        val c = FinniColors.StrokeStrong
+        val board = 6.dp.toPx()
+        drawRoundRect(c, size = androidx.compose.ui.geometry.Size(size.width, board),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(board / 2))
+        val w = 2.dp.toPx()
+        listOf(size.width * 0.2f, size.width * 0.8f).forEach { x ->
+            val p = androidx.compose.ui.graphics.Path().apply {
+                moveTo(x, board); lineTo(x, size.height); lineTo(x + if (x < size.width / 2) 10.dp.toPx() else -10.dp.toPx(), board)
+            }
+            drawPath(p, c, style = androidx.compose.ui.graphics.drawscope.Stroke(w, cap = androidx.compose.ui.graphics.StrokeCap.Round))
         }
     }
 }
@@ -370,7 +419,7 @@ private fun TopBar(s: GameState, onWeek: () -> Unit) {
     }
     val week: @Composable () -> Unit = {
         PressCard(onWeek, Modifier.padding(horizontal = 8.dp)) {
-            Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(Icons.Outlined.EditNote, FinniColors.Ink, 28.dp)
                 Txt(a.t("home.week"), FinniText.Caption)
             }
@@ -424,7 +473,7 @@ private fun PiggyPanel(s: GameState, onClick: () -> Unit) {
             Box(Modifier.anchor(a.flights, "piggy")) { Picture("kopilka", 40.dp) }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 val cells = (goal.price + 4) / 5
-                ProgressCells(minOf(s.progress.savings, goal.price) / 5, cells, cell = 14.dp)
+                ProgressCells(minOf(s.progress.savings, goal.price) / 5, cells, cell = 16.dp)
                 Txt(a.f("home.saved", "n" to s.progress.savings), FinniText.Caption)
             }
             Picture(goal.id, 40.dp, description = goal.name)

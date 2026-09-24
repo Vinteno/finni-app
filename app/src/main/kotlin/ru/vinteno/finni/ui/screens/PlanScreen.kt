@@ -26,7 +26,9 @@ import ru.vinteno.finni.core.engine.Direction
 import ru.vinteno.finni.core.model.GameState
 import ru.vinteno.finni.core.model.Plan
 import ru.vinteno.finni.ui.app
+import ru.vinteno.finni.ui.components.Coin
 import ru.vinteno.finni.ui.components.GameScreen
+import ru.vinteno.finni.ui.components.Picture
 import ru.vinteno.finni.ui.components.Icon
 import ru.vinteno.finni.ui.components.MainButton
 import ru.vinteno.finni.ui.components.RoundButton
@@ -64,7 +66,16 @@ fun PlanScreen(s: GameState, onBack: () -> Unit, onConfirmed: () -> Unit) {
         onBack = onBack,
         backDescription = a.t("common.back"),
         titleAside = { PetHead(s) },
+        // Строка остатка — над кнопкой, всегда на виду: она и объясняет, почему кнопка закрыта.
         bottom = if (frozen) null else ({
+            Txt(
+                when {
+                    left > 0 -> a.f("plan.left", "n" to left)
+                    left == 0 -> a.t("plan.done")
+                    else -> a.f("plan.over", "sum" to plan.total, "wallet" to wallet, "n" to -left)
+                },
+                FinniText.Subtitle,
+            )
             MainButton(a.t("plan.confirm"), onClick = { if (a.act(a.game::confirmPlan)) onConfirmed() }, enabled = a.game.canConfirmPlan(s))
         }),
     ) {
@@ -75,7 +86,7 @@ fun PlanScreen(s: GameState, onBack: () -> Unit, onConfirmed: () -> Unit) {
             DirectionCard(Direction.WANT, plan.want, frozen, m, wide,
                 onPlus = { set(plan.copy(want = (plan.want + 1).coerceAtMost(MAX_NUMBER))) },
                 onMinus = { if (plan.want > 0) set(plan.copy(want = plan.want - 1)) })
-            DirectionCard(null, plan.save, frozen, m, wide, note = a.t(enoughKey(a.game.enoughForGoal(s))),
+            DirectionCard(null, plan.save, frozen, m, wide,
                 onPlus = { set(plan.copy(save = (plan.save + 1).coerceAtMost(MAX_NUMBER))) },
                 onMinus = { if (plan.save > 0) set(plan.copy(save = plan.save - 1)) })
         }
@@ -87,16 +98,37 @@ fun PlanScreen(s: GameState, onBack: () -> Unit, onConfirmed: () -> Unit) {
                 cards(Modifier.weight(1f).fillMaxHeight(), false)
             }
         }
+        EnoughLine(s)
         if (plan.need == 0) {
             Txt(a.f("plan.needZero", "name" to s.profile.petName))
         }
-        if (!frozen) {
-            Txt(
-                if (left >= 0) a.f("plan.left", "n" to left)
-                else a.f("plan.over", "sum" to plan.total, "wallet" to wallet, "n" to -left),
-                FinniText.Subtitle,
-            )
+    }
+}
+
+/**
+ * Строка «хватит ли» под «Копилкой» (I13, I14) — единственная, что отвечает на нажатия. Слова
+ * «Хватит ровно» сами не говорят, на что: рядом стоят иконка копилки и картинка цели с ценой —
+ * «копилка → книжка за 40 → хватит ровно» читается без новых слов (гайд §12.2). Строка стоит под
+ * карточками во всю ширину, а не внутри узкой «Копилки»: там она ломалась на две строки и
+ * растягивала все три карточки. Оценки в ней нет.
+ */
+@Composable
+private fun EnoughLine(s: GameState) {
+    val a = app()
+    val goal = s.chapter.goalId?.let { a.game.content.goal(it) } ?: return
+    val st = directionStyle(null)
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(st.icon, st.color, 32.dp)
+        Picture(goal.id, 40.dp, description = goal.name)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Coin(20.dp)
+            Txt(goal.price.toString(), FinniText.Button)
         }
+        Txt(a.t(enoughKey(a.game.enoughForGoal(s))), FinniText.Subtitle, Modifier.weight(1f))
     }
 }
 
@@ -112,7 +144,6 @@ private fun DirectionCard(
     frozen: Boolean,
     modifier: Modifier,
     wide: Boolean,
-    note: String? = null,
     onPlus: () -> Unit,
     onMinus: () -> Unit,
 ) {
@@ -139,21 +170,18 @@ private fun DirectionCard(
                 number()
                 if (!frozen) RoundButton(Icons.Outlined.Add, a.t("common.plus"), onPlus)
             }
-            note?.let { Txt(it, FinniText.Caption) }
         }
     } else {
         Column(
-            box.padding(vertical = 12.dp, horizontal = 4.dp),
+            box.padding(vertical = 8.dp, horizontal = 4.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Icon(st.icon, st.color, 32.dp)
             Txt(a.t(st.labelKey), FinniText.Caption.copy(textAlign = TextAlign.Center), Modifier.fillMaxWidth())
             if (!frozen) RoundButton(Icons.Outlined.Add, a.t("common.plus"), onPlus)
             number()
             if (!frozen) RoundButton(Icons.Outlined.Remove, a.t("common.minus"), onMinus)
-            // Единственная строка экрана, которая отвечает на нажатия: хватит ли к событию (I14). Оценки нет.
-            note?.let { Txt(it, FinniText.Caption.copy(textAlign = TextAlign.Center), Modifier.fillMaxWidth()) }
         }
     }
 }

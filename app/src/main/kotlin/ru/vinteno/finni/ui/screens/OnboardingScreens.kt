@@ -33,12 +33,15 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
+import ru.vinteno.finni.core.engine.Direction
 import ru.vinteno.finni.core.model.Accessory
 import ru.vinteno.finni.core.engine.Enough
 import ru.vinteno.finni.core.model.Fur
 import ru.vinteno.finni.ui.app
 import ru.vinteno.finni.ui.components.Coin
 import ru.vinteno.finni.ui.components.GameScreen
+import ru.vinteno.finni.ui.components.Icon
+import ru.vinteno.finni.ui.components.directionStyle
 import ru.vinteno.finni.ui.components.MainButton
 import ru.vinteno.finni.ui.components.Picture
 import ru.vinteno.finni.ui.components.PressCard
@@ -52,13 +55,20 @@ import ru.vinteno.finni.ui.theme.FinniText
 /**
  * Знакомство — сценарий §6.1: три карточки по одной — нужное, желаемое, копилка; на каждой
  * предмет и строка. Карточки — каша, качели, копилка (I12). Ни механики, ни чисел, ни вопросов.
+ * Над строкой — метка направления так, как она выглядит на плане: иконка и слово «Нужное»,
+ * «Хочу», «Копилка». Иначе «желаемое» из знакомства и «Хочу» на плане — два разных слова, и
+ * ребёнок не связывает их (QA-U6). Внизу три точки: какая карточка из трёх — формой, не цветом.
  */
 @Composable
 fun IntroScreen() {
     val a = app()
     var i by rememberSaveable { mutableIntStateOf(0) }
-    val cards = listOf("kasha" to "intro.card.need", "kacheli" to "intro.card.want", "kopilka" to "intro.card.save")
-    val (pic, key) = cards[i]
+    val cards = listOf(
+        Triple("kasha", "intro.card.need", Direction.NEED),
+        Triple("kacheli", "intro.card.want", Direction.WANT),
+        Triple("kopilka", "intro.card.save", null),
+    )
+    val (pic, key, dir) = cards[i]
     // Системное «назад» листает карточки назад, а не закрывает игру (QA-B15).
     BackHandler(enabled = i > 0) { i-- }
     GameScreen(
@@ -69,9 +79,29 @@ fun IntroScreen() {
             })
         },
     ) {
-        Box(Modifier.fillMaxWidth().padding(top = 48.dp), contentAlignment = Alignment.Center) { Picture(pic, 160.dp) }
+        Box(Modifier.fillMaxWidth().padding(top = 32.dp), contentAlignment = Alignment.Center) { Picture(pic, 160.dp) }
+        val st = directionStyle(dir)
+        val chip = RoundedCornerShape(FinniDimens.RadiusButton)
+        Row(
+            Modifier.padding(top = 12.dp).background(st.bg, chip).border(FinniDimens.Outline, st.color, chip)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(st.icon, st.color, 32.dp)
+            Txt(a.t(st.labelKey), FinniText.Subtitle)
+        }
         a.t(key).split(". ").forEach { part ->
             Txt(part.trimEnd('.') + ".", FinniText.Title)
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
+            cards.indices.forEach { n ->
+                val on = n == i
+                Box(
+                    Modifier.size(12.dp).background(if (on) FinniColors.Ink else FinniColors.Surface, CircleShape)
+                        .border(FinniDimens.Outline, FinniColors.StrokeStrong, CircleShape),
+                )
+            }
         }
     }
 }
@@ -92,12 +122,13 @@ fun CreatePetScreen() {
         bottom = { MainButton(a.t("create.done"), { a.act { a.game.createPet(it, name, fur, acc) } }) },
     ) {
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            Finni(fur, acc, Modifier.width(140.dp), reaction = if (key > 0) Reaction.NOTICE else null, reactionKey = key)
+            // Фигура 88 dp шириной (около 190 dp ростом): на экране 360 × 640 поле «Имя» и «Готово» видны без прокрутки.
+            Finni(fur, acc, Modifier.width(88.dp), reaction = if (key > 0) Reaction.NOTICE else null, reactionKey = key)
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(FinniDimens.CardGap)) {
             Fur.entries.forEach { f ->
-                PressCard({ fur = f; key++ }, Modifier.weight(1f).heightIn(min = 64.dp), selected = fur == f) {
-                    Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
+                PressCard({ fur = f; key++ }, Modifier.weight(1f).heightIn(min = 56.dp), selected = fur == f) {
+                    Box(Modifier.fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
                         Box(Modifier.size(40.dp).background(furSwatch(f), CircleShape).border(2.dp, Color(0xFF5A3A22), CircleShape))
                     }
                 }
@@ -107,7 +138,7 @@ fun CreatePetScreen() {
             Accessory.entries.forEach { ac ->
                 PressCard({ acc = ac; key++ }, Modifier.weight(1f), selected = acc == ac) {
                     Box(Modifier.fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
-                        Finni(fur, ac, Modifier.width(56.dp), animate = false, headOnly = true)
+                        Finni(fur, ac, Modifier.width(48.dp), animate = false, headOnly = true)
                     }
                 }
             }
@@ -164,6 +195,8 @@ fun GoalScreen() {
             MainButton(a.t("goal.choose"), { picked?.let { id -> a.act { a.game.chooseGoal(it, id) } } })
         }),
     ) {
+        // До этого экрана ребёнок не знает ни Киру, ни праздника: без строки «хватит» не к чему отнести (QA-U7).
+        Txt(a.t("goal.why"), FinniText.Body)
         ch.goalIds.forEach { id ->
             val goal = a.game.content.goal(id)
             PressCard({ picked = id }, Modifier.fillMaxWidth(), selected = picked == id) {

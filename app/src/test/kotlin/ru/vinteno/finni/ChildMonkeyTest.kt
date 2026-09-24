@@ -51,7 +51,8 @@ class ChildMonkeyTest {
 
     private fun note(key: String, detail: String) { if (key !in findings) findings[key] = detail }
 
-    private fun words(s: String) = s.split(Regex("\\s+")).count { w -> w.any { it.isLetter() } }
+    // Неразрывный пробел («4 монеты», «с ягодами» — typo()) слова не склеивает: считается как пробел.
+    private fun words(s: String) = s.split(Regex("[\\s\u00A0]+")).count { w -> w.any { it.isLetter() } }
 
     private fun textNodes(): List<SemanticsNode> =
         compose.onAllNodes(isRoot()).fetchSemanticsNodes(atLeastOneRootRequired = true).flatMap { root ->
@@ -98,7 +99,7 @@ class ChildMonkeyTest {
             val low = line.lowercase()
             forbidden.filter { low.contains(it) }.forEach { note("Инв. 11 слово «$it»", "«$line»") }
             if ('!' in line) note("Восклицательный знак", "«$line»")
-            line.split(Regex("(?<=[.?])\\s+")).filter { words(it) > 5 }.forEach {
+            line.split(Regex("(?<=[.?])[\\s\u00A0]+")).filter { words(it) > 5 }.forEach {
                 note("Инв. 10 фраза >5 слов: «$it»", "на «$screen»")
             }
         }

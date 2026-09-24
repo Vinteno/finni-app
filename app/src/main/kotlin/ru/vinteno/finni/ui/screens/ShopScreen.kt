@@ -1,7 +1,11 @@
 package ru.vinteno.finni.ui.screens
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -312,14 +316,19 @@ private fun ItemCard(
  * (инвариант 10, QA-M11); название позиции — в подписи картинки для экранного диктора.
  * У надбавки метка «Хочу» (I25).
  */
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 private fun CartBox(s: GameState, cart: List<String>) {
     val a = app()
     val q = a.game.quote(s, cart)
     val shape = RoundedCornerShape(FinniDimens.RadiusCard)
+    // Корзина стоит под полками; на низком экране она ниже края. Положил товар — корзина
+    // подъезжает ровно настолько, чтобы её было видно: подтверждение покупки не прячется.
+    val seen = remember { BringIntoViewRequester() }
+    LaunchedEffect(cart) { seen.bringIntoView() }
     Column(
-        Modifier.fillMaxWidth().background(FinniColors.Surface, shape).border(FinniDimens.Outline, FinniColors.StrokeStrong, shape)
+        Modifier.fillMaxWidth().bringIntoViewRequester(seen)
+            .background(FinniColors.Surface, shape).border(FinniDimens.Outline, FinniColors.StrokeStrong, shape)
             .padding(horizontal = FinniDimens.CardPadding, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -355,9 +364,18 @@ private fun BallChoice(s: GameState, showTitle: Boolean, onChoose: (Boolean) -> 
             .padding(FinniDimens.CardPadding),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        val ball = a.game.content.item("myachik")
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Picture("myachik", 48.dp, description = a.game.content.item("myachik").name)
+            Picture("myachik", 48.dp, description = ball.name)
             if (showTitle) Txt(a.t("f5.title"), FinniText.Subtitle, Modifier.weight(1f))
+            else {
+                // Что выбирается и сколько стоит — рядом с картинкой, как на карточке товара (§10.6).
+                Txt(ball.name, FinniText.Subtitle)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Coin(20.dp)
+                    Txt(ball.price.toString(), FinniText.Subtitle)
+                }
+            }
         }
         if (offer.available) {
             Txt(a.f("f5.preview", "n" to offer.price))
