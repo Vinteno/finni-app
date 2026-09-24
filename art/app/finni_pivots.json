@@ -1,0 +1,84 @@
+{
+ "canvas": [
+  640,
+  960
+ ],
+ "pivots": {
+  "torso": [
+   320,
+   909
+  ],
+  "head": [
+   320,
+   478
+  ],
+  "arm_left": [
+   241,
+   500
+  ],
+  "arm_right": [
+   400,
+   500
+  ],
+  "ear_back": [
+   247,
+   247
+  ],
+  "ear_front": [
+   378,
+   241
+  ]
+ },
+ "head_box": [
+  121,
+  14,
+  433,
+  473
+ ],
+ "z_order": [
+  "ear_back",
+  "torso",
+  "arm_left",
+  "arm_right",
+  "acc_scarf",
+  "head",
+  "eyes",
+  "mouth",
+  "acc_cap",
+  "ear_front",
+  "acc_bow"
+ ],
+ "parents": {
+  "torso": null,
+  "arm_left": "torso",
+  "arm_right": "torso",
+  "head": "torso",
+  "ear_back": "head",
+  "ear_front": "head",
+  "eyes": "head",
+  "mouth": "head",
+  "acc_scarf": "torso",
+  "acc_cap": "head",
+  "acc_bow": "ear_front"
+ },
+ "note": "Слои лежат на общей канве на своих местах. eyes и mouth — нейтральные глаза и рот, они уже есть на head; eyes_closed, eyes_happy, mouth_open кладутся поверх head. lying — целая поза, без частей.",
+ "figure_box": [
+  125,
+  18,
+  427,
+  895
+ ],
+ "motion_box": [
+  43,
+  4,
+  552,
+  909
+ ],
+ "lying_box": [
+  14,
+  66,
+  617,
+  780
+ ],
+ "boxes_note": "[x, y, ширина, высота] в пикселях канвы. figure_box — Финни в покое со всеми аксессуарами: по нему фигура вписывается в место на экране. motion_box — куда фигура может выйти при движении лап и ушей: столько места не должно обрезаться. lying_box — поза лёжа с аксессуарами."
+}

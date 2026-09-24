@@ -98,6 +98,18 @@ class ScreensShotTest {
     @Test fun shop() = shot("08_shop", game.confirmPlan(planned(week1()))) { ShopScreen(it) {} }
     @Test fun shopBig() = shot("08b_shop_x2", game.confirmPlan(planned(week1())), 2f) { ShopScreen(it) {} }
     @Test fun homeCare() = shot("09_home_care", game.leaveShop(game.buy(game.confirmPlan(planned(week1())), listOf("kasha", "yagody", "mylo"), agreedWant = true))) { HomeScreen(it) {} }
+    // Куплена крупа — в миске крупа, а не каша (без ягод: они только на каше).
+    @Test fun homeKrupa() = shot("09c_home_krupa", game.leaveShop(game.buy(game.confirmPlan(planned(week1())), listOf("krupa", "mylo")))) { HomeScreen(it) {} }
+    // Высокий экран: фон комнаты по полу, окно над Финни.
+    @Config(qualifiers = "w412dp-h915dp-xxhdpi")
+    @Test fun homeTall() = shot("09d_home_tall", game.leaveShop(game.buy(game.confirmPlan(planned(week1())), listOf("kasha", "mylo")))) { HomeScreen(it) {} }
+    @Config(qualifiers = "w360dp-h640dp-xxhdpi")
+    // Исход «не хватило» — строк больше: на телефоне 360 × 640 всё в один ряд и без прокрутки.
+    @Test fun eventPhone() = shot("13c_event_b_640", run {
+        var s = game.deposit(game.leaveShop(week2()))
+        s = game.chooseBall(s, true)
+        game.finishWeek(s, SummaryChoice.KEEP_PLAN)
+    }) { EventScreen(it) {} }
     @Test fun homeBig() = shot("09b_home_x2", game.leaveShop(game.buy(game.confirmPlan(planned(week1())), listOf("kasha", "mylo"))), 2f) { HomeScreen(it) {} }
 
     private fun week1Done(): GameState {
@@ -172,5 +184,41 @@ class ScreensShotTest {
         compose.mainClock.advanceTimeBy(1200)
         assertEquals(0, model.flights.walletPending)
         assertEquals(30, store.state.value.progress.wallet)
+    }
+
+    /**
+     * Кормление (animation-howto §6.4, §7.3): еда в миске, пока Финни прыгает к ней и ест, после «ест»
+     * гаснет за 200 мс — пустая миска остаётся на месте. Без анимаций еда исчезает сразу.
+     */
+    @Test fun feedFood() {
+        val bought = game.leaveShop(game.buy(game.confirmPlan(planned(week1())), listOf("kasha", "yagody", "mylo"), agreedWant = true))
+        val store = GameStore(RuntimeEnvironment.getApplication())
+        store.replace(bought.copy(profile = bought.profile.copy(animationOn = true)))
+        val model = AppModel(game, store)
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            val st by store.state.collectAsState()
+            CompositionLocalProvider(LocalApp provides model) {
+                Box(Modifier.fillMaxSize().background(FinniColors.BgSand)) { HomeScreen(st) {} }
+            }
+        }
+        compose.mainClock.advanceTimeBy(500)
+        compose.onNodeWithText("Покорми").performClick()
+        // Прыжки к миске: в игре уже сыт, на экране еда ещё лежит.
+        compose.mainClock.advanceTimeBy(500)
+        assertEquals(true, store.state.value.week!!.fed)
+        compose.onRoot().captureRoboImage("build/shots/17a_feed_hop.png")
+        // Конец «ест» и середина угасания.
+        compose.mainClock.advanceTimeBy(1000)
+        compose.onRoot().captureRoboImage("build/shots/17b_feed_fade.png")
+        compose.mainClock.advanceTimeBy(1500)
+        compose.onRoot().captureRoboImage("build/shots/17c_feed_done.png")
+    }
+
+    @Test fun feedNoAnimation() {
+        shot("17d_feed_no_anim", game.leaveShop(game.buy(game.confirmPlan(planned(week1())), listOf("krupa", "mylo")))) { HomeScreen(it) {} }
+        compose.onNodeWithText("Покорми").performClick()
+        compose.waitForIdle()
+        compose.onRoot().captureRoboImage("build/shots/17d_feed_no_anim.png")
     }
 }

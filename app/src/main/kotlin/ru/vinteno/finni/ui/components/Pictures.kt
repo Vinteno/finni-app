@@ -12,26 +12,73 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
+import ru.vinteno.finni.ui.art.Art
 
 /**
- * Картинки-заглушки до этапа 7 (build-plan.md §3): простые фигуры с тёплым контуром,
- * узнаются на 48 dp. Имена совпадают с `item_<id>` из animation-howto.md §12 — при подмене
- * на PNG меняется только эта функция. Трава и ягоды могут быть зелёными и красными: запрет
- * касается интерфейса, а не картинки мира (гайд §5.1).
+ * Картинка предмета: PNG-слои из art/app, вписанные в квадрат с сохранением пропорций. Слои
+ * лежат на общей канве основы, поэтому просто кладутся друг на друга. Нет хоть одного слоя —
+ * заглушка целиком, без половинчатых картинок: простые фигуры с тёплым контуром, узнаются на
+ * 48 dp (build-plan.md §3). Трава и ягоды могут быть зелёными и красными: запрет касается
+ * интерфейса, а не картинки мира (гайд §5.1).
  */
 private val Line = Color(0xFF5A3A22)
 
+/** Из каких файлов собрана картинка, снизу вверх (art-brief §3: слои надбавок и еды — на канве основы). */
+private fun layers(id: String): List<String> = when (id) {
+    "kasha" -> listOf("item_miska", "item_kasha")
+    "kasha_yagody" -> listOf("item_miska", "item_kasha", "item_yagody")
+    "krupa" -> listOf("item_miska", "item_krupa")
+    "mylo_pena", "pena" -> listOf("item_mylo", "item_pena")
+    "kopilka" -> listOf("item_kopilka_obj")
+    "kira" -> listOf("kira_birthday")
+    // Только еда, без миски: миска стоит на полу всё время, меняется лишь этот слой (animation-howto §7.3).
+    "food_kasha" -> listOf("item_kasha")
+    "food_kasha_yagody" -> listOf("item_kasha", "item_yagody")
+    "food_krupa" -> listOf("item_krupa")
+    else -> listOf("item_$id")
+}
+
+/** Слой еды в миске для купленного на этой неделе: крупа, каша, каша с ягодами. Ягоды — только на каше (items.md §7). */
+fun foodLayer(bought: Collection<String>): String? = when {
+    "krupa" in bought -> "food_krupa"
+    "kasha" in bought -> if ("yagody" in bought) "food_kasha_yagody" else "food_kasha"
+    else -> null
+}
+
 @Composable
 fun Picture(id: String, size: Dp, modifier: Modifier = Modifier, description: String? = null) {
+    Art.init(LocalContext.current)
+    val files = layers(id)
+    val png = files.none(Art::missing)
     Canvas(modifier.size(size).semantics { description?.let { contentDescription = it } }) {
+        if (png) {
+            // Пока слои декодируются, не рисуем ничего — это доли секунды при первом показе.
+            val img = files.map { Art.image(it) ?: return@Canvas }
+            val base = img.first()
+            val k = minOf(this.size.width / base.canvasWidth, this.size.height / base.canvasHeight)
+            translate((this.size.width - base.canvasWidth * k) / 2, (this.size.height - base.canvasHeight * k) / 2) {
+                scale(k, k, Offset.Zero) {
+                    img.forEach { drawImage(it.bitmap, Offset(it.left.toFloat(), it.top.toFloat())) }
+                }
+            }
+            return@Canvas
+        }
         scale(this.size.minDimension / 48f)
         when (id) {
             "kasha" -> { bowl(Color(0xFFF3E2C0)); porridge() }
             "krupa" -> sack()
             "kasha_yagody" -> { bowl(Color(0xFFF3E2C0)); porridge(); berries() }
+            "food_kasha" -> porridge()
+            "food_kasha_yagody" -> { porridge(); berries() }
+            "food_krupa" -> porridge()
+            "polka" -> drawRoundRect(Line, Offset(4f, 20f), Size(40f, 5f), CornerRadius(2.5f))
+            "okno" -> { drawRoundRect(Color(0xFFD6ECF8), Offset(8f, 8f), Size(32f, 32f)); drawRoundRect(Line, Offset(8f, 8f), Size(32f, 32f), style = Stroke(2f)) }
             "yagody" -> berries(dy = -8f)
             "mylo" -> soap()
             "mylo_pena", "pena" -> { soap(); bubbles() }
@@ -167,4 +214,49 @@ private fun DrawScope.hedgehog() {
     drawCircle(Line, 1.8f, Offset(21f, 30f)); drawCircle(Line, 1.8f, Offset(29f, 30f))
     drawCircle(Color(0xFF3A2A20), 2.2f, Offset(25f, 35f))
     drawArc(Line, 20f, 140f, false, Offset(21f, 34f), Size(8f, 5f), style = Stroke(1.2f))
+}
+
+/**
+ * Кира в масштабе Финни: `kira_birthday` нарисована на канве 640 × 960 в том же масштабе, что слои
+ * Финни (art-brief §6), поэтому рисуется тем же числом dp на пиксель канвы, что Финни шириной
+ * [finniWidth], и по той же рамке по высоте — стоят на одной земле. Рост у неё свой, без вписывания
+ * в квадрат. Нет PNG — заглушка.
+ */
+@Composable
+fun KiraFigure(finniWidth: Dp, modifier: Modifier = Modifier, description: String? = null) {
+    Art.init(LocalContext.current)
+    val spec = Art.finni
+    if (spec == null || Art.missing(KIRA)) {
+        Picture("kira", finniWidth, modifier, description)
+        return
+    }
+    val box = spec.figureBox
+    val unit = finniWidth / box.width
+    Canvas(modifier.size(unit * KIRA_CANVAS_W, unit * box.height).semantics { description?.let { contentDescription = it } }) {
+        val img = Art.image(KIRA) ?: return@Canvas
+        val k = size.height / box.height
+        scale(k, k, Offset.Zero) { drawImage(img.bitmap, Offset(img.left.toFloat(), img.top - box.top)) }
+    }
+}
+
+private const val KIRA = "kira_birthday"
+private const val KIRA_CANVAS_W = 640f
+
+/** Линия пола на `room_sand`: доля высоты картинки от верха. По ТЗ художнику — 82%, по пикселям — 81,3%. */
+private const val ROOM_FLOOR = 1952f / 2400f
+
+/**
+ * Фон комнаты главы 1 под всем экраном дома: линия пола картинки ложится на [floorY] — пол комнаты
+ * в коде. Пропорции не меняются: картинка шире экрана или равна ему, лишнее срезается сверху и по
+ * краям. Стена и пол однородны, поэтому срез краёв не виден. Пока картинка не готова — фон экрана.
+ */
+fun DrawScope.drawRoom(floorY: Float) {
+    val img = Art.image("room_sand") ?: return
+    val w = img.canvasWidth.toFloat()
+    val h = img.canvasHeight.toFloat()
+    // Масштаб: во всю ширину, и чтобы пол доставал до низа экрана, а стена — до верха.
+    val k = maxOf(size.width / w, (size.height - floorY) / (h * (1f - ROOM_FLOOR)), floorY / (h * ROOM_FLOOR))
+    val left = (size.width - w * k) / 2
+    val top = floorY - h * ROOM_FLOOR * k
+    translate(left, top) { scale(k, k, Offset.Zero) { drawImage(img.bitmap, Offset(img.left.toFloat(), img.top.toFloat())) } }
 }

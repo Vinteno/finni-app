@@ -29,8 +29,11 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.DrawTransform
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import kotlinx.coroutines.coroutineScope
@@ -38,15 +41,17 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import ru.vinteno.finni.core.model.Accessory
 import ru.vinteno.finni.core.model.Fur
+import ru.vinteno.finni.ui.art.Art
+import ru.vinteno.finni.ui.art.FinniSpec
 import kotlin.random.Random
 
 /**
- * Финни-заглушка из простых фигур (решение I11). Устроен как настоящий риг из
- * animation-howto.md §3: шесть поворотных частей на одной общей канве — заднее ухо, туловище,
- * две лапы, голова, переднее ухо; глаза и рот лежат на голове и подменяются. У каждой части своя
- * точка поворота. Когда придут PNG, меняется только отрисовка части, анимации остаются.
+ * Финни — риг из animation-howto.md §3: шесть поворотных частей на одной общей канве — заднее ухо,
+ * туловище, две лапы, голова, переднее ухо; глаза и рот лежат на голове и подменяются. У каждой
+ * части своя точка поворота. Части рисуются PNG-слоями из art/app по finni_pivots.json; пока
+ * слоёв нет — заглушкой из простых фигур (решение I11). Анимации у обоих путей одни.
  *
- * Координаты — в единицах канвы 100 × 212 (пропорция фигуры 0,47, гайд §11.2).
+ * Координаты анимаций — в единицах логической канвы 100 × 212 (пропорция фигуры 0,47, гайд §11.2).
  */
 
 /** Пять реакций на весь продукт — animation-howto.md §6. `зябнет` в главе 1 не играется (I9). */
@@ -121,7 +126,6 @@ fun Finni(
     moving: Boolean = false,
     description: String? = null,
 ) {
-    val p = palette(fur)
     val pose = remember { Pose() }
     var eyes by remember { mutableStateOf(Eyes.OPEN) }
     var mouthOpen by remember { mutableStateOf(false) }
@@ -129,9 +133,9 @@ fun Finni(
     // Холостое состояние §6.2: дыхание 2000 мс, уши не в такт, моргание раз в 4–6 с.
     val live = animate && idle && reaction != Reaction.SLEEP
     val t = rememberInfiniteTransition(label = "idle")
-    val breath by t.animateFloat(0f, 1f, infiniteRepeatable(tween(1000, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "b")
-    val earWave by t.animateFloat(0f, 1f, infiniteRepeatable(tween(1300, 300, FastOutSlowInEasing), RepeatMode.Reverse), label = "e")
-    val sleepBreath by t.animateFloat(0f, 1f, infiniteRepeatable(tween(1500, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "s")
+    val breath = t.animateFloat(0f, 1f, infiniteRepeatable(tween(1000, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "b")
+    val earWave = t.animateFloat(0f, 1f, infiniteRepeatable(tween(1300, 300, FastOutSlowInEasing), RepeatMode.Reverse), label = "e")
+    val sleepBreath = t.animateFloat(0f, 1f, infiniteRepeatable(tween(1500, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "s")
 
     LaunchedEffect(live) {
         while (live) {
@@ -162,20 +166,134 @@ fun Finni(
 
     val idleK = if (live) 1f else 0f
     val sleepK = if (animate && reaction == Reaction.SLEEP) 1f else 0f
-    val breathe = idleK * breath * 0.02f + sleepK * sleepBreath * 0.015f
+    val motion = { Motion(pose, idleK, sleepK, breath.value, earWave.value, sleepBreath.value, hop, moving) }
+    val semantics = if (description != null) Modifier.semantics { contentDescription = description } else Modifier
 
+    // Финни из PNG, если в сборке есть все его слои и finni_pivots.json; иначе — заглушка целиком.
+    Art.init(LocalContext.current)
+    val spec = Art.finni
+    val files = spec?.files(fur, accessory, headOnly)
+    // Этот окрас — первым, остальные окрасы и аксессуары — следом, по одному: на экране создания
+    // смена окраса не ждёт загрузки.
+    LaunchedEffect(fur, accessory, spec) {
+        if (spec == null) return@LaunchedEffect
+        val furs = listOf(fur) + Fur.entries.filter { it != fur }
+        val accs = listOf(accessory) + Accessory.entries.filter { it != accessory }
+        Art.warmUp(furs.flatMap { f -> accs.flatMap { a -> spec.files(f, a, false) } }.distinct())
+    }
+    if (spec != null && files!!.none(Art::missing)) {
+        PngFinni(spec, fur, accessory, headOnly, { eyes }, { mouthOpen }, motion, modifier.then(semantics))
+    } else {
+        StubFinni(palette(fur), accessory, headOnly, motion(), eyes, mouthOpen, modifier.then(semantics))
+    }
+}
+
+/**
+ * Поза в кадре из анимируемых значений: углы в градусах, смещения в единицах канвы 100 × 212.
+ * Углы ушей и лап — свои, относительно родителя; поворот головы они получают от неё.
+ */
+private class Motion(pose: Pose, idleK: Float, sleepK: Float, breath: Float, earWave: Float, sleepBreath: Float, hop: Float, moving: Boolean) {
     // Прыжок при перемещении — §6.1 и §6.4: у земли присед (≤ 4%), в воздухе вытяжка и подъём на 7%
     // высоты, уши отстают, тень в верхней точке сжимается до 0,8. `hop` — высота прыжка 0..1.
-    val crouch = if (moving) (1f - hop).let { it * it * it * it * it * it } else 0f
-    val jumpDy = -hop * 0.07f * H
-    val jumpSX = 1f - 0.02f * hop + 0.03f * crouch
-    val jumpSY = 1f + 0.03f * hop - 0.04f * crouch
+    private val crouch = if (moving) (1f - hop).let { it * it * it * it * it * it } else 0f
+    private val breathe = idleK * breath * 0.02f + sleepK * sleepBreath * 0.015f
+    private val armWave = idleK * breath * 1.6f
 
+    val bodyDy = pose.bodyY.value - hop * 0.07f * H
+    val bodySX = pose.bodySX.value * (1f - 0.02f * hop + 0.03f * crouch)
+    val bodySY = pose.bodySY.value * (1f + breathe) * (1f + 0.03f * hop - 0.04f * crouch)
+    val headRot = pose.headRot.value + sleepK * 5f
+    val headDrop = pose.headDrop.value
+    val armL = pose.armL.value + armWave
+    val armR = -pose.armR.value - armWave
+    val earB = pose.earB.value - idleK * earWave * 2.5f - 9f * hop + 4f * crouch
+    val earF = pose.earF.value + idleK * earWave * 2f + 7f * hop - 3f * crouch
+    val shadow = 1f - 0.2f * hop
+}
+
+/**
+ * Финни из PNG-слоёв на общей канве. Логическая канва 100 × 212 и все числа анимаций — прежние:
+ * `figure_box` растягивается ровно на неё, смещения переводятся в пиксели канвы тем же масштабом.
+ * Каждая часть получает преобразование родителя, затем своё — как в эталонном демо анимации:
+ * лапы и голова едут с туловищем, уши и кепка — с головой, бант — с передним ухом.
+ * Целый Финни не обрезается: лапы и уши при движении выходят за рамку до `motion_box`.
+ */
+@Composable
+private fun PngFinni(
+    spec: FinniSpec,
+    fur: Fur,
+    accessory: Accessory,
+    headOnly: Boolean,
+    eyes: () -> Eyes,
+    mouthOpen: () -> Boolean,
+    motion: () -> Motion,
+    modifier: Modifier,
+) {
+    val box = if (headOnly) spec.headBox else spec.figureBox
+    val ratio = if (headOnly) box.width / box.height else W / H
+    Canvas(modifier.aspectRatio(ratio).then(if (headOnly) Modifier.clipToBounds() else Modifier)) {
+        // Пока слои декодируются, не рисуем ничего — это доли секунды при первом показе.
+        val img = spec.files(fur, accessory, headOnly).associateWith { Art.image(it) ?: return@Canvas }
+        val m = motion()
+        val u = spec.figureBox.height / H
+        val e = eyes()
+        val mouth = mouthOpen()
+
+        fun DrawTransform.local(part: String) {
+            val pivot = spec.pivots[part] ?: return
+            when (part) {
+                "torso" -> { translate(0f, m.bodyDy * u); scale(m.bodySX, m.bodySY, pivot) }
+                FinniSpec.HEAD -> { translate(0f, m.headDrop * u); rotate(m.headRot, pivot) }
+                "arm_left" -> rotate(m.armL, pivot)
+                "arm_right" -> rotate(m.armR, pivot)
+                "ear_back" -> rotate(m.earB, pivot)
+                "ear_front" -> rotate(m.earF, pivot)
+            }
+        }
+        fun DrawTransform.chain(part: String) {
+            spec.parents[part]?.let { chain(it) }
+            local(part)
+        }
+
+        withTransform({
+            scale(size.width / box.width, size.height / box.height, Offset.Zero)
+            translate(-box.left, -box.top)
+        }) {
+            // Тень остаётся на земле, у точки поворота туловища, и сжимается, пока Финни в воздухе.
+            val torso = spec.pivots["torso"]
+            val feet = img[FinniSpec.body(fur, "torso")]
+            if (!headOnly && torso != null && feet != null) {
+                val w = feet.bitmap.width * 0.92f
+                val h = 8f * u
+                withTransform({ scale(m.shadow, m.shadow, torso) }) {
+                    drawOval(Color(0x22000000), Offset(torso.x - w / 2, torso.y - h / 2), Size(w, h))
+                }
+            }
+            for (part in spec.zOrder) {
+                if (headOnly && !spec.underHead(part)) continue
+                val file = when (part) {
+                    "eyes" -> when (e) {
+                        Eyes.OPEN -> null
+                        Eyes.CLOSED -> FinniSpec.body(fur, "eyes_closed")
+                        Eyes.HAPPY -> FinniSpec.body(fur, "eyes_happy")
+                    }
+                    "mouth" -> if (mouth) FinniSpec.body(fur, "mouth_open") else null
+                    else -> spec.files(part, fur, accessory).firstOrNull()
+                } ?: continue
+                val layer = img[file] ?: continue
+                withTransform({ chain(part) }) {
+                    drawImage(layer.bitmap, Offset(layer.left.toFloat(), layer.top.toFloat()))
+                }
+            }
+        }
+    }
+}
+
+/** Заглушка из простых фигур — пока нет PNG или если хоть один слой не прочитался. */
+@Composable
+private fun StubFinni(p: Palette, accessory: Accessory, headOnly: Boolean, m: Motion, eyes: Eyes, mouthOpen: Boolean, modifier: Modifier) {
     val box = if (headOnly) Rect(4f, 6f, 96f, 122f) else Rect(0f, 0f, W, H)
-    Box(
-        modifier.aspectRatio(box.width / box.height).clipToBounds()
-            .then(if (description != null) Modifier.semantics { contentDescription = description } else Modifier),
-    ) {
+    Box(modifier.aspectRatio(box.width / box.height).clipToBounds()) {
         @Composable
         fun Part(pivot: Offset, rot: Float = 0f, sx: Float = 1f, sy: Float = 1f, dy: Float = 0f, draw: DrawScope.() -> Unit) {
             Canvas(
@@ -195,32 +313,27 @@ fun Finni(
             }
         }
 
-        val bodyDy = pose.bodyY.value + jumpDy
-        val bodySX = pose.bodySX.value * jumpSX
-        val bodySY = pose.bodySY.value * (1f + breathe) * jumpSY
         // Всё, что выше туловища, едет вместе с ним: дочерние части наследуют сдвиг.
-        val headDy = bodyDy - (bodySY - 1f) * (Pivot.torso.y - Pivot.head.y) + pose.headDrop.value
-        val headRot = pose.headRot.value + sleepK * 5f
-        val armWave = idleK * breath * 1.6f
+        val headDy = m.bodyDy - (m.bodySY - 1f) * (Pivot.torso.y - Pivot.head.y) + m.headDrop
 
         if (!headOnly) {
             // Тень остаётся на земле и сжимается, пока Финни в воздухе.
-            Part(Pivot.torso, sx = 1f - 0.2f * hop, sy = 1f - 0.2f * hop) { drawShadow() }
+            Part(Pivot.torso, sx = m.shadow, sy = m.shadow) { drawShadow() }
         }
         // Заднее ухо — дочь головы, Z 1.
-        Part(Pivot.earBack, rot = headRot + pose.earB.value - idleK * earWave * 2.5f - 9f * hop + 4f * crouch, dy = headDy) { drawEarBack(p) }
+        Part(Pivot.earBack, rot = m.headRot + m.earB, dy = headDy) { drawEarBack(p) }
         if (!headOnly) {
-            Part(Pivot.torso, sx = bodySX, sy = bodySY, dy = bodyDy) { drawTorso(p) }
-            if (accessory == Accessory.SCARF) Part(Pivot.torso, sx = bodySX, sy = bodySY, dy = bodyDy) { drawScarf() }
-            Part(Pivot.armL, rot = pose.armL.value + armWave, dy = bodyDy) { drawArm(p, left = true) }
-            Part(Pivot.armR, rot = -pose.armR.value - armWave, dy = bodyDy) { drawArm(p, left = false) }
+            Part(Pivot.torso, sx = m.bodySX, sy = m.bodySY, dy = m.bodyDy) { drawTorso(p) }
+            if (accessory == Accessory.SCARF) Part(Pivot.torso, sx = m.bodySX, sy = m.bodySY, dy = m.bodyDy) { drawScarf() }
+            Part(Pivot.armL, rot = m.armL, dy = m.bodyDy) { drawArm(p, left = true) }
+            Part(Pivot.armR, rot = m.armR, dy = m.bodyDy) { drawArm(p, left = false) }
         }
-        Part(Pivot.head, rot = headRot, dy = headDy) {
+        Part(Pivot.head, rot = m.headRot, dy = headDy) {
             drawHead(p)
             drawFace(eyes, mouthOpen)
             if (accessory == Accessory.CAP) drawCap()
         }
-        Part(Pivot.earFront, rot = headRot + pose.earF.value + idleK * earWave * 2f + 7f * hop - 3f * crouch, dy = headDy) {
+        Part(Pivot.earFront, rot = m.headRot + m.earF, dy = headDy) {
             drawEarFront(p)
             if (accessory == Accessory.BOW) drawBow()
         }

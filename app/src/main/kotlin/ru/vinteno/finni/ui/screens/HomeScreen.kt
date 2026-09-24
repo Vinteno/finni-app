@@ -31,6 +31,7 @@ import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,7 +39,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
@@ -46,7 +54,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import ru.vinteno.finni.core.content.Impact
 import ru.vinteno.finni.core.engine.Step
 import ru.vinteno.finni.core.model.GameState
 import ru.vinteno.finni.core.model.ParcelResult
@@ -64,6 +71,9 @@ import ru.vinteno.finni.ui.components.ProgressCells
 import ru.vinteno.finni.ui.components.Txt
 import ru.vinteno.finni.ui.components.Wallet
 import ru.vinteno.finni.ui.components.bigFont
+import ru.vinteno.finni.ui.components.drawRoom
+import ru.vinteno.finni.ui.components.foodLayer
+import ru.vinteno.finni.ui.art.Art
 import ru.vinteno.finni.ui.components.scrollHint
 import ru.vinteno.finni.ui.motion.Appear
 import ru.vinteno.finni.ui.motion.CoinTarget
@@ -73,12 +83,41 @@ import ru.vinteno.finni.ui.pet.Finni
 import ru.vinteno.finni.ui.pet.Reaction
 import ru.vinteno.finni.ui.theme.FinniColors
 import ru.vinteno.finni.ui.theme.FinniDimens
+import ru.vinteno.finni.ui.theme.FinniMotion
 import ru.vinteno.finni.ui.theme.FinniText
 
 enum class HomeTarget { PLAN, SHOP, PIGGY, SUMMARY, EVENT }
 
 /** Колонка двери с вывеской «Магазин» в правом верхнем углу комнаты. */
 private val DOOR_COLUMN = 96.dp
+
+/** Где стоят вещи и Финни: на столько выше низа комнаты. */
+private val FLOOR = 6.dp
+
+/**
+ * Линия пола на фоне — чуть выше того, где стоят вещи: у картинок внизу прозрачное поле, а тень Финни
+ * лежит под лапами. Так вещи стоят на полу, а не на стыке со стеной.
+ */
+private val FLOOR_DEPTH = 10.dp
+
+/** Окно на стене — обстановка: не нажимается и показывается, только если над Финни хватает места. */
+private val WINDOW = 72.dp
+
+/** С какой высоты экрана, в dp, над Финни хватает места на окно на всех шагах недели. */
+private const val WINDOW_SCREEN_MIN = 800
+
+/** Посылка — Финни по пояс. */
+private val PARCEL = 88.dp
+
+/** Миска: не больше головы Финни. */
+private val BOWL = 56.dp
+
+/**
+ * Полка — картинка 72 dp, верх доски на 31 dp от её верха; мыло 48 dp стоит низом (38 dp) на доске,
+ * поэтому полка ниже мыла на 7 dp.
+ */
+private val SHELF = 72.dp
+private val SHELF_TOP = 7.dp
 
 /** Свободная игра без касаний дольше 30 секунд — Финни засыпает (сценарий §7, свободная игра). */
 private const val SLEEP_AFTER_MS = 30_000L
@@ -100,6 +139,15 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
     var sleeping by remember { mutableStateOf(false) }
     val walk = remember { Animatable(0f) }
     val ballJump = remember { Animatable(0f) }
+    // Еда, которую Финни сейчас ест: в игре он уже сыт, а на экране она лежит, пока идёт анимация.
+    var eatingFood by remember { mutableStateOf<String?>(null) }
+    var foodFading by remember { mutableStateOf(false) }
+    val foodFade = remember { Animatable(1f) }
+    // Пол комнаты и верх экрана в координатах окна — по ним ложится фон комнаты.
+    var floorRoot by remember { mutableFloatStateOf(-1f) }
+    var screenTop by remember { mutableFloatStateOf(0f) }
+    var noteH by remember { mutableIntStateOf(0) }
+    val density = LocalDensity.current
 
     LaunchedEffect(step) { if (step == Step.EVENT) open(HomeTarget.EVENT) }
     // Посылка у двери: Финни замечает коробку, 200 мс, затем idle (шаг 1).
@@ -124,12 +172,24 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
 
     /** Кормление: событийное перемещение к миске, до 800 мс, затем `ест` и обратно (animation-howto §6.4). */
     fun feed() {
-        if (!a.act(g::feed)) return
+        // Еда видна в миске, пока Финни прыгает к ней и ест. Без анимаций — исчезает сразу.
+        if (a.animationOn) eatingFood = foodLayer(w?.purchases.orEmpty())
+        if (!a.act(g::feed)) { eatingFood = null; return }
         scope.launch {
             if (a.animationOn) walk.animateTo(1f, tween(800, easing = FastOutSlowInEasing))
             a.react(Reaction.EAT)
             delay(520)
-            if (a.animationOn) walk.animateTo(0f, tween(800, easing = FastOutSlowInEasing))
+            if (a.animationOn) {
+                // Сразу после «ест» слой еды гаснет за 200 мс, остаётся пустая миска (§7.3).
+                launch {
+                    foodFade.snapTo(1f)
+                    foodFading = true
+                    foodFade.animateTo(0f, tween(FinniMotion.APPEAR_MS, easing = LinearOutSlowInEasing))
+                    eatingFood = null
+                    foodFading = false
+                }
+                walk.animateTo(0f, tween(800, easing = FastOutSlowInEasing))
+            }
         }
     }
 
@@ -154,7 +214,11 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
     }
 
     Box(
-        Modifier.fillMaxSize().pointerInput(Unit) {
+        Modifier.fillMaxSize()
+            .onGloballyPositioned { screenTop = it.positionInRoot().y }
+            // Фон комнаты — под всем экраном: стена за верхней полосой, пол под копилкой и кнопкой.
+            .drawBehind { if (floorRoot >= 0f) drawRoom(floorRoot - screenTop) }
+            .pointerInput(Unit) {
             awaitEachGesture {
                 awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                 lastTouch++
@@ -174,14 +238,35 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
             val middleScroll = rememberScrollState()
             Column(if (compact) Modifier.fillMaxSize().scrollHint(middleScroll).verticalScroll(middleScroll) else Modifier.fillMaxSize()) {
             if (big) TaskNote(s, Modifier.fillMaxWidth().padding(top = 8.dp), ::toShop)
-            BoxWithConstraints((if (compact) Modifier.height(300.dp) else Modifier.weight(1f)).fillMaxWidth().padding(top = 8.dp)) {
+            BoxWithConstraints(
+                (if (compact) Modifier.height(300.dp) else Modifier.weight(1f)).fillMaxWidth().padding(top = 8.dp)
+                    .onGloballyPositioned {
+                        floorRoot = it.positionInRoot().y + it.size.height - with(density) { (FLOOR + FLOOR_DEPTH).toPx() }
+                    },
+            ) {
                 val roomW = maxWidth
                 val roomH = maxHeight
-                // Пол — декоративный разделитель `stroke`, фон комнаты — `bg-sand` главы 1.
-                Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(2.dp).offset(y = (-6).dp).background(FinniColors.Stroke))
+                // Без картинки фона пол — декоративный разделитель `stroke`, как на заглушках.
+                if (Art.missing("room_sand")) {
+                    Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(2.dp).offset(y = -FLOOR).background(FinniColors.Stroke))
+                }
 
                 // Записка занимает всё место слева от двери: название задания — одной строкой.
-                if (!big) TaskNote(s, Modifier.align(Alignment.TopStart).widthIn(max = roomW - DOOR_COLUMN - FinniDimens.CardGap), ::toShop)
+                Box(Modifier.align(Alignment.TopStart).onSizeChanged { noteH = it.height }) {
+                    if (!big) TaskNote(s, Modifier.widthIn(max = roomW - DOOR_COLUMN - FinniDimens.CardGap), ::toShop)
+                }
+
+                // Финни помещается в комнату при любом шрифте: ширина — от высоты комнаты (пропорция 0,47),
+                // и уши не заходят на записку и дверь вверху комнаты.
+                val petW = minOf(120.dp, (roomH - 64.dp) * 0.44f).coerceAtLeast(FinniDimens.PetFull * 0.47f)
+                // Окно — над Финни и под запиской, не ближе 8 dp к макушке с ушами в верхней точке прыжка.
+                // Не хватает места — окна нет: это обстановка, а не функция. Решает высота экрана, а не
+                // комнаты: иначе окно появлялось бы и пропадало между шагами недели, когда меняется низ.
+                val windowTop = with(density) { noteH.toDp() } + 8.dp
+                val finniTop = roomH - FLOOR - petW / 0.47f * 1.09f
+                if (!big && LocalConfiguration.current.screenHeightDp >= WINDOW_SCREEN_MIN && windowTop + WINDOW + 8.dp <= finniTop) {
+                    Picture("okno", WINDOW, Modifier.align(Alignment.TopCenter).offset(y = windowTop))
+                }
 
                 // Дверь с вывеской «Магазин» — вход в покупки после подтверждения плана.
                 Column(Modifier.align(Alignment.TopEnd).widthIn(min = DOOR_COLUMN), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -193,9 +278,9 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
 
                 // Посылка у двери, пока не открыта.
                 if (w != null && w.parcel == null) {
-                    Appear("parcel:${w.number}", Modifier.align(Alignment.BottomEnd).offset(y = (-6).dp)) {
+                    Appear("parcel:${w.number}", Modifier.align(Alignment.BottomEnd).offset(y = -FLOOR)) {
                         Box(Modifier.anchor(a.flights, "parcel").clickable(remember { MutableInteractionSource() }, null) { openParcel() }) {
-                            Picture("posylka", 64.dp, description = a.t("a11y.parcel"))
+                            Picture("posylka", PARCEL, description = a.t("a11y.parcel"))
                         }
                     }
                 }
@@ -208,7 +293,7 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
                 }
                 if ("myachik" in s.progress.inventory) {
                     Box(
-                        Modifier.align(Alignment.BottomEnd).offset(x = (-72).dp, y = (-6).dp)
+                        Modifier.align(Alignment.BottomEnd).offset(x = (-72).dp, y = -FLOOR)
                             .graphicsLayer { translationY = -ballJump.value * 24.dp.toPx() }
                             .clickable(remember { MutableInteractionSource() }, null) {
                                 // Свободная игра: мячик подпрыгивает, Финни — `доволен`. Ничего не даёт.
@@ -218,30 +303,29 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
                     ) { Appear("myachik") { Box(Modifier.size(FinniDimens.MinTouch), contentAlignment = Alignment.Center) { Picture("myachik", 40.dp, description = g.content.item("myachik").name) } } }
                 }
 
-                // Миска на полу; в ней то, что куплено. Ягоды — слоем.
-                val bought = w?.purchases.orEmpty()
-                val foodIn = bought.any { g.content.item(it).impact == Impact.FED } && w?.fed == false
+                // Миска на полу стоит всё время; в ней то, что куплено: крупа, каша или каша с ягодами.
+                val food = if (w?.fed == false) foodLayer(w.purchases) else eatingFood
                 Box(
-                    Modifier.align(Alignment.BottomStart).offset(x = 8.dp, y = (-6).dp)
+                    Modifier.align(Alignment.BottomStart).offset(x = 8.dp, y = -FLOOR)
                         .semantics { contentDescription = a.t("a11y.bowl") }
                         .clickable(remember { MutableInteractionSource() }, null) { if (g.canFeed(s)) feed() },
                 ) {
-                    // Еда в миске и ягоды слоем появляются по правилу появления, одинаково для любой ступеньки.
-                    val bowl = if (!foodIn) "miska" else if ("yagody" in bought) "kasha_yagody" else "kasha"
-                    Appear("bowl:$bowl:${w?.number}") { Picture(bowl, 56.dp) }
+                    Picture("miska", BOWL)
+                    // Еда появляется по правилу появления §7.1, одинаково для любой ступеньки, и гаснет
+                    // после «ест» тоже одинаково — меняется только этот слой.
+                    if (food != null) Appear("food:$food:${w?.number}") {
+                        Picture(food, BOWL, Modifier.graphicsLayer { alpha = if (foodFading) foodFade.value else 1f })
+                    }
                 }
-                // Мыло на полке — пока куплено и не использовано.
                 // Полка на стене — обстановка; на ней мыло, пока куплено и не использовано.
-                Column(Modifier.align(Alignment.CenterStart).offset(y = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(Modifier.align(Alignment.CenterStart).offset(y = 8.dp).size(SHELF, SHELF + SHELF_TOP)) {
+                    Picture("polka", SHELF, Modifier.offset(y = SHELF_TOP))
                     // Пустая полка не нажимается: у нажимаемого всегда есть что-то видимое.
-                    Box(Modifier.size(48.dp)) {
-                        if (w != null && g.canWash(s)) Appear("soap:${w.number}") {
-                            Box(Modifier.clickable(remember { MutableInteractionSource() }, null) { wash() }) {
-                                Picture("mylo", 48.dp, description = g.content.item("mylo").name)
-                            }
+                    if (w != null && g.canWash(s)) Appear("soap:${w.number}", Modifier.align(Alignment.TopCenter)) {
+                        Box(Modifier.clickable(remember { MutableInteractionSource() }, null) { wash() }) {
+                            Picture("mylo", 48.dp, description = g.content.item("mylo").name)
                         }
                     }
-                    Shelf()
                 }
 
                 // Финни на своём месте, не мельче 96 dp.
@@ -253,9 +337,6 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
                     Modifier.align(Alignment.BottomCenter).offset(x = toBowl * walk.value)
                         .clickable(remember { MutableInteractionSource() }, null) { poke++ },
                 ) {
-                    // Финни помещается в комнату при любом шрифте: ширина — от высоты комнаты (пропорция 0,47),
-                    // и уши не заходят на записку и дверь вверху комнаты.
-                    val petW = minOf(120.dp, (roomH - 64.dp) * 0.44f).coerceAtLeast(FinniDimens.PetFull * 0.47f)
                     Finni(
                         s.profile.fur, s.profile.accessory, Modifier.width(petW),
                         reaction = if (sleeping) Reaction.SLEEP else a.reaction, reactionKey = a.reactionKey,
@@ -383,24 +464,6 @@ private fun BottomPlate(lines: List<String>, picture: String?, ok: String, modif
             lines.drop(1).forEach { Txt(it) }
             Box(Modifier.height(4.dp))
             MainButton(ok, onOk)
-        }
-    }
-}
-
-/** Полка на стене — обстановка комнаты: доска на двух кронштейнах, а не черта в воздухе. */
-@Composable
-private fun Shelf() {
-    androidx.compose.foundation.Canvas(Modifier.width(72.dp).height(16.dp)) {
-        val c = FinniColors.StrokeStrong
-        val board = 6.dp.toPx()
-        drawRoundRect(c, size = androidx.compose.ui.geometry.Size(size.width, board),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(board / 2))
-        val w = 2.dp.toPx()
-        listOf(size.width * 0.2f, size.width * 0.8f).forEach { x ->
-            val p = androidx.compose.ui.graphics.Path().apply {
-                moveTo(x, board); lineTo(x, size.height); lineTo(x + if (x < size.width / 2) 10.dp.toPx() else -10.dp.toPx(), board)
-            }
-            drawPath(p, c, style = androidx.compose.ui.graphics.drawscope.Stroke(w, cap = androidx.compose.ui.graphics.StrokeCap.Round))
         }
     }
 }

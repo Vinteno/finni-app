@@ -31,6 +31,7 @@ import ru.vinteno.finni.ui.components.CoinRow
 import ru.vinteno.finni.ui.components.DirectionNumbers
 import ru.vinteno.finni.ui.components.ExplainPlate
 import ru.vinteno.finni.ui.components.GameScreen
+import ru.vinteno.finni.ui.components.KiraFigure
 import ru.vinteno.finni.ui.components.MainButton
 import ru.vinteno.finni.ui.components.Picture
 import ru.vinteno.finni.ui.components.ProgressCells
@@ -201,11 +202,16 @@ fun EventScreen(s: GameState, onDone: () -> Unit) {
     ) {
         // Все три фигуры в один ряд: на экране 360 × 640 dp строки события помещаются без прокрутки.
         Row(Modifier.fillMaxWidth().wrapContentWidth(), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Finni(s.profile.fur, s.profile.accessory, Modifier.width(80.dp),
+            val finniW = 80.dp
+            Finni(s.profile.fur, s.profile.accessory, Modifier.width(finniW),
                 reaction = Reaction.HAPPY, reactionKey = 1, animate = a.animationOn, description = s.profile.petName)
-            if (given) s.chapter.goalId?.let { id -> Picture(id, 56.dp, description = g.content.goal(id).name) }
-            // Кира появляется здесь впервые — по правилу появления §7.1.
-            Appear("kira") { Picture("kira", 96.dp, description = a.t("a11y.kira")) }
+            // Подарок или открытка — на одном месте, одного размера и появляются одинаково: оба исхода
+            // выглядят наравне (инвариант 3).
+            val present = if (given) s.chapter.goalId else "otkrytka"
+            val presentName = if (given) s.chapter.goalId?.let { g.content.goal(it).name } else a.t("a11y.card")
+            present?.let { Appear("event:$it") { Picture(it, 56.dp, description = presentName) } }
+            // Кира появляется здесь впервые — по правилу появления §7.1; в масштабе Финни, своего роста.
+            Appear("kira") { KiraFigure(finniW, description = a.t("a11y.kira")) }
         }
         lines.forEach { Txt(it, FinniText.Subtitle) }
     }
