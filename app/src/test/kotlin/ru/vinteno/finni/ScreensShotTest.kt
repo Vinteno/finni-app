@@ -119,15 +119,16 @@ class ScreensShotTest {
         return game.confirmPlan(planned(game.nextWeek(s)))
     }
 
-    @Test fun shopF5() = shot("12_shop_f5", week2()) { ShopScreen(it) {} }
+    /** Задание F5 — на копилке после взноса недели 2 (QA-M3). */
+    @Test fun piggyF5() = shot("12_piggy_f5", game.deposit(game.leaveShop(week2()))) { PiggyScreen(it) {} }
     @Test fun event() = shot("13_event", run {
-        var s = game.chooseBall(week2(), false)
-        s = game.leaveShop(s); s = game.deposit(s)
+        var s = game.deposit(game.leaveShop(week2()))
+        s = game.chooseBall(s, false)
         game.finishWeek(s, SummaryChoice.KEEP_PLAN)
     }) { EventScreen(it) {} }
     @Test fun eventB() = shot("13b_event_b", run {
-        var s = game.chooseBall(week2(), true)
-        s = game.leaveShop(s); s = game.deposit(s)
+        var s = game.deposit(game.leaveShop(week2()))
+        s = game.chooseBall(s, true)
         game.finishWeek(s, SummaryChoice.KEEP_PLAN)
     }) { EventScreen(it) {} }
 

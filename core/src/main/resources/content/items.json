@@ -10,8 +10,8 @@
     { "id": "kacheli", "name": "Качели",          "accusative": "качели",  "category": "want", "price": 15, "type": "thing" }
   ],
   "goals": [
-    { "id": "podarok_myach",   "name": "Мяч для Киры",     "price": 30, "chapter": 1 },
-    { "id": "podarok_kniga",   "name": "Книжка для Киры",  "price": 40, "chapter": 1 },
-    { "id": "podarok_samokat", "name": "Самокат для Киры", "price": 45, "chapter": 1 }
+    { "id": "podarok_myach",   "name": "Мяч для Киры",     "accusative": "мяч",     "price": 30, "chapter": 1 },
+    { "id": "podarok_kniga",   "name": "Книжка для Киры",  "accusative": "книжку",  "price": 40, "chapter": 1 },
+    { "id": "podarok_samokat", "name": "Самокат для Киры", "accusative": "самокат", "price": 45, "chapter": 1 }
   ]
 }

@@ -251,19 +251,14 @@ class Game(val content: Content) {
 
     /**
      * Шаг закрывается выходом с экрана, а не тратой. F1 засчитывается и при пустой корзине (I7, I8).
-     * F5 при копилке меньше цены мячика тоже засчитывается: выбора нет из-за денег, а не из-за
-     * отказа, и ноль в «Копилке» не должен стоить награды — иначе это скрытый вердикт (I19).
+     * Задание выбора F5 живёт на экране копилки, а не в магазине (QA-M3).
      */
     fun leaveShop(s: GameState): GameState {
         val w = s.requireWeek()
         rule(w.planConfirmed) { "До подтверждения плана магазин закрыт" }
         rule(s.phase == Phase.WEEK) { "После итога недели магазин закрыт" }
         var next = s.copy(week = w.copy(shopVisited = true))
-        when (weekTaskTemplate(next)) {
-            TaskTemplate.SHOP -> next = completeTask(next)
-            TaskTemplate.CHOICE -> if (!w.taskDone && !ballOffer(s).available) next = completeTask(next)
-            null -> {}
-        }
+        if (weekTaskTemplate(next) == TaskTemplate.SHOP) next = completeTask(next)
         return next
     }
 
@@ -271,6 +266,20 @@ class Game(val content: Content) {
 
     private fun weekTaskTemplate(s: GameState): TaskTemplate? =
         weekContent(s).taskId?.let { ch.task(it).template }
+
+    /** Плановый взнос этой недели ещё не сделан. */
+    private fun depositPending(s: GameState): Boolean = s.requireWeek().let { !it.deposited && it.plan.save > 0 }
+
+    /** Задание выбора этой недели ещё не пройдено — шаг «Копилка» остаётся в последовательности (QA-M3). */
+    fun choicePending(s: GameState): Boolean =
+        s.phase == Phase.WEEK && weekTaskTemplate(s) == TaskTemplate.CHOICE && !s.requireWeek().taskDone
+
+    /**
+     * Задание F5 открывается на экране копилки сразу после планового взноса, при нуле в плане — сразу
+     * (QA-M3). Так к выбору взнос уже лежит в копилке при любом порядке шагов, и «В копилке мало
+     * монет» видит только тот, кто действительно не откладывал.
+     */
+    fun choiceOpen(s: GameState): Boolean = choicePending(s) && s.requireWeek().planConfirmed && !depositPending(s)
 
     /** Награда падает в копилку, а не в кошелёк; повтор не даёт ничего — E05, E06. */
     private fun completeTask(s: GameState): GameState {
@@ -311,9 +320,7 @@ class Game(val content: Content) {
      * нажимает «Понятно». Задание засчитывается с наградой — отсутствие денег не отказ (I19).
      */
     fun acknowledgeNoBall(s: GameState): GameState {
-        val w = s.requireWeek()
-        rule(s.phase == Phase.WEEK && w.planConfirmed) { "Задание — после подтверждения плана" }
-        rule(weekTaskTemplate(s) == TaskTemplate.CHOICE && !w.taskDone) { "Задания выбора нет или оно пройдено" }
+        rule(choiceOpen(s)) { "Задание выбора — на копилке после взноса" }
         rule(!ballOffer(s).available) { "Выбор доступен — его нужно сделать" }
         return completeTask(s)
     }
@@ -323,6 +330,7 @@ class Game(val content: Content) {
         val w = s.requireWeek()
         rule(w.planConfirmed) { "До подтверждения плана тратить нельзя" }
         rule(s.phase == Phase.WEEK) { "После итога недели не тратят" }
+        rule(choiceOpen(s)) { "Задание выбора — на копилке после взноса" }
         val offer = ballOffer(s)
         rule(offer.available) { "Выбор не предлагается: в копилке мало монет или задание пройдено" }
         val itemId = ch.task(weekContent(s).taskId!!).itemId!!
@@ -374,10 +382,14 @@ class Game(val content: Content) {
     /** Накоплено не меньше цены цели — «Подарок готов». Ничего не списывает (I4). */
     fun goalReached(s: GameState): Boolean = s.progress.savings >= goalPrice(s)
 
-    /** Кнопка откладывает ровно `planSave`; при нуле и при закрытой цели её нет (I7, E16). */
+    /**
+     * Кнопка откладывает ровно `planSave`; при нуле её нет (I7). Взнос исполняется, как запланирован,
+     * и при набранной цели: излишек остаётся в копилке (QA-M2, E16). Иначе на итоге появлялась бы
+     * разница, которой ребёнок не делал, — сравнение плана с фактом ломалось бы (ТЗ 2.5.5).
+     */
     fun canDeposit(s: GameState): Boolean {
         val w = s.requireWeek()
-        return s.phase == Phase.WEEK && w.planConfirmed && !w.deposited && w.plan.save > 0 && !goalReached(s)
+        return s.phase == Phase.WEEK && w.planConfirmed && !w.deposited && w.plan.save > 0
     }
 
     fun deposit(s: GameState): GameState {
@@ -472,7 +484,8 @@ class Game(val content: Content) {
     /**
      * Текущий шаг недели. Порядок свободный, кроме одного — до подтверждения плана тратить нельзя.
      * Шаг закрывается выходом с экрана, а не тратой (I7): зашёл в магазин и вышел — шаг пройден.
-     * При «Копилке» 0 и при закрытой цели шага «Отложить» нет, кнопка ведёт сразу на итог.
+     * При «Копилке» 0 шага «Отложить» нет, кнопка ведёт сразу на итог. Исключение — неделя с
+     * заданием выбора: шаг «Копилка» стоит, пока задание не пройдено, даже при нуле (QA-M3).
      */
     fun nextStep(s: GameState): Step {
         when (s.phase) {
@@ -489,6 +502,7 @@ class Game(val content: Content) {
             !w.planConfirmed -> Step.PLAN
             !w.shopVisited -> Step.SHOP
             canFeed(s) || canWash(s) -> Step.CARE
+            choicePending(s) -> Step.SAVE
             canDeposit(s) && !w.piggyVisited -> Step.SAVE
             else -> Step.SUMMARY
         }

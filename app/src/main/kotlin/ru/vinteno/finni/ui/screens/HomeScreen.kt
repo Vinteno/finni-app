@@ -283,7 +283,8 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
                     Step.SHOP -> MainButton(a.t("step.shop"), { open(HomeTarget.SHOP) })
                     // Кнопка называет то действие, которое сделает: сначала покормить, потом умыть.
                     Step.CARE -> MainButton(a.t(if (g.canFeed(s)) "step.care" else "step.wash"), { if (g.canFeed(s)) feed() else wash() })
-                    Step.SAVE -> MainButton(a.t("step.save"), { open(HomeTarget.PIGGY) })
+                    // На неделе с заданием F5 шаг «Копилка» стоит и тогда, когда откладывать нечего (QA-M3).
+                    Step.SAVE -> MainButton(a.t(if (g.canDeposit(s)) "step.save" else "step.piggy"), { open(HomeTarget.PIGGY) })
                     Step.SUMMARY -> MainButton(a.t("step.summary"), { open(HomeTarget.SUMMARY) })
                     Step.NEXT_WEEK -> MainButton(a.t("step.nextWeek"), { a.act(g::nextWeek) })
                     else -> {}

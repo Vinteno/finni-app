@@ -10,7 +10,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -19,6 +26,7 @@ import ru.vinteno.finni.core.model.GameState
 import ru.vinteno.finni.core.model.Plan
 import ru.vinteno.finni.core.model.SummaryChoice
 import ru.vinteno.finni.ui.app
+import ru.vinteno.finni.ui.components.Coin
 import ru.vinteno.finni.ui.components.CoinRow
 import ru.vinteno.finni.ui.components.DirectionNumbers
 import ru.vinteno.finni.ui.components.ExplainPlate
@@ -29,10 +37,13 @@ import ru.vinteno.finni.ui.components.ProgressCells
 import ru.vinteno.finni.ui.components.SecondaryButton
 import ru.vinteno.finni.ui.components.Txt
 import ru.vinteno.finni.ui.motion.Appear
+import ru.vinteno.finni.ui.motion.SlideUp
 import ru.vinteno.finni.ui.motion.CoinTarget
 import ru.vinteno.finni.ui.motion.anchor
 import ru.vinteno.finni.ui.pet.Finni
 import ru.vinteno.finni.ui.pet.Reaction
+import ru.vinteno.finni.ui.theme.FinniColors
+import ru.vinteno.finni.ui.theme.FinniDimens
 import ru.vinteno.finni.ui.theme.FinniText
 
 /** Одна клетка копилки — пять монет (сценарий §5а, гайд §10.9). */
@@ -40,8 +51,9 @@ private const val COINS_PER_CELL = 5
 
 /**
  * Копилка — сценарий главы 1, шаг 7. Сумма здесь не выбирается: кнопка откладывает ровно то,
- * что стоит в плане. При нуле в плане и при закрытой цели кнопки нет. Цель не покупается
- * кнопкой: «Подарок готов» ничего не списывает (I4).
+ * что стоит в плане, и при набранной цели тоже — излишек остаётся в копилке (QA-M2). При нуле в
+ * плане кнопки нет. Цель не покупается кнопкой: «Подарок готов» ничего не списывает (I4).
+ * На неделе 2 после взноса здесь же открывается задание F5 (QA-M3).
  */
 @Composable
 fun PiggyScreen(s: GameState, onBack: () -> Unit) {
@@ -50,26 +62,49 @@ fun PiggyScreen(s: GameState, onBack: () -> Unit) {
     val goal = g.content.goal(s.chapter.goalId ?: return)
     val saved = s.progress.savings
     val reached = g.goalReached(s)
-    // Системное «назад» закрывает шаг «Отложить» так же, как кнопка на экране.
-    BackHandler { a.act(g::leavePiggy); onBack() }
+    var ballPlate by remember { mutableStateOf<List<String>?>(null) }
+    // Задание F5 — на копилке сразу после взноса (QA-M3). Открывается, когда монеты взноса долетели:
+    // ребёнок видит, как заполнились клетки, и выбирает уже с этими монетами в копилке.
+    val taskOpen = g.choiceOpen(s) && a.flights.savingsPending == 0
+    // Пока выбор не сделан, на экране только выбор; объяснение после выбора — там же, с «Понятно».
+    val taskMode = taskOpen || ballPlate != null
+    val noBall = taskOpen && !g.ballOffer(s).available
+    fun leave() { a.act(g::leavePiggy); onBack() }
+    // Системное «назад» закрывает шаг так же, как кнопка на экране; задание F5 остаётся ждать.
+    BackHandler { leave() }
     GameScreen(
-        title = a.t("piggy.title"),
+        title = a.t(if (taskMode) "f5.title" else "piggy.title"),
         wallet = s.progress.wallet,
-        onBack = { a.act(g::leavePiggy); onBack() },
+        onBack = ::leave,
         backDescription = a.t("common.back"),
         titleAside = { PetHead(s, live = true) },
-        bottom = if (!g.canDeposit(s)) null else ({
-            val save = s.week!!.plan.save
-            MainButton(a.f("piggy.deposit", "n" to save), onClick = {
-                // `доволен` одинаков для любой суммы взноса — разная реакция была бы оценкой.
-                if (a.act(g::deposit)) {
-                    a.react(Reaction.HAPPY)
-                    // Монеты летят из кошелька в копилку; клетки заполняются по мере прилёта.
-                    a.flights.launch("wallet", "piggy", save, CoinTarget.SAVINGS, a.animationOn)
-                }
+        bottom = when {
+            ballPlate != null -> ({ MainButton(a.t("common.ok"), onClick = { ballPlate = null }) })
+            // В копилке меньше цены мячика: «Понятно» засчитывает задание с наградой (I19).
+            noBall -> ({ MainButton(a.t("common.ok"), onClick = { a.act(g::acknowledgeNoBall) }) })
+            taskMode || !g.canDeposit(s) -> null
+            else -> ({
+                val save = s.week!!.plan.save
+                MainButton(a.f("piggy.deposit", "n" to save), onClick = {
+                    // `доволен` одинаков для любой суммы взноса — разная реакция была бы оценкой.
+                    if (a.act(g::deposit)) {
+                        a.react(Reaction.HAPPY)
+                        // Монеты летят из кошелька в копилку; клетки заполняются по мере прилёта.
+                        a.flights.launch("wallet", "piggy", save, CoinTarget.SAVINGS, a.animationOn)
+                    }
+                })
             })
-        }),
+        },
     ) {
+        if (taskOpen) BallChoice(s) { took ->
+            if (a.act { g.chooseBall(it, took) }) {
+                // Одна и та же реакция при обоих решениях — самое опасное место главы для инварианта 8.
+                a.react(Reaction.HAPPY)
+                ballPlate = a.explain.afterBall(a.state.value, took)
+            }
+        }
+        ballPlate?.let { lines -> SlideUp(true) { ExplainPlate(lines, onClose = { ballPlate = null }) { PetIcon(s) } } }
+        if (taskMode) return@GameScreen
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Picture(goal.id, 96.dp, description = goal.name)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -153,7 +188,7 @@ fun EventScreen(s: GameState, onDone: () -> Unit) {
     val given = s.progress.savings >= g.goalPrice(s) || s.eventOutcome == EventOutcome.GIFT_GIVEN
     val name = s.profile.petName
     val lines = listOf(a.t("event.1")) + if (given) {
-        listOf(a.t("event.a.2"), a.t("event.a.3"))
+        listOf(a.f("event.a.2", "what" to g.content.goal(s.chapter.goalId!!).accusative), a.t("event.a.3"))
     } else {
         listOf(a.t("event.b.2"), a.f("event.b.3", "name" to name), a.t("event.b.4"))
     }
@@ -173,5 +208,42 @@ fun EventScreen(s: GameState, onDone: () -> Unit) {
             Appear("kira") { Picture("kira", 96.dp, description = a.t("a11y.kira")) }
         }
         lines.forEach { Txt(it, FinniText.Subtitle) }
+    }
+}
+
+/**
+ * Задание F5 — сценарий главы 1, неделя 2, шаг 7 (QA-M3). Последствие показано до выбора, обе кнопки
+ * одинаковые: ни одно решение не помечено верным. Мячик платится только из копилки. Вопрос
+ * задания — заголовок экрана, в карточке его нет (QA-M9).
+ */
+@Composable
+private fun BallChoice(s: GameState, onChoose: (Boolean) -> Unit) {
+    val a = app()
+    val offer = a.game.ballOffer(s)
+    val shape = RoundedCornerShape(FinniDimens.RadiusCard)
+    Column(
+        Modifier.fillMaxWidth().background(FinniColors.Surface, shape).border(FinniDimens.Outline, FinniColors.StrokeStrong, shape)
+            .padding(FinniDimens.CardPadding),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        val ball = a.game.content.item("myachik")
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Picture("myachik", 48.dp, description = ball.name)
+            // Что выбирается и сколько стоит — рядом с картинкой, как на карточке товара (§10.6).
+            Txt(ball.name, FinniText.Subtitle)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Coin(20.dp)
+                Txt(ball.price.toString(), FinniText.Subtitle)
+            }
+        }
+        if (offer.available) {
+            Txt(a.f("f5.preview", "n" to offer.price))
+            Txt(a.f("f5.left", "n" to offer.savingsAfter, "goal" to offer.goalPrice))
+            Txt(a.t(if (offer.giftStillPossible) "f5.giftYes" else "f5.giftNo"))
+            SecondaryButton(a.t("f5.take"), onClick = { onChoose(true) })
+            SecondaryButton(a.t("f5.keep"), onClick = { onChoose(false) })
+        } else {
+            Txt(a.t("f5.notEnough"))
+        }
     }
 }

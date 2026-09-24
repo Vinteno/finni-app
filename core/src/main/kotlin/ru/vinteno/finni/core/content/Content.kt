@@ -44,7 +44,14 @@ data class Item(
 }
 
 @Serializable
-data class Goal(val id: String, val name: String, val price: Int, val chapter: Int)
+data class Goal(
+    val id: String,
+    val name: String,
+    val price: Int,
+    val chapter: Int,
+    /** Готовая форма для «Ты подарил Кире {what}.» — склонение не генерируется (I8). */
+    val accusative: String = name,
+)
 
 @Serializable
 data class Shelf(

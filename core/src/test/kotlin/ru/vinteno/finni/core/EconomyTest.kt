@@ -241,8 +241,8 @@ class EconomyTest {
     @Test fun `E15 достигнутая цель не списывается на копилке и не отменяет отметку взноса`() {
         var s = game.finishWeek(canonicalWeek1(), SummaryChoice.KEEP_PLAN)
         s = toPlan(game.nextWeek(s))
-        s = game.chooseBall(game.leaveShop(s), take = false)
-        s = game.deposit(s)
+        s = game.deposit(game.leaveShop(s))
+        s = game.chooseBall(s, take = false) // F5 — на копилке после взноса (QA-M3)
         assertEquals(40, s.progress.savings)
         assertTrue(game.goalReached(s)) // «Накопил 40. Подарок готов.» — ничего не списано
         s = game.finishWeek(s, SummaryChoice.KEEP_PLAN)
@@ -253,8 +253,8 @@ class EconomyTest {
         assertEquals(0, s.progress.savings) // списание — на событии
     }
 
-    @Test fun `E16 при закрытой цели взнос не предлагается, монеты остаются в кошельке`() {
-        // Дешёвая цель 30: взнос 20 и награда 10 закрывают её на первой неделе.
+    @Test fun `E16 при закрытой цели взнос исполняется, как запланирован, излишек в копилке`() {
+        // Дешёвая цель 30: взнос 22 и награда 10 закрывают её на первой неделе.
         var s = toPlan(newGame("podarok_myach"), Plan(8, 0, 22))
         s = game.leaveShop(s)
         s = game.deposit(s)
@@ -262,7 +262,12 @@ class EconomyTest {
         s = game.finishWeek(s, SummaryChoice.TAKE_ACTUAL)
         s = toPlan(game.nextWeek(s), Plan(8, 0, 10))
         assertTrue(game.goalReached(s))
-        assertFalse(game.canDeposit(s))
+        assertTrue(game.canDeposit(s))                       // QA-M2: взнос по плану предлагается
+        val wallet = s.progress.wallet
+        s = game.deposit(s)
+        assertEquals(42, s.progress.savings)                  // излишек остаётся в копилке
+        assertEquals(wallet - 10, s.progress.wallet)
+        assertEquals(Plan(0, 0, 10), game.summary(s).fact)   // план и факт по копилке совпали — призрачной разницы нет
     }
 
     @Test fun `E17 счётчики только растут`() {
@@ -300,14 +305,15 @@ class EconomyTest {
 
     /** Таблица F5 из сценария §8: в копилке 20 после недели 1 со взносом 10. */
     @Test fun `F5 — последствие мячика при трёх целях`() {
+        // Выбор — на копилке после взноса недели 2 (QA-M3): в копилке 20 + взнос.
         fun week2(goal: String, save: Int): GameState {
             val s = game.finishWeek(canonicalWeek1(goal), SummaryChoice.KEEP_PLAN)
-            return toPlan(game.nextWeek(s), Plan(10, 10, save))
+            return game.deposit(toPlan(game.nextWeek(s), Plan(10, 10, save)))
         }
         val cheap10 = game.ballOffer(week2("podarok_myach", 10))
         assertTrue(cheap10.available)
-        assertEquals(5, cheap10.savingsAfter)
-        assertFalse(cheap10.giftStillPossible) // 20 − 15 + 10 + 10 = 25 < 30
+        assertEquals(15, cheap10.savingsAfter)
+        assertFalse(cheap10.giftStillPossible) // 30 − 15 + 10 = 25 < 30
         assertTrue(game.ballOffer(week2("podarok_myach", 15)).giftStillPossible) // «если в плане стояло 15»
         assertFalse(game.ballOffer(week2("podarok_kniga", 10)).giftStillPossible)
         assertFalse(game.ballOffer(week2("podarok_samokat", 15)).giftStillPossible)
@@ -315,20 +321,53 @@ class EconomyTest {
 
     @Test fun `F5 — мячик только из копилки, реакция и награда одинаковы при обоих решениях`() {
         val base = game.finishWeek(canonicalWeek1(), SummaryChoice.KEEP_PLAN)
-        val s = toPlan(game.nextWeek(base))
+        val s = game.deposit(toPlan(game.nextWeek(base)))
         val taken = game.chooseBall(s, take = true)
         val kept = game.chooseBall(s, take = false)
         assertEquals(s.progress.wallet, taken.progress.wallet)
-        assertEquals(20 - 15 + 10, taken.progress.savings)
-        assertEquals(20 + 10, kept.progress.savings)
+        assertEquals(30 - 15 + 10, taken.progress.savings)
+        assertEquals(30 + 10, kept.progress.savings)
         assertTrue("myachik" in taken.progress.inventory)
     }
 
     @Test fun `F5 — при копилке меньше 15 выбор не предлагается`() {
         var s = toPlan(newGame(), Plan(10, 10, 0))
         s = game.finishWeek(game.leaveShop(s), SummaryChoice.KEEP_PLAN) // в копилке только награда 10
-        s = toPlan(game.nextWeek(s))
+        s = toPlan(game.nextWeek(s), Plan(10, 10, 0))
+        assertTrue(game.choiceOpen(s))                  // при нуле в плане задание открыто сразу
         assertFalse(game.ballOffer(s).available)
+    }
+
+    @Test fun `QA-M3 F5 открывается на копилке после взноса, а не до`() {
+        val base = game.finishWeek(canonicalWeek1(), SummaryChoice.KEEP_PLAN)
+        var s = toPlan(game.nextWeek(base))
+        assertFalse(game.choiceOpen(s))
+        assertThrows { game.chooseBall(s, true) }
+        s = game.leaveShop(s)
+        assertFalse(s.week!!.taskDone)                  // магазин задание F5 больше не закрывает
+        s = game.deposit(s)
+        assertTrue(game.choiceOpen(s))
+        assertTrue(game.ballOffer(s).available)
+    }
+
+    @Test fun `QA-M3 взнос 5 открывает мячик тому, кто откладывал`() {
+        var s = toPlan(newGame(), Plan(10, 10, 0))
+        s = game.finishWeek(game.leaveShop(s), SummaryChoice.KEEP_PLAN) // награда 10
+        s = game.deposit(toPlan(game.nextWeek(s), Plan(10, 10, 5)))      // 10 + 5 = 15
+        assertTrue(game.ballOffer(s).available)
+    }
+
+    @Test fun `QA-M3 шаг Копилка на неделе 2 стоит, пока задание не пройдено, даже при нуле`() {
+        var s = toPlan(newGame(), Plan(10, 10, 0))
+        s = game.finishWeek(game.leaveShop(s), SummaryChoice.KEEP_PLAN)
+        s = toPlan(game.nextWeek(s), Plan(10, 10, 0))
+        s = game.leaveShop(s)
+        assertEquals(Step.SAVE, game.nextStep(s))
+        s = game.leavePiggy(s)                          // вышел, не ответив, — шаг остаётся
+        assertEquals(Step.SAVE, game.nextStep(s))
+        s = game.acknowledgeNoBall(s)
+        assertEquals(Step.SUMMARY, game.nextStep(s))
+        assertEquals(10, s.week!!.taskReward)           // I19: награда и при нехватке монет
     }
 
     @Test fun `неделя 2 с перенесённым остатком — качели помещаются`() {

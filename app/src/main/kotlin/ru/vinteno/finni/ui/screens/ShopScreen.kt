@@ -34,7 +34,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import ru.vinteno.finni.core.content.Category
 import ru.vinteno.finni.core.content.Shelf
-import ru.vinteno.finni.core.content.TaskTemplate
 import ru.vinteno.finni.core.engine.Checkout
 import ru.vinteno.finni.core.engine.Direction
 import ru.vinteno.finni.core.engine.requireWeek
@@ -42,7 +41,6 @@ import ru.vinteno.finni.core.model.GameState
 import ru.vinteno.finni.ui.app
 import ru.vinteno.finni.ui.components.Coin
 import ru.vinteno.finni.ui.components.DirectionLabel
-import ru.vinteno.finni.ui.components.ExplainPlate
 import ru.vinteno.finni.ui.components.FinniDialog
 import ru.vinteno.finni.ui.components.FinniIcons
 import ru.vinteno.finni.ui.components.GameScreen
@@ -50,10 +48,8 @@ import ru.vinteno.finni.ui.components.Icon
 import ru.vinteno.finni.ui.components.MainButton
 import ru.vinteno.finni.ui.components.Picture
 import ru.vinteno.finni.ui.components.PressCard
-import ru.vinteno.finni.ui.components.SecondaryButton
 import ru.vinteno.finni.ui.components.Txt
 import ru.vinteno.finni.ui.components.bigFont
-import ru.vinteno.finni.ui.motion.SlideUp
 import ru.vinteno.finni.ui.components.directionStyle
 import ru.vinteno.finni.ui.pet.Reaction
 import ru.vinteno.finni.ui.theme.FinniColors
@@ -64,8 +60,8 @@ import ru.vinteno.finni.ui.theme.FinniText
 private enum class Ask { NONE, WANT, SAVINGS, NO_SAVINGS }
 
 /**
- * Магазин — единственное место, где уходят деньги (сценарий главы 1, шаг 4). Полки со ступеньками,
- * хотелка главы, в неделю F5 — выбор «мячик или подарок». Корзина и есть подтверждение покупки:
+ * Магазин — единственное место, где уходят деньги за покупки (сценарий главы 1, шаг 4). Полки со
+ * ступеньками и хотелка главы. Мячика здесь нет: задание F5 живёт на копилке (QA-M3). Корзина и есть подтверждение покупки:
  * список с ценой и меткой категории, сумма, «Купить». Кнопка не гаснет при нехватке — открывается окно.
  */
 @Composable
@@ -79,7 +75,6 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
     var wantPicked by remember(w.number) { mutableStateOf(false) }
     var ask by remember { mutableStateOf(Ask.NONE) }
     var agreedWant by remember { mutableStateOf(false) }
-    var ballPlate by remember { mutableStateOf<List<String>?>(null) }
     val boughtThisVisit = remember { mutableStateListOf<String>() }
 
     val wantId = g.content.chapter1.chapterWantId
@@ -119,44 +114,20 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
         }
     }
 
-    // Режим задания F5 (сценарий, неделя 2, шаг 4): пока выбор не сделан, на экране только
-    // мячик и копилка — полки появляются после выбора. Иначе экран — 38 слов при потолке 25.
-    // Заголовок экрана в этом режиме — вопрос задания, а не вопрос полок (QA-M9).
-    // Задание выбора ещё не пройдено — с выбором или с «В копилке мало монет» (тогда «Понятно»).
-    val choicePending = week.taskId?.let { g.content.chapter1.task(it) }?.template == TaskTemplate.CHOICE && !w.taskDone
-    val noBall = choicePending && !g.ballOffer(s).available
-    // Объяснение после выбора — тоже часть режима задания: полки открываются после «Понятно».
-    val taskMode = choicePending || ballPlate != null
-
     Box(Modifier.fillMaxSize()) {
         GameScreen(
-            title = a.t(if (taskMode) "f5.title" else "shop.title"),
+            title = a.t("shop.title"),
             wallet = s.progress.wallet,
             onBack = ::leave,
             backDescription = a.t("common.back"),
             titleAside = { PetHead(s, live = true) },
-            bottom = if (ballPlate != null) ({
-                MainButton(a.t("common.ok"), onClick = { ballPlate = null })
-            }) else if (noBall) ({
-                MainButton(a.t("common.ok"), onClick = { a.act(g::acknowledgeNoBall) })
-            }) else if (cart.isEmpty() || taskMode) null else ({
+            bottom = if (cart.isEmpty()) null else ({
                 // Внизу — только сумма и «Купить»: на экране 360 × 640 dp полный список корзины
                 // закрывал полку с мылом. Сам список с ценами и метками стоит под полками.
                 Txt(a.f("shop.cart.total", "n" to g.quote(s, cart).total), FinniText.Subtitle)
                 MainButton(a.t("shop.buy"), onClick = { proceed(g.quote(s, cart), false) })
             }),
         ) {
-            val task = week.taskId?.let { g.content.chapter1.task(it) }
-            // Вопрос задания — заголовок экрана в режиме задания, в карточке его нет.
-            if (task?.template == TaskTemplate.CHOICE && !w.taskDone) BallChoice(s, showTitle = false) { took ->
-                if (a.act { g.chooseBall(it, took) }) {
-                    // Одна и та же реакция при обоих решениях — самое опасное место главы для инварианта 8.
-                    a.react(Reaction.HAPPY)
-                    ballPlate = a.explain.afterBall(a.state.value, took)
-                }
-            }
-            ballPlate?.let { lines -> SlideUp(true) { ExplainPlate(lines, onClose = { ballPlate = null }) { PetIcon(s) } } }
-            if (!taskMode) {
             Txt(a.f("shop.hint", "n" to g.needLeft(s).coerceAtLeast(0)), FinniText.Subtitle)
             val wantCard: (@Composable (Modifier, Boolean) -> Unit)? = if (g.owns(s, wantId)) null else { m, wide ->
                 val item = g.content.item(wantId)
@@ -181,7 +152,6 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
                 }
             }
             if (cart.isNotEmpty()) CartBox(s, cart)
-            }
         }
 
         val q = if (cart.isEmpty()) null else g.quote(s, cart)
@@ -346,45 +316,6 @@ private fun CartBox(s: GameState, cart: List<String>) {
                     }
                 }
             }
-        }
-    }
-}
-
-/**
- * Задание F5 — сценарий главы 1, неделя 2, шаг 4. Последствие показано до выбора, обе кнопки
- * одинаковые: ни одно решение не помечено верным. Мячик платится только из копилки.
- */
-@Composable
-private fun BallChoice(s: GameState, showTitle: Boolean, onChoose: (Boolean) -> Unit) {
-    val a = app()
-    val offer = a.game.ballOffer(s)
-    val shape = RoundedCornerShape(FinniDimens.RadiusCard)
-    Column(
-        Modifier.fillMaxWidth().background(FinniColors.Surface, shape).border(FinniDimens.Outline, FinniColors.StrokeStrong, shape)
-            .padding(FinniDimens.CardPadding),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        val ball = a.game.content.item("myachik")
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Picture("myachik", 48.dp, description = ball.name)
-            if (showTitle) Txt(a.t("f5.title"), FinniText.Subtitle, Modifier.weight(1f))
-            else {
-                // Что выбирается и сколько стоит — рядом с картинкой, как на карточке товара (§10.6).
-                Txt(ball.name, FinniText.Subtitle)
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Coin(20.dp)
-                    Txt(ball.price.toString(), FinniText.Subtitle)
-                }
-            }
-        }
-        if (offer.available) {
-            Txt(a.f("f5.preview", "n" to offer.price))
-            Txt(a.f("f5.left", "n" to offer.savingsAfter, "goal" to offer.goalPrice))
-            Txt(a.t(if (offer.giftStillPossible) "f5.giftYes" else "f5.giftNo"))
-            SecondaryButton(a.t("f5.take"), onClick = { onChoose(true) })
-            SecondaryButton(a.t("f5.keep"), onClick = { onChoose(false) })
-        } else {
-            Txt(a.t("f5.notEnough"))
         }
     }
 }

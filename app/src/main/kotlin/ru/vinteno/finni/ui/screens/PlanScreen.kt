@@ -128,7 +128,10 @@ private fun EnoughLine(s: GameState) {
             Coin(20.dp)
             Txt(goal.price.toString(), FinniText.Button)
         }
-        Txt(a.t(enoughKey(a.game.enoughForGoal(s))), FinniText.Subtitle, Modifier.weight(1f))
+        // Цель набрана до плана недели — «Подарок уже готов.» вместо «хватит»; счётчик не
+        // блокируется: класть ли ещё, решает ребёнок (QA-M2).
+        val line = if (a.game.goalReached(s)) a.t("enough.ready") else a.t(enoughKey(a.game.enoughForGoal(s)))
+        Txt(line, FinniText.Subtitle, Modifier.weight(1f))
     }
 }
 
