@@ -64,6 +64,17 @@ class ChildMonkeyTest {
         n.config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text }
     }.filter { it.isNotBlank() }
 
+    /** Текст экрана для потолка 25 слов: если открыто окно, считается только оно (QA-M6). */
+    private fun screenTexts(): List<String> {
+        val dialog = compose.onAllNodes(isRoot()).fetchSemanticsNodes().flatMap { root ->
+            fun walk(n: SemanticsNode): List<SemanticsNode> = listOf(n) + n.children.flatMap(::walk)
+            walk(root)
+        }.firstOrNull { it.config.getOrNull(SemanticsProperties.TestTag) == "dialog" } ?: return texts()
+        fun walk(n: SemanticsNode): List<SemanticsNode> = listOf(n) + n.children.flatMap(::walk)
+        return walk(dialog).flatMap { it.config.getOrNull(SemanticsProperties.Text).orEmpty().map { t -> t.text } }
+            .filter { it.isNotBlank() }
+    }
+
     private fun screenName(t: List<String>) = t.firstOrNull { words(it) >= 2 } ?: t.firstOrNull() ?: "?"
 
     private fun check(s: GameState, prev: GameState, log: List<String>, lastAction: String) {
@@ -92,7 +103,7 @@ class ChildMonkeyTest {
                 note("Инв. 10 фраза >5 слов: «$it»", "на «$screen»")
             }
         }
-        val total = t.sumOf(::words)
+        val total = screenTexts().sumOf(::words)
         if (total > 25) note("Инв. 10 экран >25 слов: «$screen»", "$total слов: ${t.joinToString(" | ")}")
         // Размер нажатия.
         val density = compose.activity.resources.displayMetrics.density

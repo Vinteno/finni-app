@@ -68,7 +68,7 @@ private fun allowed(sc: Screen, s: GameState): Screen {
     val ok = when (sc) {
         Screen.PLAN -> w != null && w.announcementSeen
         Screen.SHOP -> w != null && w.planConfirmed && s.phase == Phase.WEEK
-        Screen.PIGGY -> w != null && w.planConfirmed
+        Screen.PIGGY -> w != null && w.planConfirmed && s.phase != Phase.FREE_PLAY
         Screen.SUMMARY -> w != null && w.planConfirmed && s.phase == Phase.WEEK
         Screen.EVENT -> s.phase == Phase.EVENT
         else -> true
@@ -90,6 +90,7 @@ fun FinniNavHost(state: GameState) {
     BackHandler(enabled = screen.hasBack) { home() }
 
     val flights = app().flights
+    val animationOn = app().animationOn
     Box(
         Modifier.fillMaxSize().background(FinniColors.BgSand).systemBarsPadding()
             // Любое касание досматривает анимацию до конца и переводит экран в конечное состояние (§8).
@@ -103,7 +104,7 @@ fun FinniNavHost(state: GameState) {
         AnimatedContent(
             targetState = screen,
             transitionSpec = {
-                val spec = if (state.profile.animationOn) tween<androidx.compose.ui.unit.IntOffset>(FinniMotion.SCREEN_MS, easing = FastOutSlowInEasing) else snap()
+                val spec = if (animationOn) tween<androidx.compose.ui.unit.IntOffset>(FinniMotion.SCREEN_MS, easing = FastOutSlowInEasing) else snap()
                 val forward = targetState.ordinal > initialState.ordinal
                 slideInHorizontally(spec) { if (forward) it else -it } togetherWith slideOutHorizontally(spec) { if (forward) -it else it }
             },

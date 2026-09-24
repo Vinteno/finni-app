@@ -23,12 +23,20 @@ class Explain(private val game: Game) {
         }
     }
 
-    /** Плашка после выхода из магазина: три строки. «Осталось» — в «Нужном». */
-    fun afterShop(s: GameState, boughtNow: List<String>): List<String> = listOf(
-        did(boughtNow),
-        texts.format("explain.result", "n" to game.needLeft(s).coerceAtLeast(0)),
-        texts["explain.meaning.F1"],
-    )
+    /**
+     * Плашка после выхода из магазина: три строки. Вторая называет направление, о котором речь
+     * (QA-M7): «Нужное», если в заходе было нужное или не куплено ничего, иначе «Хочу».
+     */
+    fun afterShop(s: GameState, boughtNow: List<String>): List<String> {
+        val items = boughtNow.map(game.content::item)
+        val want = items.isNotEmpty() && items.none { game.direction(it) == Direction.NEED }
+        return listOf(
+            did(boughtNow),
+            if (want) texts.format("explain.resultWant", "n" to game.wantLeft(s).coerceAtLeast(0))
+            else texts.format("explain.resultNeed", "n" to game.needLeft(s).coerceAtLeast(0)),
+            texts["explain.meaning.F1"],
+        )
+    }
 
     /** Объяснение после выбора в F5 — одинаковой структуры и тона при обоих решениях. */
     fun afterBall(sAfter: GameState, took: Boolean): List<String> {
@@ -42,9 +50,16 @@ class Explain(private val game: Game) {
         )
     }
 
+    /** Постоянные слова экрана итога: заголовок, подписи рядов, две кнопки. */
+    private val summaryFixedWords: Int
+        get() = listOf("summary.title", "summary.planned", "summary.actual", "summary.reward", "summary.keepPlan", "summary.takeActual")
+            .sumOf { texts.screenWords(texts[it]) }
+
     /**
-     * Строки под рядами итога. Первая — что взято в ситуации недели или нейтральный факт,
-     * что покупки не было. Дальше — откуда пришла разница: из «Хочу», из копилки (I18).
+     * Строки под рядами итога — по приоритету, пока экран целиком не длиннее 25 слов (инвариант 10,
+     * QA-M5): 1) что взято в ситуации недели или что её покупки не было; 2) откуда пришла разница —
+     * из «Хочу», из копилки (I18); 3) что Финни не поел, если ситуация недели не еда. Третья строка
+     * уступает место первым двум: голод и так виден полосой «Сыт» на доме.
      */
     fun summaryLines(s: GameState): List<String> {
         val w = s.requireWeek()
@@ -58,14 +73,23 @@ class Explain(private val game: Game) {
             situationIsFood -> texts.format("summary.notFed", "name" to name(s))
             else -> texts.format("summary.notWashed", "name" to name(s))
         }
-        // «Не покупаю ничего»: нейтральный факт о еде виден на итоге в любую неделю — сценарий §11.
-        val notFed = if (!situationIsFood && !boughtFood) texts.format("summary.notFed", "name" to name(s)) else null
         val sum = game.summary(s)
-        return listOfNotNull(
+        val candidates = listOfNotNull(
             first,
-            notFed,
             sum.needFromWant.takeIf { it > 0 }?.let { texts.format("summary.spillWant", "n" to it) },
             sum.paidFromSavings.takeIf { it > 0 }?.let { texts.format("summary.spillSavings", "n" to it) },
+            // «Не покупаю ничего»: нейтральный факт о еде виден на итоге в любую неделю — сценарий §11.
+            if (!situationIsFood && !boughtFood) texts.format("summary.notFed", "name" to name(s)) else null,
         )
+        var budget = SCREEN_WORDS - summaryFixedWords
+        return candidates.filterIndexed { i, line ->
+            val n = texts.screenWords(line)
+            (i == 0 || n <= budget).also { if (it) budget -= n }
+        }
+    }
+
+    companion object {
+        /** Экран целиком — не больше 25 слов (инвариант 10). */
+        const val SCREEN_WORDS = 25
     }
 }

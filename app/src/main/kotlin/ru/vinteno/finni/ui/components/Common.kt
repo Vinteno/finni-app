@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.semantics.contentDescription
@@ -194,7 +195,8 @@ fun ExplainPlate(lines: List<String>, onClose: () -> Unit, modifier: Modifier = 
 @Composable
 fun FinniDialog(lines: List<String>, action: String?, onAction: () -> Unit, cancel: String, onCancel: () -> Unit) {
     Box(
-        Modifier.fillMaxSize().background(FinniColors.Scrim)
+        // Окно — отдельный экран для потолка 25 слов: оно закрывает экран под собой затемнением (QA-M6).
+        Modifier.fillMaxSize().testTag("dialog").background(FinniColors.Scrim)
             .clickable(remember { MutableInteractionSource() }, null) {}
             .padding(FinniDimens.ScreenPadding),
         contentAlignment = Alignment.Center,

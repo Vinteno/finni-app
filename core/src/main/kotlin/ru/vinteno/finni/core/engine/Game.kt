@@ -168,12 +168,29 @@ class Game(val content: Content) {
 
     fun owns(s: GameState, itemId: String): Boolean = itemId in s.progress.inventory
 
+    /**
+     * Полки, с которых на этой неделе уже куплено. Полка закрыта до конца недели (QA-M1): еда и мыло —
+     * на неделю, вторая крупа ничего не даёт Финни и только съедает «Нужное». Как и у долговременной
+     * вещи, это не объясняется словами — полки просто нет (items.md §1).
+     */
+    fun boughtShelves(s: GameState): Set<String> {
+        val w = s.week ?: return emptySet()
+        return weekContent(s).shelves.filter { sh -> sh.tiers.flatten().any { it in w.purchases } }.map { it.id }.toSet()
+    }
+
+    private fun shelfOf(s: GameState, itemId: String): String? =
+        weekContent(s).shelves.firstOrNull { sh -> sh.tiers.flatten().contains(itemId) }?.id
+
     fun quote(s: GameState, cart: List<String>): Checkout {
         val w = s.requireWeek()
         rule(w.planConfirmed) { "До подтверждения плана тратить нельзя" }
         // Свободная игра после итога — без дохода, расходов и отметок (сценарий §7).
         rule(s.phase == Phase.WEEK) { "После итога недели не тратят" }
-        val items = cart.map(content::item).filterNot { it.isDurable && owns(s, it.id) }.distinctBy { it.id }
+        val closed = boughtShelves(s)
+        val items = cart.map(content::item)
+            .filterNot { it.isDurable && owns(s, it.id) }
+            .filterNot { shelfOf(s, it.id) in closed }
+            .distinctBy { it.id }
         val needCost = items.filter { direction(it) == Direction.NEED }.sumOf { it.price }
         val wantCost = items.filter { direction(it) == Direction.WANT }.sumOf { it.price }
 
@@ -287,6 +304,18 @@ class Game(val content: Content) {
             goalPrice = goalPrice,
             giftStillPossible = savings - price + pendingDeposit + reward >= goalPrice,
         )
+    }
+
+    /**
+     * В копилке меньше цены мячика: выбор не предлагается, ребёнок видит «В копилке мало монет» и
+     * нажимает «Понятно». Задание засчитывается с наградой — отсутствие денег не отказ (I19).
+     */
+    fun acknowledgeNoBall(s: GameState): GameState {
+        val w = s.requireWeek()
+        rule(s.phase == Phase.WEEK && w.planConfirmed) { "Задание — после подтверждения плана" }
+        rule(weekTaskTemplate(s) == TaskTemplate.CHOICE && !w.taskDone) { "Задания выбора нет или оно пройдено" }
+        rule(!ballOffer(s).available) { "Выбор доступен — его нужно сделать" }
+        return completeTask(s)
     }
 
     /** «Взять мячик» — только из копилки; «Оставить в копилке» — ничего не списывает. Реакция одна. */

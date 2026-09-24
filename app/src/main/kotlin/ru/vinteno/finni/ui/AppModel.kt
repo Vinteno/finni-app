@@ -30,8 +30,15 @@ class AppModel(val game: Game, private val store: GameStore) {
     /** Предметы комнаты, которые уже появились: `появление` играется один раз на предмет. */
     val seenInRoom = mutableSetOf<String>()
 
+    /**
+     * Системная настройка Android «Удалить анимации» (масштаб длительности анимаций 0). Раздела
+     * взрослого с тумблером в прототипе нет (F6), поэтому ТЗ 3.6 «анимации отключаются» закрыто
+     * так: выключил анимации в телефоне — они выключены и в игре (QA-G4).
+     */
+    var systemAnimations by mutableStateOf(true)
+
     /** Флаг «Анимации» — animation-howto.md §9. Выключает всё, кроме отклика кнопки. */
-    val animationOn: Boolean get() = state.value.profile.animationOn
+    val animationOn: Boolean get() = state.value.profile.animationOn && systemAnimations
 
     /** Плашка объяснения, ждущая показа на Доме: после выхода из магазина. */
     var pendingPlate by mutableStateOf<List<String>?>(null)

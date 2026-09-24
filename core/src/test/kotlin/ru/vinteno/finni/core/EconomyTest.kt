@@ -406,6 +406,21 @@ class EconomyTest {
         assertEquals("Ты купил крупу и мыло.", ex.did(listOf("krupa", "mylo", "krupa")))
     }
 
+    @Test fun `QA-M1 полка закрыта до конца недели после покупки`() {
+        var s = toPlan(newGame(), Plan(20, 0, 10))
+        s = game.buy(s, listOf("krupa"))
+        assertEquals(setOf("food"), game.boughtShelves(s))
+        val w = s.progress.wallet
+        val q = game.quote(s, listOf("kasha", "mylo"))
+        assertEquals(listOf("mylo"), q.items.map { it.id }) // каша с закрытой полки не считается
+        s = game.buy(s, listOf("kasha", "mylo"))
+        assertEquals(w - 3, s.progress.wallet)
+        assertThrows { game.buy(s, listOf("krupa")) }            // пустая корзина — покупки нет
+        s = game.finishWeek(game.leaveShop(s), SummaryChoice.KEEP_PLAN)
+        s = toPlan(game.nextWeek(s))
+        assertTrue(game.boughtShelves(s).isEmpty())               // новая неделя — полки снова открыты
+    }
+
     private fun assertThrows(block: () -> Unit) {
         try {
             block()

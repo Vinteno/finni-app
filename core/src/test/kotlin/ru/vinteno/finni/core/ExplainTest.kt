@@ -78,8 +78,53 @@ class ExplainTest {
         s = game.finishWeek(game.leaveShop(game.confirmPlan(s)), SummaryChoice.KEEP_PLAN)
         s = game.confirmPlan(game.seeAnnouncement(game.openParcel(game.nextWeek(s))))
         assertTrue(!game.ballOffer(s).available)
-        s = game.leaveShop(s)
+        s = game.acknowledgeNoBall(s)
         assertEquals(20, s.progress.savings)
         assertEquals(10, s.week!!.taskReward)
+    }
+
+    @Test fun `QA-M7 остаток называет направление`() {
+        var s = week1()
+        s = game.buy(s, listOf("kasha", "mylo"))
+        assertEquals("В «Нужном» осталось 2.", explain.afterShop(s, listOf("kasha", "mylo"))[1])
+        s = game.setPlan(game.seeAnnouncement(game.openParcel(game.chooseGoal(
+            game.createPet(game.seeIntro(GameState()), "", Fur.GINGER, Accessory.CAP), "podarok_myach"))), Plan(5, 20, 5))
+        s = game.buy(game.confirmPlan(s), listOf("kacheli"))
+        assertEquals("В «Хочу» осталось 5.", explain.afterShop(s, listOf("kacheli"))[1])
+        assertEquals("В «Нужном» осталось 5.", explain.afterShop(s, emptyList())[1])
+    }
+
+    /** QA-M5: на любом итоге любой партии экран не длиннее 25 слов, а первая строка есть всегда. */
+    @Test fun `итог при любом пути укладывается в 25 слов`() {
+        val t = content.texts
+        val fixed = listOf("summary.title", "summary.planned", "summary.actual", "summary.reward", "summary.keepPlan", "summary.takeActual")
+            .sumOf { t.screenWords(t[it]) }
+        val rnd = kotlin.random.Random(24)
+        var checked = 0
+        repeat(1500) {
+            var s = game.chooseGoal(game.createPet(game.seeIntro(GameState()), "Бублик", Fur.BROWN, Accessory.BOW),
+                content.chapter1.goalIds.random(rnd))
+            for (week in 1..2) {
+                s = game.seeAnnouncement(game.openParcel(s))
+                val p = Plan(rnd.nextInt(0, 16), rnd.nextInt(0, 16), rnd.nextInt(0, 16))
+                s = game.confirmPlan(if (p.total <= s.progress.wallet) game.setPlan(s, p) else s)
+                if (rnd.nextBoolean()) runCatching { s = game.chooseBall(s, rnd.nextBoolean()) }
+                val shelves = game.weekContent(s).shelves
+                val cart = shelves.filter { rnd.nextBoolean() }.flatMap { it.tiers.random(rnd) } +
+                    (if (rnd.nextBoolean()) listOf("kacheli") else emptyList())
+                runCatching { s = game.buy(s, cart, agreedWant = true, agreedSavings = true) }
+                s = game.leaveShop(s)
+                if (rnd.nextBoolean() && game.canDeposit(s)) s = game.deposit(s)
+                val lines = explain.summaryLines(s)
+                val total = fixed + lines.sumOf(t::screenWords)
+                assertTrue("$total слов: $lines", total <= 25)
+                assertTrue(lines.isNotEmpty())
+                lines.forEach { l -> assertTrue(l, words(l) <= 5) }
+                checked++
+                s = game.finishWeek(s, SummaryChoice.KEEP_PLAN)
+                if (week == 1) s = game.nextWeek(s)
+            }
+        }
+        assertEquals(3000, checked)
     }
 }

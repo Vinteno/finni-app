@@ -1,5 +1,6 @@
 package ru.vinteno.finni.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -58,6 +59,8 @@ fun IntroScreen() {
     var i by rememberSaveable { mutableIntStateOf(0) }
     val cards = listOf("kasha" to "intro.card.need", "kacheli" to "intro.card.want", "kopilka" to "intro.card.save")
     val (pic, key) = cards[i]
+    // Системное «назад» листает карточки назад, а не закрывает игру (QA-B15).
+    BackHandler(enabled = i > 0) { i-- }
     GameScreen(
         title = null, wallet = null, onBack = null, backDescription = a.t("common.back"),
         bottom = {

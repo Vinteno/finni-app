@@ -22,7 +22,7 @@ fun PetHead(s: GameState, live: Boolean = false) {
     Finni(
         s.profile.fur, s.profile.accessory, Modifier.width(FinniDimens.PetHead),
         reaction = if (live) a.reaction else null, reactionKey = a.reactionKey,
-        animate = live && s.profile.animationOn, idle = false, headOnly = true,
+        animate = live && a.animationOn, idle = false, headOnly = true,
     )
 }
 

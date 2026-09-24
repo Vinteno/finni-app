@@ -114,22 +114,38 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
         if (!a.act(g::openParcel)) return
         parcelNote = true
         val came = a.state.value.progress.wallet - before
-        a.flights.launch("parcel", "wallet", came, CoinTarget.WALLET, s.profile.animationOn)
+        a.flights.launch("parcel", "wallet", came, CoinTarget.WALLET, a.animationOn)
     }
 
     /** Кормление: событийное перемещение к миске, до 800 мс, затем `ест` и обратно (animation-howto §6.4). */
     fun feed() {
         if (!a.act(g::feed)) return
         scope.launch {
-            if (s.profile.animationOn) walk.animateTo(1f, tween(800, easing = FastOutSlowInEasing))
+            if (a.animationOn) walk.animateTo(1f, tween(800, easing = FastOutSlowInEasing))
             a.react(Reaction.EAT)
             delay(520)
-            if (s.profile.animationOn) walk.animateTo(0f, tween(800, easing = FastOutSlowInEasing))
+            if (a.animationOn) walk.animateTo(0f, tween(800, easing = FastOutSlowInEasing))
         }
     }
 
     fun wash() {
         if (a.act(g::wash)) a.react(Reaction.HAPPY)
+    }
+
+    /**
+     * Дверь и записка ведут в магазин. До подтверждения плана магазин закрыт (инвариант 6),
+     * поэтому нажатие ведёт в план — это и есть дверь в магазин. Пока не открыта посылка и не
+     * прочитано объявление, а также после итога недели Финни только «замечает» — ни одно
+     * нажатие не остаётся без отклика (QA-M10, QA-B17).
+     */
+    fun toShop() {
+        val wk = w ?: return
+        when {
+            s.phase != Phase.WEEK -> a.react(Reaction.NOTICE)
+            wk.planConfirmed -> open(HomeTarget.SHOP)
+            wk.announcementSeen -> open(HomeTarget.PLAN)
+            else -> a.react(Reaction.NOTICE)
+        }
     }
 
     Box(
@@ -141,26 +157,26 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
         },
     ) {
         Column(Modifier.fillMaxSize().padding(horizontal = FinniDimens.ScreenPadding)) {
-            TopBar(s, onWeek = { if (w?.announcementSeen == true) open(HomeTarget.PLAN) })
+            TopBar(s, onWeek = { if (w?.announcementSeen == true) open(HomeTarget.PLAN) else a.react(Reaction.NOTICE) })
 
             // ---------- Комната ----------
             // При крупном шрифте середина экрана прокручивается: записка встаёт строкой над комнатой,
             // комната получает постоянную высоту и ничто ни на что не наезжает.
             val big = bigFont()
             Column(if (big) Modifier.weight(1f).verticalScroll(rememberScrollState()) else Modifier.weight(1f)) {
-            if (big) TaskNote(s, Modifier.fillMaxWidth().padding(top = 8.dp)) { open(HomeTarget.SHOP) }
+            if (big) TaskNote(s, Modifier.fillMaxWidth().padding(top = 8.dp), ::toShop)
             BoxWithConstraints((if (big) Modifier.height(320.dp) else Modifier.weight(1f)).fillMaxWidth().padding(top = 8.dp)) {
                 val roomW = maxWidth
                 val roomH = maxHeight
                 // Пол — декоративный разделитель `stroke`, фон комнаты — `bg-sand` главы 1.
                 Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(2.dp).offset(y = (-6).dp).background(FinniColors.Stroke))
 
-                if (!big) TaskNote(s, Modifier.align(Alignment.TopStart).widthIn(max = 150.dp)) { open(HomeTarget.SHOP) }
+                if (!big) TaskNote(s, Modifier.align(Alignment.TopStart).widthIn(max = 150.dp), ::toShop)
 
                 // Дверь с вывеской «Магазин» — вход в покупки после подтверждения плана.
                 Column(Modifier.align(Alignment.TopEnd), horizontalAlignment = Alignment.CenterHorizontally) {
                     Txt(a.t("home.shopSign"), FinniText.Caption)
-                    Box(Modifier.clickable(remember { MutableInteractionSource() }, null) { if (w?.planConfirmed == true && s.phase == Phase.WEEK) open(HomeTarget.SHOP) }) {
+                    Box(Modifier.clickable(remember { MutableInteractionSource() }, null) { toShop() }) {
                         Picture("dver", 96.dp, description = a.t("home.shopSign"))
                     }
                 }
@@ -169,14 +185,16 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
                 if (w != null && w.parcel == null) {
                     Appear("parcel:${w.number}", Modifier.align(Alignment.BottomEnd).offset(y = (-6).dp)) {
                         Box(Modifier.anchor(a.flights, "parcel").clickable(remember { MutableInteractionSource() }, null) { openParcel() }) {
-                            Picture("posylka", 64.dp)
+                            Picture("posylka", 64.dp, description = a.t("a11y.parcel"))
                         }
                     }
                 }
 
                 // Качели и мячик — купленные вещи остаются навсегда.
                 if ("kacheli" in s.progress.inventory) {
-                    Appear("kacheli", Modifier.align(Alignment.CenterEnd).offset(y = 24.dp)) { Picture("kacheli", 72.dp) }
+                    Appear("kacheli", Modifier.align(Alignment.CenterEnd).offset(y = 24.dp)) {
+                        Picture("kacheli", 72.dp, description = g.content.item("kacheli").name)
+                    }
                 }
                 if ("myachik" in s.progress.inventory) {
                     Box(
@@ -187,7 +205,7 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
                                 scope.launch { ballJump.animateTo(1f, tween(160)); ballJump.animateTo(0f, tween(160)) }
                                 a.react(Reaction.HAPPY)
                             },
-                    ) { Appear("myachik") { Box(Modifier.size(FinniDimens.MinTouch), contentAlignment = Alignment.Center) { Picture("myachik", 40.dp) } } }
+                    ) { Appear("myachik") { Box(Modifier.size(FinniDimens.MinTouch), contentAlignment = Alignment.Center) { Picture("myachik", 40.dp, description = g.content.item("myachik").name) } } }
                 }
 
                 // Миска на полу; в ней то, что куплено. Ягоды — слоем.
@@ -195,7 +213,7 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
                 val foodIn = bought.any { g.content.item(it).impact == Impact.FED } && w?.fed == false
                 Box(
                     Modifier.align(Alignment.BottomStart).offset(x = 8.dp, y = (-6).dp)
-                        .semantics { contentDescription = a.t("step.care") }
+                        .semantics { contentDescription = a.t("a11y.bowl") }
                         .clickable(remember { MutableInteractionSource() }, null) { if (g.canFeed(s)) feed() },
                 ) {
                     // Еда в миске и ягоды слоем появляются по правилу появления, одинаково для любой ступеньки.
@@ -205,8 +223,13 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
                 // Мыло на полке — пока куплено и не использовано.
                 // Полка на стене — обстановка; на ней мыло, пока куплено и не использовано.
                 Column(Modifier.align(Alignment.CenterStart).offset(y = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(Modifier.size(48.dp).clickable(remember { MutableInteractionSource() }, null) { if (g.canWash(s)) wash() }) {
-                        if (w != null && g.canWash(s)) Appear("soap:${w.number}") { Picture("mylo", 48.dp) }
+                    // Пустая полка не нажимается: у нажимаемого всегда есть что-то видимое.
+                    Box(Modifier.size(48.dp)) {
+                        if (w != null && g.canWash(s)) Appear("soap:${w.number}") {
+                            Box(Modifier.clickable(remember { MutableInteractionSource() }, null) { wash() }) {
+                                Picture("mylo", 48.dp, description = g.content.item("mylo").name)
+                            }
+                        }
                     }
                     Box(Modifier.width(64.dp).height(6.dp).background(FinniColors.StrokeStrong, RoundedCornerShape(3.dp)))
                 }
@@ -215,8 +238,9 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
                 val toBowl = -(roomW / 2 - 72.dp)
                 // Событийное перемещение — тремя прыжками, не скольжением (animation-howto §6.4).
                 val hop = kotlin.math.abs(kotlin.math.sin(walk.value * 3f * Math.PI.toFloat()))
+                val moving = walk.value > 0f && walk.value < 1f
                 Box(
-                    Modifier.align(Alignment.BottomCenter).offset(x = toBowl * walk.value, y = (-16).dp * hop)
+                    Modifier.align(Alignment.BottomCenter).offset(x = toBowl * walk.value)
                         .clickable(remember { MutableInteractionSource() }, null) { poke++ },
                 ) {
                     // Финни помещается в комнату при любом шрифте: ширина — от высоты комнаты (пропорция 0,47).
@@ -224,14 +248,16 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
                     Finni(
                         s.profile.fur, s.profile.accessory, Modifier.width(petW),
                         reaction = if (sleeping) Reaction.SLEEP else a.reaction, reactionKey = a.reactionKey,
-                        animate = s.profile.animationOn,
+                        animate = a.animationOn,
                         lookRight = step == Step.PARCEL,
                         earPoke = poke,
+                        hop = hop, moving = moving,
+                        description = s.profile.petName,
                     )
                 }
             }
 
-            PiggyPanel(s, onClick = { if (s.chapter.goalId != null) open(HomeTarget.PIGGY) })
+            PiggyPanel(s, onClick = { if (s.chapter.goalId != null && s.phase != Phase.FREE_PLAY) open(HomeTarget.PIGGY) })
             }
 
             // ---------- Низ: подсказка и одна кнопка ----------
@@ -287,10 +313,12 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
 @Composable
 private fun TaskNote(s: GameState, modifier: Modifier, onOpen: () -> Unit) {
     val a = app()
-    val w = s.week ?: return
+    s.week ?: return
+    // После события главы задание сделано и следующего в прототипе нет — записки нет (QA-M4).
+    if (s.phase == Phase.FREE_PLAY) return
     val taskId = a.game.weekContent(s).taskId ?: return
     val title = a.t(a.game.content.chapter1.task(taskId).title)
-    PressCard(onClick = { if (w.planConfirmed && s.phase == Phase.WEEK) onOpen() }, modifier) {
+    PressCard(onClick = onOpen, modifier) {
         Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Picture("zapiska", 32.dp)
             Txt(title, FinniText.Caption)
@@ -375,10 +403,21 @@ private fun Indicator(icon: androidx.compose.ui.graphics.vector.ImageVector, lab
     }
 }
 
-/** Копилка панелью (решение отложено до прототипа, §5а): клетки по 5 монет, «Накопил N», цель с ценой. */
+/**
+ * Копилка панелью (решение отложено до прототипа, §5а): клетки по 5 монет, «Накопил N», цель с ценой.
+ * После события цель подарена или не подарена — её больше нет, остаётся только «Накопил N» (QA-M4).
+ */
 @Composable
 private fun PiggyPanel(s: GameState, onClick: () -> Unit) {
     val a = app()
+    if (s.phase == Phase.FREE_PLAY) {
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Picture("kopilka", 40.dp)
+            Txt(a.f("home.saved", "n" to s.progress.savings), FinniText.Caption)
+        }
+        return
+    }
     val goal = s.chapter.goalId?.let { a.game.content.goal(it) } ?: return
     PressCard(onClick, Modifier.fillMaxWidth().padding(top = 8.dp)) {
         Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

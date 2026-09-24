@@ -4,6 +4,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -113,26 +115,36 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
         }
     }
 
+    // Режим задания F5 (сценарий, неделя 2, шаг 4): пока выбор не сделан, на экране только
+    // мячик и копилка — полки появляются после выбора. Иначе экран — 38 слов при потолке 25.
+    // Заголовок экрана в этом режиме — вопрос задания, а не вопрос полок (QA-M9).
+    // Задание выбора ещё не пройдено — с выбором или с «В копилке мало монет» (тогда «Понятно»).
+    val choicePending = week.taskId?.let { g.content.chapter1.task(it) }?.template == TaskTemplate.CHOICE && !w.taskDone
+    val noBall = choicePending && !g.ballOffer(s).available
+    // Объяснение после выбора — тоже часть режима задания: полки открываются после «Понятно».
+    val taskMode = choicePending || ballPlate != null
+
     Box(Modifier.fillMaxSize()) {
         GameScreen(
-            title = a.t("shop.title"),
+            title = a.t(if (taskMode) "f5.title" else "shop.title"),
             wallet = s.progress.wallet,
             onBack = ::leave,
             backDescription = a.t("common.back"),
             titleAside = { PetHead(s, live = true) },
-            bottom = if (cart.isEmpty()) null else ({
+            bottom = if (ballPlate != null) ({
+                MainButton(a.t("common.ok"), onClick = { ballPlate = null })
+            }) else if (noBall) ({
+                MainButton(a.t("common.ok"), onClick = { a.act(g::acknowledgeNoBall) })
+            }) else if (cart.isEmpty() || taskMode) null else ({
                 // Внизу — только сумма и «Купить»: на экране 360 × 640 dp полный список корзины
                 // закрывал полку с мылом. Сам список с ценами и метками стоит под полками.
                 Txt(a.f("shop.cart.total", "n" to g.quote(s, cart).total), FinniText.Subtitle)
                 MainButton(a.t("shop.buy"), onClick = { proceed(g.quote(s, cart), false) })
             }),
         ) {
-            // Режим задания F5 (сценарий, неделя 2, шаг 4): пока выбор не сделан, на экране только
-            // мячик и копилка — полки появляются после выбора. Иначе экран — 38 слов при потолке 25.
-            val taskMode = week.taskId?.let { g.content.chapter1.task(it) }?.template == TaskTemplate.CHOICE &&
-                !w.taskDone && g.ballOffer(s).available
             val task = week.taskId?.let { g.content.chapter1.task(it) }
-            if (task?.template == TaskTemplate.CHOICE && !w.taskDone) BallChoice(s) { took ->
+            // Вопрос задания — заголовок экрана в режиме задания, в карточке его нет.
+            if (task?.template == TaskTemplate.CHOICE && !w.taskDone) BallChoice(s, showTitle = false) { took ->
                 if (a.act { g.chooseBall(it, took) }) {
                     // Одна и та же реакция при обоих решениях — самое опасное место главы для инварианта 8.
                     a.react(Reaction.HAPPY)
@@ -148,9 +160,11 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
             }
             // Хотелка встаёт в свободную клетку последней полки, если над полкой нет подписи:
             // иначе подпись «Оба одинаково моют» читалась бы и про качели.
-            val last = week.shelves.last()
-            val inline = wantCard != null && !bigFont() && last.caption == null && last.tiers.size < 3
-            week.shelves.forEach { shelf ->
+            // Полка, с которой на этой неделе уже куплено, до конца недели не показывается (QA-M1).
+            val shelves = week.shelves.filter { it.id !in g.boughtShelves(s) }
+            val last = shelves.lastOrNull()
+            val inline = wantCard != null && !bigFont() && last != null && last.caption == null && last.tiers.size < 3
+            shelves.forEach { shelf ->
                 ShelfRow(s, shelf, tiers[shelf.id], extra = if (inline && shelf === last) wantCard else null) { i ->
                     if (tiers[shelf.id] == i) tiers.remove(shelf.id) else tiers[shelf.id] = i
                 }
@@ -291,7 +305,14 @@ private fun ItemCard(
     }
 }
 
-/** Корзина: строка «Каша 5» и метка категории. Итог «Всего N» — внизу у кнопки. У надбавки метка «Хочу» (I25). */
+/**
+ * Корзина — подтверждение покупки (F2): у каждой позиции цена и категория, внизу сумма и «Купить».
+ * Позиции сгруппированы под меткой категории и показаны картинкой с ценой, без названия — гайд
+ * §12.2 «сначала показать, потом написать». Так при полной корзине экран не длиннее 25 слов
+ * (инвариант 10, QA-M11); название позиции — в подписи картинки для экранного диктора.
+ * У надбавки метка «Хочу» (I25).
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CartBox(s: GameState, cart: List<String>) {
     val a = app()
@@ -300,13 +321,21 @@ private fun CartBox(s: GameState, cart: List<String>) {
     Column(
         Modifier.fillMaxWidth().background(FinniColors.Surface, shape).border(FinniDimens.Outline, FinniColors.StrokeStrong, shape)
             .padding(horizontal = FinniDimens.CardPadding, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        q.items.forEach { item ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Txt("${item.name} ${item.price}", FinniText.Body, Modifier.weight(1f))
-                val st = directionStyle(if (item.category == Category.NEED) Direction.NEED else Direction.WANT)
-                DirectionLabel(st.icon, st.color, a.t(st.labelKey))
+        listOf(Category.NEED, Category.WANT).forEach { cat ->
+            val items = q.items.filter { it.category == cat }
+            if (items.isEmpty()) return@forEach
+            val st = directionStyle(if (cat == Category.NEED) Direction.NEED else Direction.WANT)
+            DirectionLabel(st.icon, st.color, a.t(st.labelKey))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                items.forEach { item ->
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Picture(item.id, 32.dp, description = item.name)
+                        Coin(16.dp)
+                        Txt(item.price.toString(), FinniText.Button)
+                    }
+                }
             }
         }
     }
@@ -317,7 +346,7 @@ private fun CartBox(s: GameState, cart: List<String>) {
  * одинаковые: ни одно решение не помечено верным. Мячик платится только из копилки.
  */
 @Composable
-private fun BallChoice(s: GameState, onChoose: (Boolean) -> Unit) {
+private fun BallChoice(s: GameState, showTitle: Boolean, onChoose: (Boolean) -> Unit) {
     val a = app()
     val offer = a.game.ballOffer(s)
     val shape = RoundedCornerShape(FinniDimens.RadiusCard)
@@ -327,8 +356,8 @@ private fun BallChoice(s: GameState, onChoose: (Boolean) -> Unit) {
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Picture("myachik", 48.dp)
-            Txt(a.t("f5.title"), FinniText.Subtitle, Modifier.weight(1f))
+            Picture("myachik", 48.dp, description = a.game.content.item("myachik").name)
+            if (showTitle) Txt(a.t("f5.title"), FinniText.Subtitle, Modifier.weight(1f))
         }
         if (offer.available) {
             Txt(a.f("f5.preview", "n" to offer.price))

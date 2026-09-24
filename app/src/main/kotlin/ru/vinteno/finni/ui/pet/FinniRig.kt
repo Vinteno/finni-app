@@ -31,6 +31,8 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -115,6 +117,9 @@ fun Finni(
     headOnly: Boolean = false,
     lookRight: Boolean = true,
     earPoke: Int = 0,
+    hop: Float = 0f,
+    moving: Boolean = false,
+    description: String? = null,
 ) {
     val p = palette(fur)
     val pose = remember { Pose() }
@@ -159,8 +164,18 @@ fun Finni(
     val sleepK = if (animate && reaction == Reaction.SLEEP) 1f else 0f
     val breathe = idleK * breath * 0.02f + sleepK * sleepBreath * 0.015f
 
+    // Прыжок при перемещении — §6.1 и §6.4: у земли присед (≤ 4%), в воздухе вытяжка и подъём на 7%
+    // высоты, уши отстают, тень в верхней точке сжимается до 0,8. `hop` — высота прыжка 0..1.
+    val crouch = if (moving) (1f - hop).let { it * it * it * it * it * it } else 0f
+    val jumpDy = -hop * 0.07f * H
+    val jumpSX = 1f - 0.02f * hop + 0.03f * crouch
+    val jumpSY = 1f + 0.03f * hop - 0.04f * crouch
+
     val box = if (headOnly) Rect(4f, 6f, 96f, 122f) else Rect(0f, 0f, W, H)
-    Box(modifier.aspectRatio(box.width / box.height).clipToBounds()) {
+    Box(
+        modifier.aspectRatio(box.width / box.height).clipToBounds()
+            .then(if (description != null) Modifier.semantics { contentDescription = description } else Modifier),
+    ) {
         @Composable
         fun Part(pivot: Offset, rot: Float = 0f, sx: Float = 1f, sy: Float = 1f, dy: Float = 0f, draw: DrawScope.() -> Unit) {
             Canvas(
@@ -180,19 +195,20 @@ fun Finni(
             }
         }
 
-        val bodyDy = pose.bodyY.value
-        val bodySX = pose.bodySX.value
-        val bodySY = pose.bodySY.value * (1f + breathe)
+        val bodyDy = pose.bodyY.value + jumpDy
+        val bodySX = pose.bodySX.value * jumpSX
+        val bodySY = pose.bodySY.value * (1f + breathe) * jumpSY
         // Всё, что выше туловища, едет вместе с ним: дочерние части наследуют сдвиг.
         val headDy = bodyDy - (bodySY - 1f) * (Pivot.torso.y - Pivot.head.y) + pose.headDrop.value
         val headRot = pose.headRot.value + sleepK * 5f
         val armWave = idleK * breath * 1.6f
 
         if (!headOnly) {
-            Part(Pivot.torso, sx = bodySX, sy = bodySY, dy = bodyDy) { drawShadow() }
+            // Тень остаётся на земле и сжимается, пока Финни в воздухе.
+            Part(Pivot.torso, sx = 1f - 0.2f * hop, sy = 1f - 0.2f * hop) { drawShadow() }
         }
         // Заднее ухо — дочь головы, Z 1.
-        Part(Pivot.earBack, rot = headRot + pose.earB.value - idleK * earWave * 2.5f, dy = headDy) { drawEarBack(p) }
+        Part(Pivot.earBack, rot = headRot + pose.earB.value - idleK * earWave * 2.5f - 9f * hop + 4f * crouch, dy = headDy) { drawEarBack(p) }
         if (!headOnly) {
             Part(Pivot.torso, sx = bodySX, sy = bodySY, dy = bodyDy) { drawTorso(p) }
             if (accessory == Accessory.SCARF) Part(Pivot.torso, sx = bodySX, sy = bodySY, dy = bodyDy) { drawScarf() }
@@ -204,7 +220,7 @@ fun Finni(
             drawFace(eyes, mouthOpen)
             if (accessory == Accessory.CAP) drawCap()
         }
-        Part(Pivot.earFront, rot = headRot + pose.earF.value + idleK * earWave * 2f, dy = headDy) {
+        Part(Pivot.earFront, rot = headRot + pose.earF.value + idleK * earWave * 2f + 7f * hop - 3f * crouch, dy = headDy) {
             drawEarFront(p)
             if (accessory == Accessory.BOW) drawBow()
         }

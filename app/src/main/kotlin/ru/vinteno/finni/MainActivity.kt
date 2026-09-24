@@ -17,6 +17,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val app = application as FinniApp
+        app.model.systemAnimations = android.provider.Settings.Global.getFloat(
+            contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f,
+        ) > 0f
         setContent {
             val state by app.store.state.collectAsState()
             CompositionLocalProvider(LocalApp provides app.model) {

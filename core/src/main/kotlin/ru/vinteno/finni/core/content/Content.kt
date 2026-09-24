@@ -108,6 +108,12 @@ private val UNFILLED = Regex("""\{[a-z_]+\}""")
 data class Texts(val plural: Map<String, List<String>>, val strings: Map<String, String>) {
     operator fun get(key: String): String = strings[key] ?: error("Нет строки «$key» в texts.ru.json")
 
+    /**
+     * Слова экрана для потолка 25 — так, как их считает сам сценарий: итог недели там «23 слова»
+     * без чисел. Словом считается то, в чём есть буква; числа идут подписью и в счёт не входят.
+     */
+    fun screenWords(s: String): Int = s.split(Regex("\\s+")).count { w -> w.any { it.isLetter() } }
+
     /** Форма слова для числа: 1 монета, 2 монеты, 5 монет. Три формы заданы в файле. */
     fun plural(word: String, n: Int): String {
         val forms = plural[word] ?: error("Нет форм слова «$word»")
