@@ -77,6 +77,9 @@ private const val HEAD_RATIO = 312f / 459f
  * Превышение разрешено: в банке просто больше монет, остаток показан строкой, подтверждение закрыто,
  * лишнее убирает сам ребёнок. Ни одного движения на экране, Финни не реагирует на суммы —
  * animation-howto.md §10.
+ * Подтверждённый план — только посмотреть (I45): заголовок «Монеты в банках», в банках — сколько
+ * осталось в каждом направлении сейчас, «− +» и «Подтвердить план» нет, плашка «хватит» — как есть.
+ * Недобор блокирует подтверждение так же, как перебор: строка «Осталось разложить N монет.».
  */
 @Composable
 fun PlanScreen(s: GameState, onBack: () -> Unit, onConfirmed: () -> Unit) {
@@ -92,13 +95,18 @@ fun PlanScreen(s: GameState, onBack: () -> Unit, onConfirmed: () -> Unit) {
     // не поднимает сумму плана выше 99; превышение кошелька при этом остаётся возможным (E07).
     fun set(p: Plan) = if (p.total > MAX_NUMBER && p.total > plan.total) false else a.act { a.game.setPlan(it, p) }
 
+    // В подтверждённом плане — сколько осталось сейчас: задуманное минус потраченное и отложенное.
+    val shown = if (frozen) Plan(
+        (plan.need - w.paidNeed).coerceAtLeast(0), (plan.want - w.paidWant).coerceAtLeast(0), (plan.save - w.deposit).coerceAtLeast(0),
+    ) else plan
     val dirs: List<Triple<Direction?, Int, (Int) -> Plan>> = listOf(
-        Triple(Direction.NEED, plan.need, { v -> plan.copy(need = v) }),
-        Triple(Direction.WANT, plan.want, { v -> plan.copy(want = v) }),
-        Triple(null, plan.save, { v -> plan.copy(save = v) }),
+        Triple(Direction.NEED, shown.need, { v -> plan.copy(need = v) }),
+        Triple(Direction.WANT, shown.want, { v -> plan.copy(want = v) }),
+        Triple(null, shown.save, { v -> plan.copy(save = v) }),
     )
+    val title = a.t(if (frozen) "plan.titleFrozen" else "plan.title")
     // Масштаб один на три банки: по доходу недели или по самому большому числу, что больше.
-    val scaleMax = maxOf(a.game.content.chapter1.income, plan.need, plan.want, plan.save)
+    val scaleMax = maxOf(a.game.content.chapter1.income, shown.need, shown.want, shown.save)
 
     SoftScreen(
         onBack = onBack,
@@ -133,14 +141,14 @@ fun PlanScreen(s: GameState, onBack: () -> Unit, onConfirmed: () -> Unit) {
         BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = FinniDimens.ScreenPadding).scrollHint(scroll).verticalScroll(scroll)) {
             val width = maxWidth
             val colW = (width - COL_GAP * 2) / 3
-            val titleH = textHeight(listOf(a.t("plan.title")), FinniText.Title, width - FinniDimens.PetHead - 12.dp)
+            val titleH = textHeight(listOf(title), FinniText.Title, width - FinniDimens.PetHead - 12.dp)
             val counter: @Composable (Direction?, Int, (Int) -> Plan) -> Unit = { d, v, copy ->
                 Counter(frozen, onMinus = { if (v > 0) set(copy(v - 1)) }, onPlus = { set(copy((v + 1).coerceAtMost(MAX_NUMBER))) })
             }
             FitColumn(viewport) {
                 Box(Modifier.height(4.dp))
                 // Заголовок с головой Финни: голова уступает место вторая, после банок.
-                TitleRow(s, a.t("plan.title"), Modifier.fillMaxWidth().flex(min = titleH, max = maxOf(titleH, FinniDimens.PetHead / HEAD_RATIO), order = 2))
+                TitleRow(s, title, Modifier.fillMaxWidth().flex(min = titleH, max = maxOf(titleH, FinniDimens.PetHead / HEAD_RATIO), order = 2))
                 Box(Modifier.height(4.dp))
                 if (big) {
                     // Крупный шрифт: направление — строка, маленькая банка и слово слева, число и «− +» справа.

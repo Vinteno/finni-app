@@ -30,6 +30,7 @@ import ru.vinteno.finni.core.engine.Game
 import ru.vinteno.finni.core.model.Accessory
 import ru.vinteno.finni.core.model.Fur
 import ru.vinteno.finni.core.model.GameState
+import ru.vinteno.finni.core.model.Plan
 import ru.vinteno.finni.core.model.SummaryChoice
 import ru.vinteno.finni.data.GameStore
 import ru.vinteno.finni.ui.AppModel
@@ -72,8 +73,9 @@ class HomeLayoutTest {
     /** Свободная игра после события: мячик и качели. */
     private fun freePlay(): GameState {
         var s = game.nextWeek(game.finishWeek(game.leavePiggy(game.deposit(week1Done())), SummaryChoice.KEEP_PLAN))
-        s = game.leaveShop(game.confirmPlan(game.seeAnnouncement(game.openParcel(s))))
-        s = game.chooseBall(game.deposit(s), true)
+        s = game.seeAnnouncement(game.openParcel(s))
+        s = game.leaveShop(game.confirmPlan(game.setPlan(s, Plan(10, 19, 10))))
+        s = game.leavePiggy(game.chooseBall(game.deposit(s), true))
         s = game.playEvent(game.finishWeek(s, SummaryChoice.KEEP_PLAN))
         return s.copy(progress = s.progress.copy(inventory = s.progress.inventory + "kacheli"))
     }
