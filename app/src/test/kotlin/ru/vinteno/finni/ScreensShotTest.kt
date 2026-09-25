@@ -380,12 +380,12 @@ class ScreensShotTest {
     private fun own() { compose.onNodeWithText("Своё").performClick() }
     private fun typeKuzya() { own(); compose.onNode(hasSetTextAction()).performTextInput("Кузя 2") }
     @Test fun sCreate600() = screen("02_create_360x600", fresh()) { CreatePetScreen() }
-    @Test fun sCreateNamed600() = screen("02_create_named_360x600", fresh(), act = { compose.onNodeWithText("Пушок").performClick() }) { CreatePetScreen() }
+    @Test fun sCreateNamed600() = screen("02_create_named_360x600", fresh(), act = { compose.onNodeWithText("Ириска").performClick() }) { CreatePetScreen() }
     @Test fun sCreateTyping600() = screen("02_create_typing_360x600", fresh(), act = ::own) { CreatePetScreen() }
     @Test fun sCreateTyped600() = screen("02_create_typed_360x600", fresh(), act = ::typeKuzya) { CreatePetScreen() }
     @Test fun sCreateOwn600() = screen("02_create_own_360x600", fresh(), act = { typeKuzya(); compose.onNode(hasSetTextAction()).performImeAction() }) { CreatePetScreen() }
     @Test fun sCreateEmpty600() = screen("02_create_empty_360x600", fresh(), act = {
-        compose.onNodeWithText("Пушок").performClick()
+        compose.onNodeWithText("Ириска").performClick()
         own()
         compose.onNode(hasSetTextAction()).performImeAction()
     }) { CreatePetScreen() }

@@ -109,7 +109,7 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
         val firstVisit = !a.state.value.requireWeek().shopVisited
         a.act(g::leaveShop)
         // Плашка — о том, что сделано за этот заход. Повторный заход без покупок её не показывает:
-        // «Ты ничего не купил» после утренней покупки было бы неправдой.
+        // «Мы ничего не купили» после утренней покупки было бы неправдой.
         if (firstVisit || boughtThisVisit.isNotEmpty()) {
             a.pendingPlate = a.explain.afterShop(a.state.value, boughtThisVisit.toList())
         }
