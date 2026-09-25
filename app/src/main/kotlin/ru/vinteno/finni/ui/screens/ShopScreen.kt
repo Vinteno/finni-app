@@ -37,6 +37,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import ru.vinteno.finni.core.content.Category
@@ -47,8 +48,13 @@ import ru.vinteno.finni.core.engine.requireWeek
 import ru.vinteno.finni.core.model.GameState
 import ru.vinteno.finni.ui.app
 import ru.vinteno.finni.ui.components.Basket
+import ru.vinteno.finni.ui.components.TakeCells
+import ru.vinteno.finni.ui.components.ChoiceButton
+import ru.vinteno.finni.ui.components.Jar
+import ru.vinteno.finni.ui.components.Icon
+import ru.vinteno.finni.ui.components.FinniSheet
+import ru.vinteno.finni.ui.components.Coin
 import ru.vinteno.finni.ui.components.DirectionLabel
-import ru.vinteno.finni.ui.components.FinniDialog
 import ru.vinteno.finni.ui.components.FitColumn
 import ru.vinteno.finni.ui.components.MainButton
 import ru.vinteno.finni.ui.components.NeedRing
@@ -203,37 +209,13 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
         val q = if (cart.isEmpty()) null else g.quote(s, cart)
         when (ask) {
             Ask.WANT -> q?.let {
-                FinniDialog(
-                    lines = listOf(
-                        a.f("shortfall.want.1", "n" to it.needShortage),
-                        a.f("shortfall.want.2", "n" to it.wantAvailableForNeed),
-                    ),
-                    action = a.t("shortfall.want.take"),
-                    onAction = { agreedWant = true; proceed(it, true) },
-                    cancel = a.t("shortfall.back"),
-                    onCancel = { ask = Ask.NONE },
-                )
+                WantSheet(s, it, onTake = { agreedWant = true; proceed(it, true) }, onBack = { ask = Ask.NONE })
             }
             Ask.SAVINGS -> q?.let {
-                FinniDialog(
-                    lines = listOf(
-                        a.f("shortfall.savings.1", "n" to it.fromSavings),
-                        a.t("shortfall.savings.2"),
-                        a.f("shortfall.savings.3", "n" to it.savingsAfter, "goal" to g.goalPrice(s)),
-                    ),
-                    action = a.t("shortfall.savings.take"),
-                    onAction = { buy(it, agreedWant, true) },
-                    cancel = a.t("shortfall.back"),
-                    onCancel = { ask = Ask.NONE; agreedWant = false },
-                )
+                SavingsSheet(s, it, onTake = { buy(it, agreedWant, true) }, onBack = { ask = Ask.NONE; agreedWant = false })
             }
             Ask.NO_SAVINGS -> q?.let {
-                FinniDialog(
-                    lines = listOf(a.f("shortfall.savings.1", "n" to it.fromSavings), a.f("shortfall.none.2", "s" to s.progress.savings)),
-                    action = null, onAction = {},
-                    cancel = a.t("shortfall.back"),
-                    onCancel = { ask = Ask.NONE; agreedWant = false },
-                )
+                SavingsSheet(s, it, onTake = null, onBack = { ask = Ask.NONE; agreedWant = false })
             }
             Ask.NONE -> {}
         }
@@ -485,3 +467,115 @@ private fun FlowRowGroup(content: @Composable () -> Unit) {
         itemVerticalAlignment = Alignment.CenterVertically,
     ) { content() }
 }
+
+/**
+ * Окно «Не хватает … В „Хочу“ есть …» (I44). Под первой строкой — банки плана и корзина: слева банка
+ * «Нужное» и сколько в ней сейчас, в середине нужное из корзины и его цена, справа банка «Хочу» и
+ * сколько из неё можно взять. Банки одного масштаба. Кнопки одинаковые, порядок прежний — действие,
+ * потом «Вернуться к полке»: взять из «Хочу» законно, и сценарий магазина запрещает выделять выход,
+ * поэтому гайд §10.8 («отмена — главная») для этих окон не действует.
+ */
+@Composable
+private fun WantSheet(s: GameState, q: Checkout, onTake: () -> Unit, onBack: () -> Unit) {
+    val a = app()
+    val g = a.game
+    val jarH = if (bigFont()) SHEET_JAR_BIG else SHEET_JAR
+    val scale = maxOf(q.fromNeed, q.wantAvailableForNeed, 1)
+    val need = q.items.filter { g.direction(it) == Direction.NEED }
+    // Надбавка — на картинке своей вещи, как на полке: каша с ягодами одной картинкой.
+    val pictures = need.filter { it.addonOf == null }.map { base ->
+        (listOf(base.id) + need.filter { it.addonOf == base.id }.map { it.id }).joinToString("_")
+    }
+    FinniSheet(
+        buttons = { SheetButtons(a.t("shortfall.want.take") to onTake, a.t("shortfall.back") to onBack) },
+    ) {
+        Txt(a.f("shortfall.want.1", "n" to q.needShortage), FinniText.Subtitle)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround, verticalAlignment = Alignment.Bottom) {
+            SheetJar(Direction.NEED, q.fromNeed, scale, jarH)
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    pictures.forEach { Picture(it, jarH * 0.62f) }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Coin(20.dp)
+                    Txt((q.fromNeed + q.needShortage).toString(), FinniText.Button)
+                }
+            }
+            SheetJar(Direction.WANT, q.wantAvailableForNeed, scale, jarH)
+        }
+        Txt(a.f("shortfall.want.2", "n" to q.wantAvailableForNeed), FinniText.Body)
+    }
+}
+
+/**
+ * Две одинаковые вторичные кнопки окна, одна под другой: одной высоты, даже если на крупном шрифте
+ * одна подпись встаёт в две строки, а другая в одну, — размер не подсказывает, какой выход «правильный».
+ */
+@Composable
+private fun SheetButtons(vararg buttons: Pair<String, () -> Unit>) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val style = FinniText.Button.copy(color = FinniColors.Action, textAlign = TextAlign.Center)
+        // Поле кнопки: 12 dp с каждой стороны и обводка.
+        val h = textHeight(buttons.map { it.first }, style, maxWidth - 28.dp)
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            buttons.forEach { (text, onClick) ->
+                ChoiceButton(onClick) {
+                    Box(Modifier.fillMaxWidth().height(h), contentAlignment = Alignment.Center) { Txt(text, style) }
+                }
+            }
+        }
+    }
+}
+
+/** Банка направления, как на плане, и под ней иконка и число. */
+@Composable
+private fun SheetJar(d: Direction, value: Int, scale: Int, height: Dp) {
+    val st = directionStyle(d)
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Jar(value, scale, st.bg, if (d == Direction.NEED) FinniColors.NeedDeep else FinniColors.WantDeep, height)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Icon(st.icon, st.color, 20.dp)
+            Txt(value.toString(), FinniText.Button)
+        }
+    }
+}
+
+/**
+ * Окно копилки (I44): под первой строкой копилка и её клетки. [onTake] есть — монет хватает: уходящие
+ * клетки отмечены, как в F5, две одинаковые кнопки. Нет — «мало монет»: клетки без отметок, выбора
+ * нет, поэтому кнопка одна и главная.
+ */
+@Composable
+private fun SavingsSheet(s: GameState, q: Checkout, onTake: (() -> Unit)?, onBack: () -> Unit) {
+    val a = app()
+    val goal = a.game.goalPrice(s)
+    val cells = (goal + COINS_PER_CELL - 1) / COINS_PER_CELL
+    val filled = minOf(s.progress.savings, goal) / COINS_PER_CELL
+    val left = if (onTake != null) minOf(q.savingsAfter, goal).coerceAtLeast(0) / COINS_PER_CELL else filled
+    val piggy = if (bigFont()) SHEET_PIGGY_BIG else SHEET_PIGGY
+    FinniSheet(
+        buttons = {
+            if (onTake != null) SheetButtons(a.t("shortfall.savings.take") to onTake, a.t("shortfall.back") to onBack)
+            else MainButton(a.t("shortfall.back"), onBack)
+        },
+    ) {
+        Txt(a.f("shortfall.savings.1", "n" to q.fromSavings), FinniText.Subtitle)
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Thing("kopilka", piggy, description = a.t("piggy.title"))
+            BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                val cell = ((maxWidth - 4.dp * (cells - 1)) / cells).coerceIn(16.dp, 28.dp)
+                TakeCells(filled, filled - left, cells, cell)
+            }
+        }
+        if (onTake != null) {
+            Txt(a.t("shortfall.savings.2"), FinniText.Body)
+            Txt(a.f("shortfall.savings.3", "n" to q.savingsAfter, "goal" to goal), FinniText.Body)
+        } else Txt(a.f("shortfall.none.2", "s" to s.progress.savings), FinniText.Body)
+    }
+}
+
+private const val COINS_PER_CELL = 5
+private val SHEET_JAR = 76.dp
+private val SHEET_JAR_BIG = 52.dp
+private val SHEET_PIGGY = 76.dp
+private val SHEET_PIGGY_BIG = 52.dp

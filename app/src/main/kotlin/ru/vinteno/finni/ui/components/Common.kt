@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearOutSlowInEasing
@@ -37,7 +36,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.semantics.contentDescription
@@ -195,38 +193,6 @@ fun ExplainPlate(lines: List<String>, onClose: (() -> Unit)?, modifier: Modifier
         Box(Modifier.size(24.dp)) { petIcon() }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             lines.forEach { Txt(it) }
-        }
-    }
-}
-
-/**
- * Диалог — §10.8: затемнение 40%, `surface`, скругление 24. Последствие — до выбора.
- * Действие — вторичная кнопка, отмена — главная. Модальных окон в игре ровно два.
- */
-@Composable
-fun FinniDialog(lines: List<String>, action: String?, onAction: () -> Unit, cancel: String, onCancel: () -> Unit) {
-    Box(
-        // Окно — отдельный экран для потолка 25 слов: оно закрывает экран под собой затемнением (QA-M6).
-        Modifier.fillMaxSize().testTag("dialog").background(FinniColors.Scrim)
-            .clickable(remember { MutableInteractionSource() }, null) {}
-            .padding(FinniDimens.ScreenPadding),
-        contentAlignment = Alignment.Center,
-    ) {
-        val shape = RoundedCornerShape(FinniDimens.RadiusCard)
-        // Диалог выезжает так же, как плашка, — §7.4.
-        ru.vinteno.finni.ui.motion.SlideUp(true) {
-        Column(
-            // При шрифте ×2,0 окно выше экрана — тогда оно прокручивается, а не обрезается.
-            Modifier.fillMaxWidth().background(FinniColors.Surface, shape)
-                .verticalScroll(androidx.compose.foundation.rememberScrollState())
-                .padding(FinniDimens.CardPadding + 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            lines.forEachIndexed { i, l -> Txt(l, if (i == 0) FinniText.Subtitle else FinniText.Body) }
-            Box(Modifier.height(4.dp))
-            if (action != null) SecondaryButton(action, onAction)
-            MainButton(cancel, onCancel)
-        }
         }
     }
 }
