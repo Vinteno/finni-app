@@ -1,26 +1,26 @@
 package ru.vinteno.finni.ui.screens
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.relocation.BringIntoViewRequester
-import androidx.compose.foundation.relocation.bringIntoViewRequester
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.IntrinsicSize
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -30,27 +30,43 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import ru.vinteno.finni.core.content.Category
-import ru.vinteno.finni.core.content.Shelf
+import ru.vinteno.finni.core.content.Impact
 import ru.vinteno.finni.core.engine.Checkout
 import ru.vinteno.finni.core.engine.Direction
 import ru.vinteno.finni.core.engine.requireWeek
 import ru.vinteno.finni.core.model.GameState
 import ru.vinteno.finni.ui.app
-import ru.vinteno.finni.ui.components.Coin
+import ru.vinteno.finni.ui.components.Basket
 import ru.vinteno.finni.ui.components.DirectionLabel
 import ru.vinteno.finni.ui.components.FinniDialog
-import ru.vinteno.finni.ui.components.FinniIcons
-import ru.vinteno.finni.ui.components.GameScreen
-import ru.vinteno.finni.ui.components.Icon
+import ru.vinteno.finni.ui.components.FitColumn
 import ru.vinteno.finni.ui.components.MainButton
+import ru.vinteno.finni.ui.components.NeedRing
+import ru.vinteno.finni.ui.components.PLANK
 import ru.vinteno.finni.ui.components.Picture
-import ru.vinteno.finni.ui.components.PressCard
+import ru.vinteno.finni.ui.components.PlateText
+import ru.vinteno.finni.ui.components.PriceTag
+import ru.vinteno.finni.ui.components.ShelfPlank
+import ru.vinteno.finni.ui.components.SoftScreen
+import ru.vinteno.finni.ui.components.Thing
 import ru.vinteno.finni.ui.components.Txt
 import ru.vinteno.finni.ui.components.bigFont
 import ru.vinteno.finni.ui.components.directionStyle
+import ru.vinteno.finni.ui.components.flex
+import ru.vinteno.finni.ui.components.scrollHint
+import ru.vinteno.finni.ui.components.softPlate
+import ru.vinteno.finni.ui.components.textHeight
+import ru.vinteno.finni.ui.components.thingRatio
 import ru.vinteno.finni.ui.pet.Reaction
 import ru.vinteno.finni.ui.theme.FinniColors
 import ru.vinteno.finni.ui.theme.FinniDimens
@@ -60,9 +76,11 @@ import ru.vinteno.finni.ui.theme.FinniText
 private enum class Ask { NONE, WANT, SAVINGS, NO_SAVINGS }
 
 /**
- * Магазин — единственное место, где уходят деньги за покупки (сценарий главы 1, шаг 4). Полки со
- * ступеньками и хотелка главы. Мячика здесь нет: задание F5 живёт на копилке (QA-M3). Корзина и есть подтверждение покупки:
- * список с ценой и меткой категории, сумма, «Купить». Кнопка не гаснет при нехватке — открывается окно.
+ * Магазин — единственное место, где уходят деньги за покупки (сценарий главы 1, шаг 4). Две полки:
+ * еда, мыло и через разделитель хотелка главы. Мячика здесь нет: задание F5 живёт на копилке (QA-M3).
+ * Корзина видна всегда и есть подтверждение покупки: картинки с ценой под меткой категории, сумма,
+ * «Купить». Кнопка не гаснет при нехватке — открывается окно. Размеры — от свободной высоты: сначала
+ * уменьшаются вещи на полках, ценники и кнопка — нет (I40).
  */
 @Composable
 fun ShopScreen(s: GameState, onLeave: () -> Unit) {
@@ -114,44 +132,72 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
         }
     }
 
+    // Полки сверху вниз: полка, с которой на этой неделе уже куплено, не показывается (QA-M1), остальные
+    // поднимаются. Хотелка встаёт третьей на последнюю полку, если там есть место, — через разделитель;
+    // места нет — на свою полку, на то же третье место.
+    val wantAvailable = !g.owns(s, wantId)
+    val rows = buildList {
+        week.shelves.filter { it.id !in g.boughtShelves(s) }.forEach { shelf ->
+            add(ShelfView(shelf.id, shelf.caption?.let(a::t), shelf.tiers.mapIndexed { i, tier -> tierSlot(tier, i) }))
+        }
+        if (wantAvailable) {
+            val last = lastOrNull()
+            if (last != null && last.slots.size < 3) set(lastIndex, last.copy(want = true))
+            else add(ShelfView("want", null, emptyList(), want = true))
+        }
+    }
+    // Корзина хранит место под самый полный набор этой недели: со второй строкой «Хочу», если хотелки
+    // на неделе бывают. Так полки не прыгают, когда в корзину кладут первую вещь «Хочу».
+    val fullest = week.shelves.flatMap { sh -> sh.tiers.maxBy { it.size } } + (if (wantAvailable) listOf(wantId) else emptyList())
+
     Box(Modifier.fillMaxSize()) {
-        GameScreen(
-            title = a.t("shop.title"),
-            wallet = s.progress.wallet,
+        SoftScreen(
             onBack = ::leave,
             backDescription = a.t("common.back"),
-            titleAside = { PetHead(s, live = true) },
-            bottom = if (cart.isEmpty()) null else ({
-                // Внизу — только сумма и «Купить»: на экране 360 × 640 dp полный список корзины
-                // закрывал полку с мылом. Сам список с ценами и метками стоит под полками.
-                Txt(a.f("shop.cart.total", "n" to g.quote(s, cart).total), FinniText.Subtitle)
-                MainButton(a.t("shop.buy"), onClick = { proceed(g.quote(s, cart), false) })
-            }),
-        ) {
-            Txt(a.f("shop.hint", "n" to g.needLeft(s).coerceAtLeast(0)), FinniText.Subtitle)
-            val wantCard: (@Composable (Modifier, Boolean) -> Unit)? = if (g.owns(s, wantId)) null else { m, wide ->
-                val item = g.content.item(wantId)
-                ItemCard(wantId, item.name, item.price, null, wantPicked, m, Direction.WANT, wide = wide) { wantPicked = !wantPicked }
-            }
-            // Хотелка встаёт в свободную клетку последней полки, если над полкой нет подписи:
-            // иначе подпись «Оба одинаково моют» читалась бы и про качели.
-            // Полка, с которой на этой неделе уже куплено, до конца недели не показывается (QA-M1).
-            val shelves = week.shelves.filter { it.id !in g.boughtShelves(s) }
-            val last = shelves.lastOrNull()
-            val inline = wantCard != null && !bigFont() && last != null && last.caption == null && last.tiers.size < 3
-            shelves.forEach { shelf ->
-                ShelfRow(s, shelf, tiers[shelf.id], extra = if (inline && shelf === last) wantCard else null) { i ->
-                    if (tiers[shelf.id] == i) tiers.remove(shelf.id) else tiers[shelf.id] = i
+            wallet = s.progress.wallet,
+            bottomGap = 8.dp,
+            bottom = {
+                // Корзина видна всегда: пустая — пустая корзина без слов, место под «Купить» занято.
+                Box {
+                    CartBasket(s, fullest, Modifier.alpha(0f).clearAndSetSemantics {})
+                    CartBasket(s, cart, Modifier.matchParentSize())
+                }
+                MainButton(
+                    a.t("shop.buy"),
+                    onClick = { if (cart.isNotEmpty()) proceed(g.quote(s, cart), false) },
+                    modifier = if (cart.isEmpty()) Modifier.alpha(0f).clearAndSetSemantics {} else Modifier,
+                )
+            },
+        ) { viewport ->
+            val scroll = rememberScrollState()
+            BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = FinniDimens.ScreenPadding).scrollHint(scroll).verticalScroll(scroll)) {
+                val width = maxWidth
+                val slotW = (width - SLOT_GAP * 2) / 3
+                val unitMax = minOf(slotW - 8.dp, UNIT_MAX)
+                val tagH = tagHeight(slotW)
+                FitColumn(viewport) {
+                    Box(Modifier.height(4.dp))
+                    // Заголовок — одной строкой, как в макете: двухстрочный на 360 × 600 выталкивал вторую полку.
+                    Txt(a.t("shop.title"), FinniText.Subtitle)
+                    Box(Modifier.height(4.dp))
+                    Txt(a.f("shop.hint", "n" to g.needLeft(s).coerceAtLeast(0)), HintText)
+                    rows.forEach { row ->
+                        val signH = row.caption?.let { signHeight(it, width) } ?: 0.dp
+                        val wantItem = if (row.want) g.content.item(wantId) else null
+                        val factor = rowFactor(row, wantItem)
+                        val fixed = SHELF_TOP + signH + PLANK + TAG_GAP + tagH
+                        ShelfRow(
+                            row, slotW, signH, tagH,
+                            picked = tiers[row.id],
+                            wantItem = wantItem, wantPicked = wantPicked,
+                            onPick = { i -> if (tiers[row.id] == i) tiers.remove(row.id) else tiers[row.id] = i },
+                            onWant = { wantPicked = !wantPicked },
+                            modifier = Modifier.fillMaxWidth().flex(min = fixed + UNIT_MIN * factor, max = fixed + unitMax * factor, order = 1),
+                        )
+                    }
+                    Box(Modifier.flex(min = 0.dp))
                 }
             }
-            if (wantCard != null && !inline) {
-                if (bigFont()) wantCard(Modifier.fillMaxWidth(), true)
-                else Row(horizontalArrangement = Arrangement.spacedBy(FinniDimens.CardGap)) {
-                    wantCard(Modifier.weight(1f), false)
-                    Box(Modifier.weight(2f))
-                }
-            }
-            if (cart.isNotEmpty()) CartBox(s, cart)
         }
 
         val q = if (cart.isEmpty()) null else g.quote(s, cart)
@@ -194,128 +240,248 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
     }
 }
 
-/** Полка: подпись над полкой видна без нажатия, ступеньки одного размера, одна иконка влияния на всю полку. */
-@Composable
-private fun ShelfRow(
-    s: GameState,
-    shelf: Shelf,
-    picked: Int?,
-    extra: (@Composable (Modifier, Boolean) -> Unit)? = null,
-    onPick: (Int) -> Unit,
-) {
-    val a = app()
-    shelf.caption?.let { Txt(a.t(it)) }
-    val big = bigFont()
-    val card: @Composable (Int, List<String>, Modifier) -> Unit = { i, tier, m ->
-        val key = tier.joinToString("_")
-        val price = tier.sumOf { a.game.content.item(it).price }
-        val impact = a.game.content.item(tier.first()).impact
-        ItemCard(key, a.t("shop.tier.$key"), price, impact?.let(FinniIcons::impact), picked == i, m, wide = big) { onPick(i) }
-    }
-    // Ступеньки одной полки одного размера — разный размер карточек запрещён (сценарий, шаг 5).
-    if (big) {
-        Column(verticalArrangement = Arrangement.spacedBy(FinniDimens.CardGap)) {
-            shelf.tiers.forEachIndexed { i, tier -> card(i, tier, Modifier.fillMaxWidth()) }
-        }
-    } else {
-        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(FinniDimens.CardGap)) {
-            shelf.tiers.forEachIndexed { i, tier -> card(i, tier, Modifier.weight(1f).fillMaxHeight()) }
-            extra?.invoke(Modifier.weight(1f).fillMaxHeight(), false)
-            repeat(3 - shelf.tiers.size - (if (extra != null) 1 else 0)) { Box(Modifier.weight(1f)) }
-        }
-    }
+/** Полка на экране: подпись, ступеньки по местам слева направо и, если [want], хотелка на третьем месте. */
+private data class ShelfView(val id: String, val caption: String?, val slots: List<TierSlot>, val want: Boolean = false)
+
+/** Ступенька полки: картинка — ключ ступеньки, цена — сумма предметов, потребность — у основного предмета. */
+private data class TierSlot(val index: Int, val key: String, val items: List<String>)
+
+private fun tierSlot(tier: List<String>, i: Int) = TierSlot(i, tier.joinToString("_"), tier)
+
+/** Ширина основы вещи на полке в долях единицы: миска — единица, мыло меньше, качели почти как миска. */
+private fun itemWidth(key: String): Float = when {
+    key == "kacheli" -> 0.95f
+    key.startsWith("mylo") -> 0.7f
+    else -> 1f
 }
 
-/** Карточка товара — гайд §10.6: картинка, название, цена с монетой; иконка влияния или метка «Хочу». */
+/** Высота вещи в долях единицы — по непрозрачной рамке основы. */
+private fun itemHeight(key: String): Float = itemWidth(key) * thingRatio(base(key))
+
+/** Основа картинки: миска под любой едой, мыло под пеной. */
+private fun base(key: String) = when {
+    key == "krupa" || key.startsWith("kasha") -> "miska"
+    key.startsWith("mylo") -> "mylo"
+    else -> key
+}
+
+/** Слой поверх основы — в её рамке: еда в миске, пена на мыле. */
+private fun layer(key: String): String? = when (key) {
+    "krupa" -> "food_krupa"
+    "kasha" -> "food_kasha"
+    "kasha_yagody" -> "food_kasha_yagody"
+    "mylo_pena" -> "pena"
+    else -> null
+}
+
+/** Единица вещей на полке: ширина миски. Миска не уже 56 dp; шире 96 — не нужно. */
+private val UNIT_MIN = 56.dp
+private val UNIT_MAX = 96.dp
+private val SLOT_GAP = 8.dp
+private val SHELF_TOP = 4.dp
+private val HintText = FinniText.Body.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+private val TAG_GAP = 4.dp
+private val SIGN_RING = 24.dp
+
+/** Высота ценника: цена и кольцо в строку; «Хочу», не поместившийся рядом, — строкой ниже. */
 @Composable
-private fun ItemCard(
-    picture: String,
-    name: String,
-    price: Int,
-    impactIcon: androidx.compose.ui.graphics.vector.ImageVector?,
-    selected: Boolean,
+private fun tagHeight(slotW: Dp): Dp {
+    val a = app()
+    val price = textHeight(listOf("99"), FinniText.Button, slotW)
+    val one = maxOf(34.dp, maxOf(price, 26.dp) + 8.dp)
+    val tm = androidx.compose.ui.text.rememberTextMeasurer()
+    val d = androidx.compose.ui.platform.LocalDensity.current
+    val w = with(d) {
+        tm.measure("15", FinniText.Button, density = d).size.width.toDp() + tm.measure(a.t("shop.label.want"), PlateText, density = d).size.width.toDp()
+    }
+    // Монета, цена, звезда и слово с промежутками и полями ценника.
+    val fits = 18.dp + 4.dp + 6.dp + 18.dp + 2.dp + 16.dp + w <= slotW
+    return if (fits) one else one + textHeight(listOf(a.t("shop.label.want")), PlateText, slotW) + 2.dp
+}
+
+@Composable
+private fun signHeight(caption: String, width: Dp): Dp =
+    maxOf(SIGN_RING, textHeight(listOf(caption), PlateText, width - SIGN_RING - 24.dp)) + 8.dp + 2.dp
+
+/**
+ * Полка: над ней табличка, на доске вещи одного ряда, под доской ценники. Вещь стоит низом на верхней
+ * кромке доски, как вещи дома. Вещь и её ценник — одна зона нажатия; места одинаковые, одна или две
+ * вещи стоят там же, где стояли бы три. Все ступеньки выделяются одинаково: ценник с рамкой и галочкой.
+ */
+@Composable
+private fun ShelfRow(
+    row: ShelfView,
+    slotW: Dp,
+    signH: Dp,
+    tagH: Dp,
+    picked: Int?,
+    wantItem: ru.vinteno.finni.core.content.Item?,
+    wantPicked: Boolean,
+    onPick: (Int) -> Unit,
+    onWant: () -> Unit,
     modifier: Modifier,
-    labelDirection: Direction? = null,
-    wide: Boolean = false,
-    onClick: () -> Unit,
 ) {
     val a = app()
-    val priceRow: @Composable () -> Unit = {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Coin(16.dp)
-            Txt(price.toString(), FinniText.Button)
-            impactIcon?.let { Icon(it, FinniColors.Ink, 20.dp) }
+    val factor = rowFactor(row, wantItem)
+    Box(modifier.padding(top = SHELF_TOP)) {
+        // Доска — во всю ширину, под вещами, над ценниками; чуть шире полей экрана.
+        ShelfPlank(Modifier.align(Alignment.BottomCenter).padding(bottom = TAG_GAP + tagH).fillMaxWidth().offsetWide())
+        row.caption?.let { caption ->
+            // Табличка — по центру над теми местами, где стоят ступеньки этой полки, не над хотелкой;
+            // шире этих мест — сдвигается внутрь экрана, но не обрезается.
+            val span = row.slots.size.coerceAtLeast(1)
+            val center = (slotW * span + SLOT_GAP * (span - 1)) / 2
+            Box(Modifier.fillMaxWidth().height(signH)) {
+                Sign(caption, row.slots.firstOrNull()?.items?.firstOrNull()?.let { a.game.content.item(it).impact },
+                    Modifier.centerAt(center))
+            }
         }
-    }
-    val label: @Composable () -> Unit = {
-        labelDirection?.let {
-            val st = directionStyle(it)
-            DirectionLabel(st.icon, st.color, a.t(st.labelKey))
-        }
-    }
-    PressCard(onClick, if (wide) modifier else modifier.heightIn(min = 128.dp), selected = selected, fillHeight = !wide) {
-        if (wide) {
-            Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Picture(picture, 48.dp, description = name)
-                Column(Modifier.weight(1f)) {
-                    Txt(name, FinniText.Caption)
-                    priceRow()
-                    label()
+        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(SLOT_GAP)) {
+                repeat(3) { i ->
+                    val slot = row.slots.getOrNull(i)
+                    val want = i == 2 && wantItem != null && row.slots.size < 3
+                    // Над ступеньками — табличка; над хотелкой её нет, и качели могут стоять выше.
+                    val band = if (want) 0.dp else signH
+                    Box(Modifier.width(slotW).fillMaxHeight().padding(top = band)) {
+                        // Тонкий разделитель между ступеньками полки и хотелкой.
+                        if (want && row.slots.isNotEmpty()) {
+                            Box(Modifier.align(Alignment.CenterStart).offset(x = -(SLOT_GAP / 2 + 1.dp)).padding(bottom = TAG_GAP + tagH + PLANK + 8.dp, top = 8.dp)
+                                .width(2.dp).fillMaxHeight().background(FinniColors.Stroke))
+                        }
+                        when {
+                            slot != null -> {
+                                val price = slot.items.sumOf { a.game.content.item(it).price }
+                                val impact = a.game.content.item(slot.items.first()).impact
+                                ShelfSlot(slot.key, a.t("shop.tier.${slot.key}"), price, impact, null, picked == slot.index, tagH, factor, 0.dp) { onPick(slot.index) }
+                            }
+                            want -> ShelfSlot(wantItem!!.id, wantItem.name, wantItem.price, null, a.t("shop.label.want"), wantPicked, tagH, factor, signH, onWant)
+                        }
+                    }
                 }
-            }
-        } else {
-            Column(
-                Modifier.fillMaxWidth().padding(8.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Picture(picture, 48.dp, description = name)
-                Txt(name, FinniText.Caption.copy(textAlign = TextAlign.Center), Modifier.fillMaxWidth())
-                priceRow()
-                label()
-            }
         }
     }
 }
 
 /**
- * Корзина — подтверждение покупки (F2): у каждой позиции цена и категория, внизу сумма и «Купить».
- * Позиции сгруппированы под меткой категории и показаны картинкой с ценой, без названия — гайд
- * §12.2 «сначала показать, потом написать». Так при полной корзине экран не длиннее 25 слов
- * (инвариант 10, QA-M11); название позиции — в подписи картинки для экранного диктора.
- * У надбавки метка «Хочу» (I25).
+ * Высота ряда вещей в единицах: по самой высокой вещи. Хотелка на полке с табличкой в счёт не идёт —
+ * над ней свободная полоса таблички, туда она и дорастает.
  */
-@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
+private fun rowFactor(row: ShelfView, wantItem: ru.vinteno.finni.core.content.Item?): Float =
+    (row.slots.map { itemHeight(it.key) } + listOfNotNull(wantItem?.takeIf { row.caption == null || row.slots.isEmpty() }?.let { itemHeight(it.id) })).max()
+
+/** Доска полки выходит за поля экрана на 8 dp с каждой стороны — как в макете, полка шире вещей. */
+private fun Modifier.offsetWide(): Modifier = layout { m, c ->
+    val extra = 8.dp.roundToPx()
+    val p = m.measure(c.copy(minWidth = c.maxWidth + extra * 2, maxWidth = c.maxWidth + extra * 2))
+    layout(c.maxWidth, p.height) { p.place(-extra, 0) }
+}
+
+/** Место на полке: вещь на доске и ценник под доской — одна зона нажатия во всю высоту. */
 @Composable
-private fun CartBox(s: GameState, cart: List<String>) {
-    val a = app()
-    val q = a.game.quote(s, cart)
-    val shape = RoundedCornerShape(FinniDimens.RadiusCard)
-    // Корзина стоит под полками; на низком экране она ниже края. Положил товар — корзина
-    // подъезжает ровно настолько, чтобы её было видно: подтверждение покупки не прячется.
-    val seen = remember { BringIntoViewRequester() }
-    LaunchedEffect(cart) { seen.bringIntoView() }
+private fun ShelfSlot(key: String, name: String, price: Int, impact: Impact?, want: String?, selected: Boolean, tagH: Dp, rowFactor: Float, band: Dp, onClick: () -> Unit) {
     Column(
-        Modifier.fillMaxWidth().bringIntoViewRequester(seen)
-            .background(FinniColors.Surface, shape).border(FinniDimens.Outline, FinniColors.StrokeStrong, shape)
-            .padding(horizontal = FinniDimens.CardPadding, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        Modifier.fillMaxSize().semantics(mergeDescendants = true) { contentDescription = name; this.selected = selected }
+            .clickable(remember { MutableInteractionSource() }, null, role = Role.Button, onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        listOf(Category.NEED, Category.WANT).forEach { cat ->
-            val items = q.items.filter { it.category == cat }
-            if (items.isEmpty()) return@forEach
-            val st = directionStyle(if (cat == Category.NEED) Direction.NEED else Direction.WANT)
-            DirectionLabel(st.icon, st.color, a.t(st.labelKey))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                items.forEach { item ->
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Picture(item.id, 32.dp, description = item.name)
-                        Coin(16.dp)
-                        Txt(item.price.toString(), FinniText.Button)
+        BoxWithConstraints(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.BottomCenter) {
+            // Вещи одного ряда — одной единицы: высота ряда делится на самую высокую вещь.
+            // [band] — свободная полоса над хотелкой: единица от ряда, рост — до верха полосы.
+            val unit = (maxHeight - band) / rowFactor
+            val w = minOf(unit * itemWidth(key), maxHeight / thingRatio(base(key)), maxWidth)
+            Box(Modifier.offset(y = SEAT)) {
+                Thing(base(key), w)
+                layer(key)?.let { Thing(it, w, box = base(key)) }
+            }
+        }
+        Box(Modifier.height(PLANK + TAG_GAP))
+        Box(Modifier.height(tagH), contentAlignment = Alignment.TopCenter) {
+            PriceTag(price, impact, want, selected)
+        }
+    }
+}
+
+/** Поставить серединой на [center] от левого края, не выходя за края родителя. */
+private fun Modifier.centerAt(center: Dp): Modifier = layout { m, c ->
+    val p = m.measure(c.copy(minWidth = 0))
+    val x = (center.roundToPx() - p.width / 2).coerceIn(0, maxOf(0, c.maxWidth - p.width))
+    layout(c.maxWidth, p.height) { p.place(x, 0) }
+}
+
+/** Вещь чуть утоплена в доску, чтобы стояла, а не висела над кромкой. */
+private val SEAT = 2.dp
+
+/** Табличка над полкой: значок потребности и подпись — к чему она относится, видно. */
+@Composable
+private fun Sign(caption: String, impact: Impact?, modifier: Modifier) {
+    Row(
+        modifier.softPlate(FinniDimens.RadiusSmall + 2.dp).padding(start = 4.dp, end = 12.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        impact?.let { NeedRing(it, SIGN_RING) }
+        Txt(caption, PlateText)
+    }
+}
+
+/**
+ * Корзина — подтверждение покупки (F2): у каждой позиции цена и категория, справа сумма, внизу
+ * «Купить». Позиции — картинкой с ценой под меткой категории, без названия — гайд §12.2 «сначала
+ * показать, потом написать»; название — в подписи картинки для экранного диктора. Каждая метка —
+ * один раз (QA-M11), у надбавки метка «Хочу» (I25). Пустая корзина — без слов.
+ */
+@Composable
+private fun CartBasket(s: GameState, cart: List<String>, modifier: Modifier) {
+    val a = app()
+    val q = if (cart.isEmpty()) null else a.game.quote(s, cart)
+    Basket(modifier.fillMaxWidth().heightIn(min = 64.dp)) {
+        if (q == null) return@Basket
+        val groups: @Composable (Modifier) -> Unit = { m ->
+            // Строка на категорию: метка, за ней картинки с ценой.
+            Column(
+                m.softPlate(FinniDimens.RadiusSmall + 4.dp).padding(horizontal = 6.dp, vertical = 2.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                listOf(Category.NEED, Category.WANT).forEach { cat ->
+                    val items = q.items.filter { it.category == cat }
+                    if (items.isEmpty()) return@forEach
+                    val st = directionStyle(if (cat == Category.NEED) Direction.NEED else Direction.WANT)
+                    FlowRowGroup {
+                        DirectionLabel(st.icon, st.color, a.t(st.labelKey))
+                        items.forEach { item ->
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Picture(item.id, THUMB, description = item.name)
+                                Txt(item.price.toString(), FinniText.Button)
+                            }
+                        }
                     }
                 }
             }
         }
+        val total: @Composable () -> Unit = {
+            Box(Modifier.softPlate(FinniDimens.RadiusSmall + 4.dp).padding(horizontal = 10.dp, vertical = 6.dp)) {
+                Txt(a.f("shop.cart.total", "n" to q.total), FinniText.Button)
+            }
+        }
+        // Крупный шрифт: сумма — под картинками, иначе она забирает ширину и картинки встают столбиком.
+        if (bigFont()) Column(Modifier.fillMaxWidth().padding(4.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            groups(Modifier.fillMaxWidth())
+            total()
+        } else Row(Modifier.fillMaxWidth().padding(4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            groups(Modifier.weight(1f))
+            total()
+        }
     }
+}
+
+private val THUMB = 26.dp
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FlowRowGroup(content: @Composable () -> Unit) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+        itemVerticalAlignment = Alignment.CenterVertically,
+    ) { content() }
 }

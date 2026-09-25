@@ -134,15 +134,16 @@ fun RoundButton(icon: ImageVector, description: String, onClick: () -> Unit, mod
     }
 }
 
-/** Кнопка возврата: всегда верхний левый угол, 48 dp, всегда ведёт на Дом — §7.4. */
+/**
+ * Кнопка возврата: всегда верхний левый угол, 48 dp, всегда ведёт на Дом — §7.4. Мягкая плашка с тенью,
+ * как кошелёк рядом: губой служит тень плашки, при нажатии лицо опускается на неё.
+ */
 @Composable
 fun BackButton(onClick: () -> Unit, description: String, modifier: Modifier = Modifier) {
     val shape = RoundedCornerShape(FinniDimens.RadiusButton)
-    Pressable(onClick, true, FinniDimens.LipSecondary, FinniColors.StrokeStrong, shape, modifier, description) { m ->
+    Pressable(onClick, true, FinniDimens.LipSecondary, Color.Transparent, shape, modifier, description) { m ->
         Box(
-            m.size(FinniDimens.BackButton)
-                .background(FinniColors.Surface, shape)
-                .border(FinniDimens.Outline, FinniColors.StrokeStrong, shape),
+            m.size(FinniDimens.BackButton).softPlate(FinniDimens.RadiusButton),
             contentAlignment = Alignment.Center,
         ) {
             Icon(Icons.AutoMirrored.Outlined.ArrowBack, tint = FinniColors.Ink, size = 24.dp)

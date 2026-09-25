@@ -10,6 +10,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -34,6 +38,11 @@ import ru.vinteno.finni.ui.AppModel
 import ru.vinteno.finni.ui.LocalApp
 import ru.vinteno.finni.ui.motion.FlightLayer
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import androidx.compose.ui.semantics.SemanticsNode
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.hasClickAction
 import ru.vinteno.finni.ui.screens.CreatePetScreen
 import ru.vinteno.finni.ui.screens.EventScreen
 import ru.vinteno.finni.ui.screens.GoalScreen
@@ -147,14 +156,16 @@ class ScreensShotTest {
     /** Окна нехватки: сначала «Хочу», потом копилка — порядок один для любой покупки (E10). */
     @Test fun dialogWant() {
         shot("14_dialog_want", game.confirmPlan(planned(week1()))) { ShopScreen(it) {} }
-        listOf("Каша с\u00A0ягодами", "Мыло", "Купить").forEach { compose.onNodeWithText(it).performClick() }
+        listOf("Каша с ягодами", "Мыло").forEach { compose.onNodeWithContentDescription(it).performClick() }
+        compose.onNodeWithText("Купить").performClick()
         compose.onRoot().captureRoboImage("build/shots/14_dialog_want.png")
     }
 
     @Test fun dialogSavings() {
         val s = game.leaveShop(game.confirmPlan(planned(week1(), Plan(4, 0, 10))))
         shot("15_dialog_savings", s) { ShopScreen(it) {} }
-        listOf("Каша", "Мыло", "Купить").forEach { compose.onNodeWithText(it).performClick() }
+        listOf("Каша", "Мыло").forEach { compose.onNodeWithContentDescription(it).performClick() }
+        compose.onNodeWithText("Купить").performClick()
         compose.onRoot().captureRoboImage("build/shots/15_dialog_savings.png")
     }
 
@@ -220,5 +231,155 @@ class ScreensShotTest {
         compose.onNodeWithText("Покорми").performClick()
         compose.waitForIdle()
         compose.onRoot().captureRoboImage("build/shots/17d_feed_no_anim.png")
+    }
+
+    // ---------- Экраны главы 1 по макету (I40): три размера окна и шрифт ×2,0 ----------
+    // Окно телефона 360 × 640 — 360 × 600 без строки состояния; 360 × 800 — 360 × 760; 412 × 915 — 412 × 875.
+    // Снимки — build/shots/screens/; у каждого — проверка зон нажатия: не меньше 48 × 48 dp, не пересекаются.
+
+    private fun week1Goal(goal: String): GameState = game.chooseGoal(base(), goal)
+
+    private fun week2(goal: String): GameState {
+        var s = game.confirmPlan(planned(week1Goal(goal)))
+        s = game.wash(game.feed(game.leaveShop(game.buy(s, listOf("kasha", "mylo")))))
+        s = game.finishWeek(game.leavePiggy(game.deposit(s)), SummaryChoice.KEEP_PLAN)
+        return game.confirmPlan(planned(game.nextWeek(s)))
+    }
+
+    private fun f5(goal: String) = game.deposit(game.leaveShop(week2(goal)))
+
+    private fun outcomeA(): GameState {
+        var s = game.deposit(game.leaveShop(week2()))
+        s = game.chooseBall(s, false)
+        return game.finishWeek(s, SummaryChoice.KEEP_PLAN)
+    }
+
+    private fun outcomeB(): GameState {
+        var s = game.deposit(game.leaveShop(week2()))
+        s = game.chooseBall(s, true)
+        return game.finishWeek(s, SummaryChoice.KEEP_PLAN)
+    }
+
+    private fun screen(name: String, state: GameState, scale: Float = 1f, act: (() -> Unit)? = null, content: @Composable (GameState) -> Unit) {
+        shot("screens/$name", state, scale, content)
+        if (act != null) {
+            act()
+            compose.waitForIdle()
+            compose.onRoot().captureRoboImage("build/shots/screens/$name.png")
+        }
+        zones(name)
+    }
+
+    private fun zones(name: String) {
+        val dp = compose.density.density
+        val nodes = compose.onAllNodes(hasClickAction()).fetchSemanticsNodes()
+        nodes.forEach { n ->
+            assertTrue("$name: «${label(n)}» ${n.size.width / dp}×${n.size.height / dp} dp", n.size.width / dp >= 47.5f && n.size.height / dp >= 47.5f)
+        }
+        val z = nodes.map { label(it) to it.boundsInRoot }.filter { it.second.width > 0f && it.second.height > 0f }
+        for (i in z.indices) for (j in i + 1 until z.size) {
+            val x = z[i].second.intersect(z[j].second)
+            assertTrue("$name: пересекаются «${z[i].first}» и «${z[j].first}»", x.width <= 0.5f || x.height <= 0.5f)
+        }
+    }
+
+    private fun label(n: SemanticsNode): String =
+        (n.config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text } +
+            n.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()).joinToString(" ")
+
+    private fun pickBook() { compose.onNodeWithText("Книжка", substring = true).performClick() }
+    private fun pickFood() { listOf("Каша", "Мыло").forEach { compose.onNodeWithContentDescription(it).performClick() } }
+    private fun pickAll() { listOf("Каша с ягодами", "Мыло", "Качели").forEach { compose.onNodeWithContentDescription(it).performClick() } }
+
+    // Выбор цели
+    @Test fun sGoal600() = screen("03_goal_360x600", base()) { GoalScreen() }
+    @Test fun sGoalPicked600() = screen("03_goal_picked_360x600", base(), act = ::pickBook) { GoalScreen() }
+    @Config(qualifiers = "w360dp-h760dp-xxhdpi") @Test fun sGoal800() = screen("03_goal_360x800", base(), act = ::pickBook) { GoalScreen() }
+    @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun sGoal915() = screen("03_goal_412x915", base(), act = ::pickBook) { GoalScreen() }
+    @Test fun sGoalBig() = screen("03_goal_360x600_x2", base(), 2f, act = ::pickBook) { GoalScreen() }
+
+    // План
+    @Test fun sPlan600() = screen("04_plan_360x600", planned(week1())) { PlanScreen(it, {}, {}) }
+    @Test fun sPlanOver600() = screen("04_plan_over_360x600", planned(week1(), Plan(14, 10, 10))) { PlanScreen(it, {}, {}) }
+    @Test fun sPlanZero600() = screen("04_plan_need0_360x600", planned(week1(), Plan(0, 20, 10))) { PlanScreen(it, {}, {}) }
+    @Test fun sPlanReady600() = screen("04_plan_ready_360x600", planned(week1().let { it.copy(progress = it.progress.copy(savings = 40)) })) { PlanScreen(it, {}, {}) }
+    @Test fun sPlanMax600() = screen("04_plan_max_360x600", planned(week1(), Plan(45, 44, 10))) { PlanScreen(it, {}, {}) }
+    @Config(qualifiers = "w360dp-h760dp-xxhdpi") @Test fun sPlan800() = screen("04_plan_360x800", planned(week1())) { PlanScreen(it, {}, {}) }
+    @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun sPlan915() = screen("04_plan_412x915", planned(week1(), Plan(14, 10, 10))) { PlanScreen(it, {}, {}) }
+    @Test fun sPlanBig() = screen("04_plan_over_360x600_x2", planned(week1(), Plan(14, 10, 10)), 2f) { PlanScreen(it, {}, {}) }
+
+    // Магазин
+    private fun shop1() = game.confirmPlan(planned(week1()))
+    private fun shop2() = week2()
+    private fun shop2OneShelf() = game.buy(week2(), listOf("kasha"))
+    @Test fun sShop600() = screen("05_shop_360x600", shop1()) { ShopScreen(it) {} }
+    @Test fun sShopPicked600() = screen("05_shop_picked_360x600", shop1(), act = ::pickFood) { ShopScreen(it) {} }
+    @Test fun sShopFull600() = screen("05_shop_full_360x600", shop1(), act = ::pickAll) { ShopScreen(it) {} }
+    @Test fun sShopWeek2() = screen("05_shop_week2_360x600", shop2()) { ShopScreen(it) {} }
+    @Test fun sShopWeek2One() = screen("05_shop_week2_one_360x600", shop2OneShelf()) { ShopScreen(it) {} }
+    @Config(qualifiers = "w360dp-h760dp-xxhdpi") @Test fun sShop800() = screen("05_shop_360x800", shop1(), act = ::pickFood) { ShopScreen(it) {} }
+    @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun sShop915() = screen("05_shop_412x915", shop1(), act = ::pickFood) { ShopScreen(it) {} }
+    @Test fun sShopBig() = screen("05_shop_360x600_x2", shop1(), 2f, act = ::pickFood) { ShopScreen(it) {} }
+
+    // Копилка
+    @Test fun sPiggy600() = screen("06_piggy_360x600", week1Done()) { PiggyScreen(it) {} }
+    @Test fun sPiggyWeek2() = screen("06_piggy_week2_360x600", game.leaveShop(week2())) { PiggyScreen(it) {} }
+    @Config(qualifiers = "w360dp-h760dp-xxhdpi") @Test fun sPiggy800() = screen("06_piggy_360x800", week1Done()) { PiggyScreen(it) {} }
+    @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun sPiggy915() = screen("06_piggy_412x915", week1Done()) { PiggyScreen(it) {} }
+    @Test fun sPiggyBig() = screen("06_piggy_360x600_x2", week1Done(), 2f) { PiggyScreen(it) {} }
+
+    // Мячик или подарок
+    @Test fun sF5Book() = screen("07_f5_goal40_360x600", f5("podarok_kniga")) { PiggyScreen(it) {} }
+    @Test fun sF5Ball() = screen("07_f5_goal30_360x600", f5("podarok_myach")) { PiggyScreen(it) {} }
+    @Test fun sF5Scooter() = screen("07_f5_goal45_360x600", f5("podarok_samokat")) { PiggyScreen(it) {} }
+    @Test fun sF5Few() = screen("07_f5_few_360x600", f5("podarok_kniga").let { it.copy(progress = it.progress.copy(savings = 10)) }) { PiggyScreen(it) {} }
+    @Test fun sF5After() = screen("07_f5_after_360x600", f5("podarok_kniga"), act = { compose.onNodeWithText("Взять мячик").performClick() }) { PiggyScreen(it) {} }
+    @Config(qualifiers = "w360dp-h760dp-xxhdpi") @Test fun sF5800() = screen("07_f5_360x800", f5("podarok_kniga")) { PiggyScreen(it) {} }
+    @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun sF5915() = screen("07_f5_412x915", f5("podarok_samokat")) { PiggyScreen(it) {} }
+    @Test fun sF5Big() = screen("07_f5_360x600_x2", f5("podarok_kniga"), 2f) { PiggyScreen(it) {} }
+
+    // Итог недели
+    private fun summaryState() = game.leavePiggy(game.deposit(week1Done()))
+    @Test fun sSummary600() = screen("08_summary_360x600", summaryState()) { SummaryScreen(it, {}, {}) }
+    @Config(qualifiers = "w360dp-h760dp-xxhdpi") @Test fun sSummary800() = screen("08_summary_360x800", summaryState()) { SummaryScreen(it, {}, {}) }
+    @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun sSummary915() = screen("08_summary_412x915", summaryState()) { SummaryScreen(it, {}, {}) }
+    @Test fun sSummaryBig() = screen("08_summary_360x600_x2", summaryState(), 2f) { SummaryScreen(it, {}, {}) }
+
+    // Событие
+    @Test fun sEventA600() = screen("09_event_a_360x600", outcomeA()) { EventScreen(it) {} }
+    @Test fun sEventB600() = screen("09_event_b_360x600", outcomeB()) { EventScreen(it) {} }
+    @Config(qualifiers = "w360dp-h760dp-xxhdpi") @Test fun sEvent800() = screen("09_event_b_360x800", outcomeB()) { EventScreen(it) {} }
+    @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun sEvent915() = screen("09_event_a_412x915", outcomeA()) { EventScreen(it) {} }
+    @Test fun sEventBig() = screen("09_event_b_360x600_x2", outcomeB(), 2f) { EventScreen(it) {} }
+
+    /**
+     * Касание у края вещи рядом с соседней попадает в свою вещь (I40): на полке — у правого края
+     * крупы, рядом с кашей; у банок — у правого края «+» «Нужного», рядом с «−» «Хочу».
+     */
+    @Test fun edgeTapsShelf() {
+        shot("screens/edge_shop", game.confirmPlan(planned(week1()))) { ShopScreen(it) {} }
+        val krupa = compose.onNodeWithContentDescription("Крупа")
+        val b = krupa.fetchSemanticsNode().boundsInRoot
+        krupa.performTouchInput { click(androidx.compose.ui.geometry.Offset(width - 2f, height / 2f)) }
+        compose.waitForIdle()
+        // После выбора «Крупа» есть и в корзине — первая по порядку та, что на полке.
+        assertEquals(true, compose.onAllNodesWithContentDescription("Крупа")[0].fetchSemanticsNode().config.getOrNull(SemanticsProperties.Selected))
+        assertEquals(false, compose.onNodeWithContentDescription("Каша").fetchSemanticsNode().config.getOrNull(SemanticsProperties.Selected))
+        assertTrue(b.width > 0f)
+    }
+
+    @Test fun edgeTapsJars() {
+        val store = GameStore(RuntimeEnvironment.getApplication())
+        store.replace(planned(week1()))
+        val model = AppModel(game, store)
+        compose.setContent {
+            val s by store.state.collectAsState()
+            CompositionLocalProvider(LocalApp provides model) { PlanScreen(s, {}, {}) }
+        }
+        val plus = compose.onAllNodesWithContentDescription("Добавить монету")[0]
+        plus.performTouchInput { click(androidx.compose.ui.geometry.Offset(width - 2f, height / 2f)) }
+        compose.waitForIdle()
+        assertEquals(11, store.state.value.week!!.plan.need)
+        assertEquals(10, store.state.value.week!!.plan.want)
     }
 }
