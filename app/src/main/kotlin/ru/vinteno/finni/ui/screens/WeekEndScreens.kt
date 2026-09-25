@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import ru.vinteno.finni.core.engine.BallOffer
 import ru.vinteno.finni.core.engine.Direction
+import ru.vinteno.finni.core.engine.requireWeek
 import ru.vinteno.finni.core.model.EventOutcome
 import ru.vinteno.finni.core.model.GameState
 import ru.vinteno.finni.core.model.Plan
@@ -259,7 +260,8 @@ fun SummaryScreen(s: GameState, onBack: () -> Unit, onDone: () -> Unit) {
         bottom = {
             // В каждой кнопке — название и план, с которым откроется следующая неделя: три числа с иконками
             // направлений, без слов. Кнопки одного вида и одной высоты — ни одна не выделена (§10.10).
-            val keep = Plan.DEFAULT
+            // «Оставить план» оставляет план этой недели, а не план по умолчанию.
+            val keep = s.requireWeek().plan
             EqualColumn(FinniDimens.CardGap) {
                 ChoiceButton({ choose(SummaryChoice.KEEP_PLAN) }) { ChoiceFace(a.t("summary.keepPlan"), keep) }
                 ChoiceButton({ choose(SummaryChoice.TAKE_ACTUAL) }) { ChoiceFace(a.t("summary.takeActual"), sum.fact) }

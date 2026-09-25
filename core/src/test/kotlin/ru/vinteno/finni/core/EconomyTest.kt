@@ -85,27 +85,42 @@ class EconomyTest {
         assertEquals(20, s.progress.savings)
     }
 
-    @Test fun `факт по направлению, из которого заплатили — 10 1 10`() {
+    @Test fun `факт по направлению, из которого заплатили, 8 3 10`() {
         val s = canonicalWeek1()
         val sum = game.summary(s)
         assertEquals(30, sum.planned)
-        assertEquals(Plan(10, 1, 10), sum.fact)
+        assertEquals(Plan(8, 3, 10), sum.fact)
         assertEquals(21, sum.fact.total)
         assertEquals(10, sum.reward)
-        assertEquals(1, sum.needFromWant)
+        assertEquals(0, sum.needFromWant)
         val next = game.finishWeek(s, SummaryChoice.TAKE_ACTUAL)
-        assertEquals(Plan(10, 1, 10), next.nextPlan)
+        assertEquals(Plan(8, 3, 10), next.nextPlan)
         assertEquals(Plan(10, 10, 10), game.finishWeek(s, SummaryChoice.KEEP_PLAN).nextPlan)
     }
 
-    @Test fun `надбавку нельзя взять, не тронув другое направление`() {
+    @Test fun `надбавка платится из Хочу, база из Нужного`() {
         val s = toPlan(newGame())
         val q = game.quote(s, listOf("kasha", "yagody", "mylo"))
         assertEquals(11, q.total)
-        assertEquals(1, q.needShortage)
-        assertEquals(1, q.needFromWant)
-        assertTrue(q.asksWant)
+        assertEquals(8, q.fromNeed)
+        assertEquals(3, q.fromWantOwn)
+        assertEquals(0, q.needShortage)
+        assertFalse(q.asksWant)
         assertFalse(q.asksSavings)
+    }
+
+    @Test fun `надбавка при пустом Хочу не берётся молча из Нужного`() {
+        val s = toPlan(newGame(), Plan(15, 0, 15))
+        val q = game.quote(s, listOf("kasha", "yagody"))
+        assertEquals(5, q.fromNeed)
+        assertEquals(0, q.fromWantOwn)
+        assertEquals(3, q.fromSavings)
+    }
+
+    @Test fun `Оставить план оставляет план этой недели`() {
+        var s = toPlan(newGame(), Plan(14, 6, 10))
+        s = game.leaveShop(s)
+        assertEquals(Plan(14, 6, 10), game.finishWeek(s, SummaryChoice.KEEP_PLAN).nextPlan)
     }
 
     @Test fun `E05 награда падает в копилку, кошелёк не меняется`() {

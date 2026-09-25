@@ -165,8 +165,10 @@ class ScreensShotTest {
 
     /** Окна нехватки: сначала «Хочу», потом копилка — порядок один для любой покупки (E10). */
     @Test fun dialogWant() {
-        shot("14_dialog_want", game.confirmPlan(planned(week1()))) { ShopScreen(it) {} }
-        listOf("Каша с ягодами", "Мыло").forEach { compose.onNodeWithContentDescription(it).performClick() }
+        // Нехватка в «Нужном»: каша и мыло стоят 8, а в «Нужном» 5. Надбавка теперь платится из «Хочу»
+        // и нехватки в «Нужном» сама не создаёт, поэтому план здесь с малым «Нужным».
+        shot("14_dialog_want", game.confirmPlan(planned(week1(), Plan(5, 15, 10)))) { ShopScreen(it) {} }
+        listOf("Каша", "Мыло").forEach { compose.onNodeWithContentDescription(it).performClick() }
         compose.onNodeWithText("Купить").performClick()
         compose.onRoot().captureRoboImage("build/shots/14_dialog_want.png")
     }
@@ -451,13 +453,15 @@ class ScreensShotTest {
 
     // Окна нехватки: «Хочу», копилка, мало монет. Зоны — только кнопок окна: экран под ним закрыт.
     private fun savingsShop() = game.leaveShop(game.confirmPlan(planned(week1(), Plan(4, 0, 10))))
+    // Нехватка в «Нужном» при деньгах в «Хочу»: каша и мыло стоят 8, в «Нужном» 5.
+    private fun wantShop() = game.confirmPlan(planned(week1(), Plan(5, 15, 10)))
     private fun fewSavingsShop() = savingsShop().let { it.copy(progress = it.progress.copy(savings = 2)) }
     // На крупном шрифте полки прокручиваются: вещь сначала прокручивается в окно, потом нажимается.
     private fun buy(vararg items: String) {
         items.forEach { compose.onNodeWithContentDescription(it).performScrollTo().performClick() }
         compose.onNodeWithText("Купить").performClick()
     }
-    private fun openWant() = buy("Каша с ягодами", "Мыло")
+    private fun openWant() = buy("Каша", "Мыло")
     private fun openSavings() = buy("Каша", "Мыло")
 
     private fun sheet(name: String, state: GameState, scale: Float = 1f, open: () -> Unit, buttons: Int) {
@@ -475,14 +479,14 @@ class ScreensShotTest {
         assertTrue("$name: кнопки разного размера", found.map { it.size }.distinct().size == 1)
     }
 
-    @Test fun sSheetWant600() = sheet("10_sheet_want_360x600", shop1(), open = ::openWant, buttons = 2)
+    @Test fun sSheetWant600() = sheet("10_sheet_want_360x600", wantShop(), open = ::openWant, buttons = 2)
     @Test fun sSheetSavings600() = sheet("10_sheet_savings_360x600", savingsShop(), open = ::openSavings, buttons = 2)
     @Test fun sSheetNone600() = sheet("10_sheet_none_360x600", fewSavingsShop(), open = ::openSavings, buttons = 1)
-    @Config(qualifiers = "w360dp-h760dp-xxhdpi") @Test fun sSheetWant800() = sheet("10_sheet_want_360x800", shop1(), open = ::openWant, buttons = 2)
+    @Config(qualifiers = "w360dp-h760dp-xxhdpi") @Test fun sSheetWant800() = sheet("10_sheet_want_360x800", wantShop(), open = ::openWant, buttons = 2)
     @Config(qualifiers = "w360dp-h760dp-xxhdpi") @Test fun sSheetSavings800() = sheet("10_sheet_savings_360x800", savingsShop(), open = ::openSavings, buttons = 2)
-    @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun sSheetWant915() = sheet("10_sheet_want_412x915", shop1(), open = ::openWant, buttons = 2)
+    @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun sSheetWant915() = sheet("10_sheet_want_412x915", wantShop(), open = ::openWant, buttons = 2)
     @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun sSheetNone915() = sheet("10_sheet_none_412x915", fewSavingsShop(), open = ::openSavings, buttons = 1)
-    @Test fun sSheetWantBig() = sheet("10_sheet_want_360x600_x2", shop1(), 2f, open = ::openWant, buttons = 2)
+    @Test fun sSheetWantBig() = sheet("10_sheet_want_360x600_x2", wantShop(), 2f, open = ::openWant, buttons = 2)
     @Test fun sSheetSavingsBig() = sheet("10_sheet_savings_360x600_x2", savingsShop(), 2f, open = ::openSavings, buttons = 2)
     @Test fun sSheetNoneBig() = sheet("10_sheet_none_360x600_x2", fewSavingsShop(), 2f, open = ::openSavings, buttons = 1)
 
