@@ -197,7 +197,7 @@ class ScreensShotTest {
             }
         }
         compose.mainClock.advanceTimeBy(500)
-        compose.onNodeWithText("Открой посылку").performClick()
+        compose.onNodeWithContentDescription("Посылка").performClick()
         compose.mainClock.advanceTimeBy(16)
         assertEquals(6, model.flights.flights.size)
         assertEquals(6, model.flights.walletPending)
@@ -225,7 +225,7 @@ class ScreensShotTest {
             }
         }
         compose.mainClock.advanceTimeBy(500)
-        compose.onNodeWithText("Покорми").performClick()
+        compose.onNodeWithContentDescription("Миска").performClick()
         // Прыжки к миске: в игре уже сыт, на экране еда ещё лежит.
         compose.mainClock.advanceTimeBy(500)
         assertEquals(true, store.state.value.week!!.fed)
@@ -239,7 +239,7 @@ class ScreensShotTest {
 
     @Test fun feedNoAnimation() {
         shot("17d_feed_no_anim", game.leaveShop(game.buy(game.confirmPlan(planned(week1())), listOf("krupa", "mylo")))) { HomeScreen(it) {} }
-        compose.onNodeWithText("Покорми").performClick()
+        compose.onNodeWithContentDescription("Миска").performClick()
         compose.waitForIdle()
         compose.onRoot().captureRoboImage("build/shots/17d_feed_no_anim.png")
     }

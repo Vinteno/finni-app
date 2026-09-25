@@ -56,7 +56,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import ru.vinteno.finni.core.content.Impact
 import ru.vinteno.finni.core.engine.Step
 import ru.vinteno.finni.core.model.GameState
 import ru.vinteno.finni.core.model.ParcelResult
@@ -65,13 +64,12 @@ import ru.vinteno.finni.ui.app
 import ru.vinteno.finni.ui.components.CALENDAR_RATIO
 import ru.vinteno.finni.ui.components.Calendar
 import ru.vinteno.finni.ui.components.Coin
+import ru.vinteno.finni.ui.components.DOOR_HANDLE
 import ru.vinteno.finni.ui.components.MARK_BAND
 import ru.vinteno.finni.ui.components.MainButton
-import ru.vinteno.finni.ui.components.NOTE_GAP
 import ru.vinteno.finni.ui.components.NeedBadge
 import ru.vinteno.finni.ui.components.FinniIcons
 import ru.vinteno.finni.ui.components.NoteStep
-import ru.vinteno.finni.ui.components.NoteTask
 import ru.vinteno.finni.ui.components.Picture
 import ru.vinteno.finni.ui.components.PlateText
 import ru.vinteno.finni.ui.components.ProgressCells
@@ -164,6 +162,9 @@ private val SHELF_GAP = 2.dp
 /** Доля ширины полки, где на доске стоят вещи: края доски — под кронштейнами. */
 private const val SHELF_USABLE = 0.9f
 
+/** Окно уже этого — уже не окно: пропадает совсем. */
+private val WINDOW_MIN = 56.dp
+
 /** Календарь на стене над миской. */
 private val CALENDAR = 50.dp
 
@@ -182,7 +183,7 @@ private enum class Prop { PARCEL, JARS, DOOR, BOWL, SOAP, PIGGY, CALENDAR }
 /** Где неделя сейчас — от этого зависит ответ предмета на касание (таблица I45). */
 private enum class Stage { BEFORE_PARCEL, BEFORE_PLAN, AFTER_PLAN, AFTER_SUMMARY, AFTER_EVENT }
 
-/** Предмет текущего шага: над ним значок, записка делает то же, что он. */
+/** Предмет текущего шага: над ним значок. */
 private fun stepProp(step: Step, canFeed: Boolean): Prop? = when (step) {
     Step.PARCEL -> Prop.PARCEL
     Step.ANNOUNCE, Step.PLAN -> Prop.JARS
@@ -201,8 +202,8 @@ private val STEP_KEYS = listOf(
 
 /**
  * Дом — сценарий главы 1, §5а; I45. Комната несёт требования ТЗ 2.5.3 сама: питомец, кошелёк,
- * накопления клетками с числом, цель, три потребности, записка с шагом и заданием недели.
- * Нижней кнопки нет: шаг показывает записка, действие делается касанием предмета комнаты, над
+ * накопления клетками с числом, цель, три потребности, записка с текущим шагом недели.
+ * Нижней кнопки нет: шаг показывает записка — она не нажимается, — действие делается касанием предмета комнаты, над
  * предметом шага — неподвижный значок. Ни одно касание не остаётся без ответа: предмет, чей шаг
  * ещё не настал, отвечает репликой Финни — что сделать сначала.
  */
@@ -309,7 +310,7 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
                 w?.fed == true -> happy()
                 else -> line("home.say.bowlEmpty")
             }
-            Prop.SOAP -> if (w != null && g.canWash(s)) { if (a.act(g::wash)) happy() } else happy()
+            Prop.SOAP -> if (a.act(g::wash)) happy()
             Prop.JARS -> when (stage) {
                 Stage.BEFORE_PARCEL -> line("home.say.parcelFirst")
                 Stage.AFTER_EVENT -> happy()
@@ -336,10 +337,8 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
         }
     }
 
-    /** Записка делает то же, что предмет шага; после события главы шага нет — Финни `доволен`. */
-    fun tapNote() = target?.let(::tap) ?: if (plateUp) a.react(Reaction.NOTICE) else happy()
-
-    // Записка: шаг крупно, под ним задание недели, пока не выполнено (ТЗ 2.5.3: задание видно на доме).
+    // Записка — только текущий шаг. Она не нажимается: ребёнок идёт к предмету шага сам, значок над
+    // ним показывает, к какому.
     val noteStep = when (step) {
         Step.PARCEL -> "step.parcel"
         Step.ANNOUNCE, Step.PLAN -> "step.plan"
@@ -350,8 +349,6 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
         Step.NEXT_WEEK -> "step.nextWeek"
         Step.EVENT, Step.NONE -> "home.note.chapterDone"
     }.let(a::t)
-    val noteTask = w?.takeIf { !it.taskDone && s.phase != Phase.FREE_PLAY }
-        ?.let { g.weekContent(s).taskId }?.let { a.t(g.content.chapter1.task(it).title) }
     // Плашка накоплений: цель с клетками по 5 монет и «N из M». После события цели нет — только
     // «Накопил N» (QA-M4).
     val goal = s.chapter.goalId?.takeIf { s.phase != Phase.FREE_PLAY }?.let { g.content.goal(it) }
@@ -359,15 +356,14 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
         goal != null || s.phase == Phase.FREE_PLAY -> a.f("home.saved", "n" to s.progress.savings)
         else -> null
     }
-    val allTasks = g.content.chapter1.tasks.map { a.t(it.title) }
-    val texts = RoomTexts(STEP_KEYS.map(a::t), allTasks, a.t("home.shopSign"), savedText, goal?.price)
+    val texts = RoomTexts(STEP_KEYS.map(a::t), a.t("home.shopSign"), savedText, goal?.price)
     // В банках комнаты — черновик плана до подтверждения, потом — сколько осталось в каждом направлении.
     val jars = w?.let {
         if (it.planConfirmed) listOf(it.plan.need - it.paidNeed, it.plan.want - it.paidWant, it.plan.save - it.deposit).map { v -> v.coerceAtLeast(0) }
         else listOf(it.plan.need, it.plan.want, it.plan.save)
     } ?: listOf(0, 0, 0)
-    val soapShown = w != null && s.phase != Phase.ONBOARDING && (g.canWash(s) || w.washed ||
-        w.purchases.any { g.content.item(it).impact == Impact.CLEAN })
+    // Мыло стоит на полке, пока куплено и не использовано: умыл Финни — мыла нет.
+    val soapShown = w != null && s.phase != Phase.ONBOARDING && g.canWash(s)
 
     val tm = rememberTextMeasurer()
     // Комната выше экрана только при крупном шрифте; тогда сначала видны пол, Финни и дверь,
@@ -440,11 +436,11 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
                         layout(width, stageH - viewTop) { r.place(0, -viewTop) }
                     },
                     background = scrolling,
-                    note = noteStep to noteTask, jars = jars, soapShown = soapShown,
+                    note = noteStep, jars = jars, soapShown = soapShown,
                     // Пока открыта плашка, значка нет: предметы сейчас только замечают её.
                     mark = target?.takeIf { stage != Stage.AFTER_EVENT && !plateUp },
                     say = say,
-                    onProp = ::tap, onNote = ::tapNote,
+                    onProp = ::tap,
                     onBall = {
                         // Свободная игра: мячик подпрыгивает, Финни — `доволен`. Ничего не даёт.
                         scope.launch { ballJump.animateTo(1f, tween(160)); ballJump.animateTo(0f, tween(160)) }
@@ -519,7 +515,7 @@ private val HEADER_PAD = 12.dp
  * Место под записку — по самому длинному шагу с самым длинным заданием: Финни и дверь не меняют
  * размер от шага к шагу.
  */
-private data class RoomTexts(val steps: List<String>, val tasks: List<String>, val sign: String, val saved: String?, val price: Int?) {
+private data class RoomTexts(val steps: List<String>, val sign: String, val saved: String?, val price: Int?) {
     /** Клетки по 5 монет до цены цели. */
     val cells: Int? get() = price?.let { (it + 4) / 5 }
 }
@@ -533,6 +529,8 @@ private data class RoomPlan(
     val signH: Dp,
     val shelfW: Dp, val shelfTop: Dp, val piggyW: Dp, val soapW: Dp, val jarsH: Dp, val itemsH: Dp,
     val calendarW: Dp, val calendarTop: Dp,
+    /** Окно: ширины 0 — окна нет. */
+    val windowW: Dp, val windowX: Dp, val windowTop: Dp,
     val plateMaxW: Dp, val plateH: Dp,
     /** Сколько высоты не хватило при самом маленьком Финни: на столько комната прокручивается. */
     val lack: Dp,
@@ -563,7 +561,8 @@ private data class RoomPlan(
  * дверь и полка масштабируются вместе. Финни — самый крупный, при котором по ширине помещаются дверь,
  * посылка с пустыми полосами по 16 dp, Финни и миска, а по высоте — слева записка, значок и табличка
  * над дверью, справа — плашка, значок и вещи над полкой, под полкой значок и календарь, под ними
- * значок над миской. Места мало — сначала уменьшается записка. Окно уступило место календарю (I45).
+ * значок над миской; окно — между дверью и Финни. Места мало — сначала уменьшается записка, потом
+ * пропадает окно.
  */
 private fun planRoom(width: Dp, leftTop: Dp, rightTop: Dp, floor: Dp, t: RoomTexts, tm: TextMeasurer, d: Density): RoomPlan {
     fun textH(text: String, style: TextStyle, maxW: Dp): Dp = with(d) {
@@ -571,21 +570,18 @@ private fun planRoom(width: Dp, leftTop: Dp, rightTop: Dp, floor: Dp, t: RoomTex
     }
     fun textW(text: String, style: TextStyle): Dp = with(d) { tm.measure(text, style, density = d).size.width.toDp() }
     val noteRatio = thingRatio("zapiska")
-    fun noteH(nw: Dp, step: String, task: String?): Dp {
+    fun noteH(nw: Dp, step: String): Dp {
         val inner = nw * (1f - 2 * TEXT_SIDE)
-        val body = textH(step, NoteStep, inner) + (task?.let { NOTE_GAP + textH(it, NoteTask, inner) } ?: 0.dp)
+        val body = textH(step, NoteStep, inner)
         return maxOf(nw * noteRatio, body / (1f - TEXT_TOP - TEXT_BOTTOM))
     }
     val signH = textH(t.sign, PlateText, width) + 4.dp
-    // Самое длинное слово шагов и заданий помещается на листке целиком: при крупном шрифте листок шире.
-    val longestWord = maxOf(
-        t.steps.flatMap { typo(it).split(' ') }.maxOf { textW(it, NoteStep) },
-        t.tasks.flatMap { typo(it).split(' ') }.maxOfOrNull { textW(it, NoteTask) } ?: 0.dp,
-    )
+    // Самое длинное слово шагов помещается на листке целиком: при крупном шрифте листок шире.
+    val longestWord = t.steps.flatMap { typo(it).split(' ') }.maxOf { textW(it, NoteStep) }
     val noteMin = maxOf(NOTE_MIN, longestWord / (1f - 2 * TEXT_SIDE) + 4.dp)
     val noteMax = maxOf((width * 0.36f).coerceIn(NOTE_MIN, NOTE_MAX), noteMin)
     val widths = generateSequence(noteMax) { it - 4.dp }.takeWhile { it >= noteMin }.toList().ifEmpty { listOf(noteMax) }
-    fun reserveH(nw: Dp) = t.steps.maxOf { step -> (t.tasks.map { noteH(nw, step, it) } + noteH(nw, step, null)).max() }
+    fun reserveH(nw: Dp) = t.steps.maxOf { step -> noteH(nw, step) }
     val reserveW = widths.minBy(::reserveH)
     val noteReserve = reserveH(reserveW)
 
@@ -651,6 +647,16 @@ private fun planRoom(width: Dp, leftTop: Dp, rightTop: Dp, floor: Dp, t: RoomTex
     val bowlX = width - SIDE - BOWL
     val finniX = (width / 2 - fw / 2).coerceIn(parcelX + PARCEL + GAP, maxOf(parcelX + PARCEL + GAP, bowlX - 8.dp - fw))
 
+    // Окно — на стене между дверью и серединой Финни: верх на высоте верха двери, низ не ниже ручки и
+    // над значком посылки. Не помещается окно шириной 56 dp — окна нет, оно декор и уступает первым.
+    val doorTop = fl - hd
+    val windowL = SIDE + hd * DOOR_W + 8.dp
+    val windowR = finniX + fw / 2
+    val windowBottom = minOf(doorTop + hd * DOOR_HANDLE, fl + DEPTH_PARCEL - PARCEL * thingRatio("posylka") - MARK_BAND - 4.dp)
+    val windowH = minOf(windowBottom - doorTop, (windowR - windowL) * thingRatio("okno"))
+    val windowW = (windowH / thingRatio("okno")).takeIf { it >= WINDOW_MIN } ?: 0.dp
+    val windowX = windowL + (windowR - windowL - windowW) / 2
+
     // Полка — как можно ниже: над календарём с его значком и не ниже верха двери.
     val sw = shelfW(u)
     val shelfTop = shelfBottomMax(fl, hd, u) - sw * thingRatio("polka")
@@ -663,6 +669,7 @@ private fun planRoom(width: Dp, leftTop: Dp, rightTop: Dp, floor: Dp, t: RoomTex
         signH = signH,
         shelfW = sw, shelfTop = shelfTop, piggyW = PIGGY * u, soapW = SOAP * u, jarsH = JARS_H * u, itemsH = itemsH(u),
         calendarW = calendarW(u), calendarTop = calendarTop(fl, u),
+        windowW = windowW, windowX = windowX, windowTop = doorTop,
         plateMaxW = plateMaxW, plateH = plateH,
         lack = lack,
     )
@@ -688,13 +695,12 @@ private fun Room(
     height: Dp,
     modifier: Modifier,
     background: Boolean,
-    note: Pair<String, String?>,
+    note: String,
     jars: List<Int>,
     soapShown: Boolean,
     mark: Prop?,
     say: String?,
     onProp: (Prop) -> Unit,
-    onNote: () -> Unit,
     onBall: () -> Unit,
     onFinni: () -> Unit,
     finni: @Composable (Modifier) -> Unit,
@@ -710,12 +716,10 @@ private fun Room(
         if (background) Canvas(Modifier.fillMaxSize()) { drawRoom(floor.toPx()) }
 
         // ---------- Стена ----------
-        WallNote(
-            note.first, note.second, p.noteW, p.noteH,
-            Modifier.offset(x = SIDE + 4.dp, y = p.noteTop)
-                .semantics(mergeDescendants = true) { role = Role.Button }
-                .clickable(null, null, role = Role.Button, onClick = onNote),
-        )
+        // Записка читается диктором, но не нажимается.
+        WallNote(note, null, p.noteW, p.noteH, Modifier.offset(x = SIDE + 4.dp, y = p.noteTop).semantics(mergeDescendants = true) {})
+        // Окно — декор на стене между дверью и Финни, может уходить за Финни. Места мало — окна нет.
+        if (p.windowW > 0.dp) Thing("okno", p.windowW, Modifier.offset(x = p.windowX, y = p.windowTop))
 
         // Полка справа, над календарём и миской. На ней банки плана, мыло, пока оно куплено, и копилка.
         Thing("polka", p.shelfW, Modifier.offset(x = p.shelfLeft, y = p.shelfTop))

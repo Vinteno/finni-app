@@ -106,8 +106,9 @@ class FlowTest {
     private fun tap(desc: String) { node(hasContentDescription(desc)).performClick(); idle() }
     private fun press(text: String) { node(hasText(text)).performClick(); idle() }
     private fun shown(text: String) = compose.onAllNodes(hasText(text, substring = true)).fetchSemanticsNodes().isNotEmpty()
+    /** Записка не нажимается (решение Эмиля 25.09): ищется по тексту шага. */
     private fun noteSays(text: String) {
-        val ok = compose.onAllNodes(hasText(text) and hasClickAction()).fetchSemanticsNodes().isNotEmpty()
+        val ok = compose.onAllNodes(hasText(text)).fetchSemanticsNodes().isNotEmpty()
         if (!ok) shot("FAIL_note_$text")
         assertTrue("на записке «$text»; на экране: " + compose.onAllNodes(hasClickAction()).fetchSemanticsNodes().map { label(it) }, ok)
     }
@@ -119,16 +120,16 @@ class FlowTest {
         app(week1())
         noteSays("Открой посылку"); shot("w1_01_parcel")
         // До посылки предметы отвечают репликой, а не молчат.
-        tap("Неделя 1"); assertTrue(shown("Сначала открой посылку.")); shot("w1_02_say_parcel_first")
+        tap("Неделя 1"); assertTrue(shown("Сначала открой посылку")); shot("w1_02_say_parcel_first")
         tap("Посылка"); shot("w1_03_parcel_note")
         press("Понятно"); shot("w1_04_announce")
         press("Понятно"); noteSays("Разложи монеты"); shot("w1_05_step_plan")
         // До плана: витрина магазина, копилка — только посмотреть, календарь — реплика.
-        tap("Магазин"); assertTrue(shown("Сначала разложи монеты.")); shot("w1_06_shop_showcase")
+        tap("Магазин"); assertTrue(shown("Сначала разложи монеты")); shot("w1_06_shop_showcase")
         tap("Назад")
-        tap("Копилка"); assertTrue(shown("Сначала разложи монеты.")); assertFalse(shown("Отложить")); shot("w1_07_piggy_before_plan")
+        tap("Копилка"); assertTrue(shown("Сначала разложи монеты")); assertFalse(shown("Отложить")); shot("w1_07_piggy_before_plan")
         tap("Назад")
-        tap("Неделя 1"); assertTrue(shown("Сначала разложи монеты.")); shot("w1_08_say_plan_first")
+        tap("Неделя 1"); assertTrue(shown("Сначала разложи монеты")); shot("w1_08_say_plan_first")
         tap(jars); shot("w1_09_plan")
         press("Подтвердить план"); noteSays("В магазин"); shot("w1_10_step_shop")
         tap(jars); assertTrue(shown("Монеты в банках")); assertFalse(shown("Подтвердить план")); shot("w1_11_plan_frozen")
@@ -136,8 +137,8 @@ class FlowTest {
         // Зашёл и вышел без покупки: шаг остаётся, награды нет, итог ещё закрыт.
         tap("Магазин"); tap("Назад")
         noteSays("В магазин"); assertEquals(0, s.progress.savings); assertFalse(s.week!!.taskDone)
-        tap("Неделя 1"); assertTrue(shown("Итог — в конце недели.")); shot("w1_12_say_summary_later")
-        tap("Миска"); assertTrue(shown("Миска пустая.")); shot("w1_13_say_bowl_empty")
+        tap("Неделя 1"); assertTrue(shown("Итог — в конце недели")); shot("w1_12_say_summary_later")
+        tap("Миска"); assertTrue(shown("Миска пустая")); shot("w1_13_say_bowl_empty")
         // Покупка: каша с ягодами — в «Нужное» одной позицией 8; объяснение — в магазине, с «Домой».
         tap("Магазин")
         listOf("Каша с ягодами", "Мыло").forEach { tap(it) }
@@ -146,13 +147,17 @@ class FlowTest {
         assertEquals(10, s.progress.savings); assertTrue(s.week!!.taskDone)
         assertTrue(shown("Домой")); shot("w1_15_shop_explained")
         press("Домой"); noteSays("Покорми"); shot("w1_16_step_feed")
+        // Записка не нажимается: к шагу ведёт только предмет.
+        assertTrue(compose.onAllNodes(hasText("Покорми") and hasClickAction()).fetchSemanticsNodes().isEmpty())
         tap("Миска"); noteSays("Умой"); shot("w1_17_step_wash")
         tap("Мыло"); noteSays("Отложить"); shot("w1_18_step_save")
+        // Умыл — мыла на полке больше нет.
+        assertTrue(compose.onAllNodes(hasContentDescription("Мыло")).fetchSemanticsNodes().isEmpty())
         tap("Копилка"); press("Отложить 10"); assertTrue(shown("Домой")); shot("w1_19_piggy_deposited")
         press("Домой"); noteSays("Итог недели"); shot("w1_20_step_summary")
         tap("Неделя 1"); shot("w1_21_summary")
         press("Оставить план"); noteSays("Следующая неделя"); shot("w1_22_step_next_week")
-        tap("Магазин"); assertTrue(shown("Неделя уже закончилась.")); shot("w1_23_say_week_over")
+        tap("Магазин"); assertTrue(shown("Неделя уже закончилась")); shot("w1_23_say_week_over")
         tap("Копилка"); assertFalse(shown("Отложить")); assertFalse(shown("Домой")); shot("w1_24_piggy_after_summary")
         tap("Назад")
         tap("Неделя 1")
@@ -162,7 +167,7 @@ class FlowTest {
         tap("Посылка"); press("Понятно"); press("Понятно")
         tap(jars)
         assertEquals(39, s.progress.wallet)
-        assertTrue(shown("Осталось разложить 9 монет."))
+        assertTrue(shown("Осталось разложить 9 монет"))
         assertFalse(game.canConfirmPlan(s)); shot("w2_02_plan_under")
         repeat(9) { compose.onAllNodes(hasContentDescription("Добавить монету") and hasClickAction())[1].performClick() }
         idle()
@@ -181,7 +186,7 @@ class FlowTest {
         tap("Неделя 2"); press("Оставить план")
         assertEquals(Phase.EVENT, s.phase); shot("w2_08_event")
         press("Дальше")
-        assertEquals(Phase.FREE_PLAY, s.phase); noteSays("Глава пройдена."); shot("w2_09_free_play")
+        assertEquals(Phase.FREE_PLAY, s.phase); noteSays("Глава пройдена"); shot("w2_09_free_play")
         tap("Неделя 2"); tap("Магазин"); tap(jars); tap("Копилка")
         assertEquals(Phase.FREE_PLAY, s.phase); shot("w2_10_free_play_taps")
     }
@@ -314,7 +319,7 @@ class FlowTest {
         home(week1(), 1f)
         assertTrue(compose.onAllNodes(hasTestTag("mark")).fetchSemanticsNodes().isNotEmpty())
         tap("Магазин")
-        assertTrue(shown("Сначала открой посылку."))
+        assertTrue(shown("Сначала открой посылку"))
         compose.onRoot().captureRoboImage("build/shots/flow/home_no_anim_say.png")
     }
 
@@ -343,7 +348,7 @@ class FlowTest {
             "после итога недели" to summary,
             "после события" to event,
         )
-        val props = listOf("Посылка", "Нужное, Хочу, Копилка", "Магазин", "Копилка", "Миска", "Мыло", "Неделя", "Записка")
+        val props = listOf("Посылка", "Нужное, Хочу, Копилка", "Магазин", "Копилка", "Миска", "Мыло", "Неделя")
         val rows = mutableListOf<String>()
         home(w1, 1f)
         states.forEach { (stateName, st) ->
@@ -352,32 +357,17 @@ class FlowTest {
                 opened = null
                 val before = store.state.value
                 val keyBefore = model.reactionKey
-                val matcher = when (prop) {
-                    "Неделя" -> hasContentDescription("Неделя", substring = true)
-                    "Записка" -> SemanticsMatcher("записка") { n ->
-                        n.config.getOrNull(SemanticsProperties.Text).orEmpty().any { t ->
-                            plain(t.text) in listOf("Открой посылку", "Разложи монеты", "В магазин", "Покорми", "Умой", "Отложить",
-                                "Открой копилку", "Итог недели", "Следующая неделя", "Глава пройдена.")
-                        }
-                    }
-                    else -> hasContentDescription(prop)
-                }
+                val matcher = if (prop == "Неделя") hasContentDescription("Неделя", substring = true) else hasContentDescription(prop)
                 val found = compose.onAllNodes(matcher and hasClickAction()).fetchSemanticsNodes()
                 if (found.isEmpty()) {
                     rows += "| $prop | $stateName | нет на экране |"
                     return@forEach
                 }
-                // Плашка объявления встаёт наверху стены, над запиской: касание приходится на плашку.
-                val plateUp = compose.onAllNodes(hasText("Понятно") and hasClickAction()).fetchSemanticsNodes().isNotEmpty()
-                if (plateUp && prop == "Записка") {
-                    rows += "| $prop | $stateName | закрыта плашкой объявления — касание приходится на плашку |"
-                    return@forEach
-                }
                 compose.onAllNodes(matcher and hasClickAction())[0].performClick()
                 idle()
                 val after = store.state.value
-                val said = listOf("Сначала открой посылку.", "Сначала разложи монеты.", "Итог — в конце недели.",
-                    "Неделя уже закончилась.", "Миска пустая.").firstOrNull { shown(it) }
+                val said = listOf("Сначала открой посылку", "Сначала разложи монеты", "Итог — в конце недели",
+                    "Неделя уже закончилась", "Миска пустая").firstOrNull { shown(it) }
                 val what = when {
                     opened != null -> "открывает: " + when (opened!!) {
                         HomeTarget.PLAN -> if (before.week!!.planConfirmed) "план (смотреть)" else "план (менять)"
