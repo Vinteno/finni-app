@@ -65,7 +65,8 @@ class ExplainTest {
     @Test fun `объяснение F5 одинаковой структуры при обоих решениях`() {
         var s = game.buy(week1(), listOf("kasha", "yagody", "mylo"), agreedWant = true)
         s = game.finishWeek(game.deposit(game.leaveShop(s)), SummaryChoice.KEEP_PLAN)
-        s = game.deposit(game.confirmPlan(game.seeAnnouncement(game.openParcel(game.nextWeek(s)))))
+        // В кошельке 39: остаток раскладывается сам, иначе план не подтвердить (I45).
+        s = game.deposit(game.confirmPlan(game.setPlan(game.seeAnnouncement(game.openParcel(game.nextWeek(s))), Plan(10, 19, 10))))
         val take = explain.afterBall(game.chooseBall(s, true), took = true)
         val keep = explain.afterBall(game.chooseBall(s, false), took = false)
         assertEquals(3, take.size); assertEquals(3, keep.size)
@@ -86,8 +87,9 @@ class ExplainTest {
         var s = game.createPet(game.seeIntro(GameState()), "", Fur.GINGER, Accessory.CAP)
         s = game.chooseGoal(s, "podarok_myach")
         s = game.setPlan(game.seeAnnouncement(game.openParcel(s)), Plan(10, 20, 0))
-        s = game.finishWeek(game.leaveShop(game.confirmPlan(s)), SummaryChoice.KEEP_PLAN)
-        s = game.confirmPlan(game.setPlan(game.seeAnnouncement(game.openParcel(game.nextWeek(s))), Plan(10, 20, 0)))
+        // Награда F1 — за покупку: крупа 3, в копилке 10, в кошельке 27 + 30.
+        s = game.finishWeek(game.buy(game.confirmPlan(s), listOf("krupa")), SummaryChoice.KEEP_PLAN)
+        s = game.confirmPlan(game.setPlan(game.seeAnnouncement(game.openParcel(game.nextWeek(s))), Plan(10, 47, 0)))
         assertTrue(!game.ballOffer(s).available)
         s = game.acknowledgeNoBall(s)
         assertEquals(20, s.progress.savings)
@@ -117,8 +119,11 @@ class ExplainTest {
                 content.chapter1.goalIds.random(rnd))
             for (week in 1..2) {
                 s = game.seeAnnouncement(game.openParcel(s))
-                val p = Plan(rnd.nextInt(0, 16), rnd.nextInt(0, 16), rnd.nextInt(0, 16))
-                s = game.confirmPlan(if (p.total <= s.progress.wallet) game.setPlan(s, p) else s)
+                // Подтверждается только весь кошелёк (I45): случайные «Нужное» и «Копилка», остаток — в «Хочу».
+                val wallet = s.progress.wallet
+                val need = rnd.nextInt(0, minOf(16, wallet + 1))
+                val save = rnd.nextInt(0, minOf(16, wallet - need + 1))
+                s = game.confirmPlan(game.setPlan(s, Plan(need, wallet - need - save, save)))
                 val shelves = game.weekContent(s).shelves
                 val cart = shelves.filter { rnd.nextBoolean() }.flatMap { it.tiers.random(rnd) } +
                     (if (rnd.nextBoolean()) listOf("kacheli") else emptyList())
@@ -126,6 +131,7 @@ class ExplainTest {
                 s = game.leaveShop(s)
                 if (rnd.nextBoolean() && game.canDeposit(s)) s = game.deposit(s)
                 if (rnd.nextBoolean()) runCatching { s = game.chooseBall(s, rnd.nextBoolean()) }
+                s = game.leavePiggy(s)
                 val lines = explain.summaryLines(s)
                 val total = fixed + lines.sumOf(t::screenWords)
                 assertTrue("$total слов: $lines", total <= 25)

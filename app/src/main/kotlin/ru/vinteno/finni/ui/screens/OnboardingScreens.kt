@@ -235,7 +235,7 @@ private const val INTRO_SLOT_K = 0.9f
  * Создание Финни — сценарий §6.3, решение I43. Финни стоит на полу комнаты в центре, у ног — табличка
  * с именем, по умолчанию «Финни». Снизу кремовый лоток: три кружка настоящего меха, три головы с
  * аксессуаром — уже в выбранном мехе (девять комбинаций, ТЗ), ряд имён «Бублик», «Пушок», «Ушастик»,
- * «Своё». «Своё» превращает табличку в поле, над ним вопрос «Как его зовут?»; место под вопрос занято
+ * «Своё». «Своё» превращает табличку в поле, под ним вопрос «Как его зовут?»; место под вопрос занято
  * заранее — Финни не прыгает. Пока открыта клавиатура, Финни уменьшается до 96 dp, лоток уходит под
  * неё. Смена меха или аксессуара — `замечает`, смена имени — ничего. Уступает место Финни, не мельче
  * 96 dp; лоток не уменьшается. Не помещается и Финни 96 dp (крупный шрифт) — прокручивается лоток.
@@ -296,14 +296,15 @@ fun CreatePetScreen() {
             val topH = titleTop + (title.maxOfOrNull { it.height } ?: 0) + 8.dp.roundToPx()
             val name = subcompose(CreateSlot.NAME) {
                 Column(Modifier.fillMaxWidth().padding(horizontal = FinniDimens.ScreenPadding), horizontalAlignment = Alignment.CenterHorizontally) {
-                    // Место под вопрос — всегда: табличка и Финни не сдвигаются, когда она становится полем.
-                    Box(Modifier.height(questionH), contentAlignment = Alignment.Center) { if (typing) Txt(question, QuestionText) }
-                    Box(Modifier.height(6.dp))
+                    // Табличка — сразу под ногами Финни, чуть заходя на пол (I45). Место под вопрос — под ней и
+                    // занято всегда: табличка и Финни не сдвигаются, когда она становится полем.
                     if (typing) NameField(
                         own, { own = it.filter { ch -> ch.isLetter() || ch == '-' }.take(12) }, question, focus,
                         onDone = { focusManager.clearFocus() }, onLost = ::stopTyping,
                         modifier = Modifier.width(minOf(inner, NAME_FIELD_W)).height(nameH),
                     ) else NamePlate(nameOf(pick), Modifier.height(nameH))
+                    Box(Modifier.height(6.dp))
+                    Box(Modifier.height(questionH), contentAlignment = Alignment.Center) { if (typing) Txt(question, QuestionText) }
                 }
             }.map { it.measure(Constraints(maxWidth = w)) }
             val nameArea = name.maxOfOrNull { it.height } ?: 0

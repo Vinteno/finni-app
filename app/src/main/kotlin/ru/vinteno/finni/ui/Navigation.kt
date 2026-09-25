@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import ru.vinteno.finni.ui.motion.FlightLayer
+import ru.vinteno.finni.core.engine.Game
 import ru.vinteno.finni.core.model.GameState
 import ru.vinteno.finni.core.model.Phase
 import ru.vinteno.finni.ui.screens.CreatePetScreen
@@ -64,16 +65,19 @@ fun startScreen(s: GameState): Screen = when {
 
 /**
  * Экран, который допускает текущее состояние игры; иначе — Дом. Защита от восстановленного
- * после смерти процесса экрана, которому состояние уже не соответствует: магазин до плана,
- * итог без недели и так далее. До подтверждения плана тратить нельзя — инвариант 6.
+ * после смерти процесса экрана, которому состояние уже не соответствует: итог раньше конца недели,
+ * магазин после итога и так далее. До подтверждения плана тратить нельзя — инвариант 6: магазин
+ * тогда только витрина.
  */
-private fun allowed(sc: Screen, s: GameState): Screen {
+private fun allowed(sc: Screen, s: GameState, game: Game): Screen {
     val w = s.week
     val ok = when (sc) {
         Screen.PLAN -> w != null && w.announcementSeen
-        Screen.SHOP -> w != null && w.planConfirmed && s.phase == Phase.WEEK
-        Screen.PIGGY -> w != null && w.planConfirmed && s.phase != Phase.FREE_PLAY
-        Screen.SUMMARY -> w != null && w.planConfirmed && s.phase == Phase.WEEK
+        // До плана магазин открыт витриной — купить нельзя (I45).
+        Screen.SHOP -> w != null && w.announcementSeen && s.phase == Phase.WEEK
+        // Копилку посмотреть можно всегда, пока идёт глава.
+        Screen.PIGGY -> w != null && w.parcel != null && s.phase != Phase.FREE_PLAY
+        Screen.SUMMARY -> game.summaryOpen(s)
         Screen.EVENT -> s.phase == Phase.EVENT
         else -> true
     }
@@ -89,7 +93,7 @@ private fun allowed(sc: Screen, s: GameState): Screen {
 fun FinniNavHost(state: GameState) {
     var chosen by rememberSaveable { mutableStateOf(Screen.HOME) }
     val onboarding = startScreen(state).takeIf { it != Screen.HOME && it != Screen.EVENT }
-    val screen = onboarding ?: if (state.phase == Phase.EVENT && chosen != Screen.SUMMARY) Screen.EVENT else allowed(chosen, state)
+    val screen = onboarding ?: if (state.phase == Phase.EVENT && chosen != Screen.SUMMARY) Screen.EVENT else allowed(chosen, state, app().game)
     val home = { chosen = Screen.HOME }
     BackHandler(enabled = screen.hasBack) { home() }
 

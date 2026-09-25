@@ -82,7 +82,10 @@ import ru.vinteno.finni.ui.theme.FinniText
 private enum class Ask { NONE, WANT, SAVINGS, NO_SAVINGS }
 
 /**
- * Магазин — единственное место, где уходят деньги за покупки (сценарий главы 1, шаг 4). Две полки:
+ * Магазин — единственное место, где уходят деньги за покупки (сценарий главы 1, шаг 4). До плана —
+ * витрина: полки, вещи и ценники те же, но вещи не выбираются, а на месте корзины — «Сначала разложи
+ * монеты.» (инвариант 6: смотреть можно, тратить нельзя; I45). После «Купить» объяснение из трёх строк
+ * встаёт на место корзины с кнопкой «Домой». Две полки:
  * еда, мыло и через разделитель хотелка главы. Мячика здесь нет: задание F5 живёт на копилке (QA-M3).
  * Корзина видна всегда и есть подтверждение покупки: картинки с ценой под меткой категории, сумма,
  * «Купить». Кнопка не гаснет при нехватке — открывается окно. Размеры — от свободной высоты: сначала
@@ -99,20 +102,17 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
     var wantPicked by remember(w.number) { mutableStateOf(false) }
     var ask by remember { mutableStateOf(Ask.NONE) }
     var agreedWant by remember { mutableStateOf(false) }
-    val boughtThisVisit = remember { mutableStateListOf<String>() }
+    // Объяснение после покупки — здесь же, на месте корзины (I45); дома оно больше не показывается.
+    var explained by remember { mutableStateOf<List<String>?>(null) }
+    val showcase = !w.planConfirmed
 
     val wantId = g.content.chapter1.chapterWantId
     val cart = week.shelves.flatMap { sh -> tiers[sh.id]?.let { sh.tiers[it] } ?: emptyList() } +
         (if (wantPicked && !g.owns(s, wantId)) listOf(wantId) else emptyList())
 
     fun leave() {
-        val firstVisit = !a.state.value.requireWeek().shopVisited
-        a.act(g::leaveShop)
-        // Плашка — о том, что сделано за этот заход. Повторный заход без покупок её не показывает:
-        // «Ты ничего не купил» после утренней покупки было бы неправдой.
-        if (firstVisit || boughtThisVisit.isNotEmpty()) {
-            a.pendingPlate = a.explain.afterShop(a.state.value, boughtThisVisit.toList())
-        }
+        // Витрина до плана ничего не отмечает: магазин закрыт для трат.
+        if (!showcase) a.act(g::leaveShop)
         onLeave()
     }
     // Системное «назад» (жест, кнопка телефона) закрывает шаг так же, как кнопка на экране.
@@ -120,7 +120,7 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
 
     fun buy(q: Checkout, withWant: Boolean, withSavings: Boolean) {
         if (a.act { g.buy(it, cart, agreedWant = withWant, agreedSavings = withSavings) }) {
-            boughtThisVisit += q.items.map { it.id }
+            explained = a.explain.afterShop(a.state.value, q.items.map { it.id })
             tiers.clear(); wantPicked = false
             // `доволен` одинаков для любого набора — инвариант 8.
             a.react(Reaction.HAPPY)
@@ -163,16 +163,38 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
             wallet = s.progress.wallet,
             bottomGap = 8.dp,
             bottom = {
-                // Корзина видна всегда: пустая — пустая корзина без слов, место под «Купить» занято.
-                Box {
-                    CartBasket(s, fullest, Modifier.alpha(0f).clearAndSetSemantics {})
-                    CartBasket(s, cart, Modifier.matchParentSize())
+                // Корзина видна всегда: пустая — пустая корзина без слов, место под «Купить» занято. Витрина
+                // и объяснение после покупки встают на то же место: полки не прыгают.
+                Box(contentAlignment = Alignment.BottomCenter) {
+                    Column(Modifier.alpha(0f).clearAndSetSemantics {}, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CartBasket(s, fullest, Modifier)
+                        MainButton(a.t("shop.buy"), onClick = {})
+                    }
+                    val after = explained
+                    when {
+                        // Три строки объяснения выше пустой корзины: место растёт по ним — полки после покупки
+                        // и так меняются (купленная полка уходит).
+                        after != null -> Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom)) {
+                            Column(
+                                Modifier.fillMaxWidth().softPlate(FinniDimens.RadiusCard - 6.dp).padding(horizontal = 14.dp, vertical = 10.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) { after.forEachIndexed { i, l -> Txt(l, if (i == 0) FinniText.Button else FinniText.Body) } }
+                            MainButton(a.t("common.home"), onClick = ::leave)
+                        }
+                        showcase -> Box(
+                            Modifier.matchParentSize().softPlate(FinniDimens.RadiusCard - 6.dp).padding(16.dp),
+                            contentAlignment = Alignment.Center,
+                        ) { Txt(a.t("home.say.planFirst"), FinniText.Subtitle.copy(textAlign = TextAlign.Center)) }
+                        else -> Column(Modifier.matchParentSize(), verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom)) {
+                            Box(Modifier.weight(1f).fillMaxWidth()) { CartBasket(s, cart, Modifier.matchParentSize()) }
+                            MainButton(
+                                a.t("shop.buy"),
+                                onClick = { if (cart.isNotEmpty()) proceed(g.quote(s, cart), false) },
+                                modifier = if (cart.isEmpty()) Modifier.alpha(0f).clearAndSetSemantics {} else Modifier,
+                            )
+                        }
+                    }
                 }
-                MainButton(
-                    a.t("shop.buy"),
-                    onClick = { if (cart.isNotEmpty()) proceed(g.quote(s, cart), false) },
-                    modifier = if (cart.isEmpty()) Modifier.alpha(0f).clearAndSetSemantics {} else Modifier,
-                )
             },
         ) { viewport ->
             val scroll = rememberScrollState()
@@ -196,8 +218,9 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
                             row, slotW, signH, tagH,
                             picked = tiers[row.id],
                             wantItem = wantItem, wantPicked = wantPicked,
-                            onPick = { i -> if (tiers[row.id] == i) tiers.remove(row.id) else tiers[row.id] = i },
-                            onWant = { wantPicked = !wantPicked },
+                            // Витрина и объяснение после покупки: вещи видны, но не выбираются.
+                            onPick = { i -> if (!showcase && explained == null) { if (tiers[row.id] == i) tiers.remove(row.id) else tiers[row.id] = i } },
+                            onWant = { if (!showcase && explained == null) wantPicked = !wantPicked },
                             modifier = Modifier.fillMaxWidth().flex(min = fixed + UNIT_MIN * factor, max = fixed + unitMax * factor, order = 1),
                         )
                     }
@@ -206,7 +229,7 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
             }
         }
 
-        val q = if (cart.isEmpty()) null else g.quote(s, cart)
+        val q = if (cart.isEmpty() || showcase) null else g.quote(s, cart)
         when (ask) {
             Ask.WANT -> q?.let {
                 WantSheet(s, it, onTake = { agreedWant = true; proceed(it, true) }, onBack = { ask = Ask.NONE })
@@ -415,7 +438,8 @@ private fun Sign(caption: String, impact: Impact?, modifier: Modifier) {
 @Composable
 private fun CartBasket(s: GameState, cart: List<String>, modifier: Modifier) {
     val a = app()
-    val q = if (cart.isEmpty()) null else a.game.quote(s, cart)
+    val g = a.game
+    val q = if (cart.isEmpty() || !s.requireWeek().planConfirmed) null else g.quote(s, cart)
     Basket(modifier.fillMaxWidth().heightIn(min = 64.dp)) {
         if (q == null) return@Basket
         val groups: @Composable (Modifier) -> Unit = { m ->
@@ -424,16 +448,21 @@ private fun CartBasket(s: GameState, cart: List<String>, modifier: Modifier) {
                 m.softPlate(FinniDimens.RadiusSmall + 4.dp).padding(horizontal = 6.dp, vertical = 2.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                listOf(Category.NEED, Category.WANT).forEach { cat ->
-                    val items = q.items.filter { it.category == cat }
+                // Группы — как платит игра (Game.direction): надбавка идёт с направлением своей основы и
+                // стоит на картинке основы, одной позицией с общей ценой — каша с ягодами 8 под «Нужное».
+                listOf(Direction.NEED, Direction.WANT).forEach { dir ->
+                    val items = q.items.filter { g.direction(it) == dir }
                     if (items.isEmpty()) return@forEach
-                    val st = directionStyle(if (cat == Category.NEED) Direction.NEED else Direction.WANT)
+                    val st = directionStyle(dir)
                     FlowRowGroup {
                         DirectionLabel(st.icon, st.color, a.t(st.labelKey))
-                        items.forEach { item ->
+                        items.filter { it.addonOf == null }.forEach { base ->
+                            val addons = items.filter { it.addonOf == base.id }
+                            val key = (listOf(base.id) + addons.map { it.id }).joinToString("_")
+                            val name = if (addons.isEmpty()) base.name else a.t("shop.tier.$key")
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Picture(item.id, THUMB, description = item.name)
-                                Txt(item.price.toString(), FinniText.Button)
+                                Picture(key, THUMB, description = name)
+                                Txt((base.price + addons.sumOf { it.price }).toString(), FinniText.Button)
                             }
                         }
                     }
