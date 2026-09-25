@@ -94,11 +94,36 @@ class Game(val content: Content) {
 
     fun seeIntro(s: GameState): GameState = s.copy(profile = s.profile.copy(introSeen = true))
 
-    /** Имя не обязательно: пустое становится «Финни» — сценарий 6.3. */
-    fun createPet(s: GameState, name: String, fur: Fur, accessory: Accessory): GameState {
-        val petName = name.trim().ifEmpty { content.texts["create.defaultName"] }
-        return s.copy(profile = s.profile.copy(petName = petName, fur = fur, accessory = accessory, created = true))
+    /**
+     * Внешность и имя выбираются на двух экранах подряд: сначала ребёнок собирает питомца, потом
+     * называет того, кого собрал. Выбор внешности сохраняется сразу, чтобы перезапуск между экранами
+     * его не терял.
+     */
+    fun chooseLook(s: GameState, fur: Fur, accessory: Accessory): GameState {
+        rule(!s.profile.created) { "Питомец уже создан" }
+        return s.copy(profile = s.profile.copy(fur = fur, accessory = accessory, lookChosen = true))
     }
+
+    /** С экрана имени назад к внешности: выбор остаётся, его можно поменять. */
+    fun backToLook(s: GameState): GameState {
+        rule(!s.profile.created) { "Питомец уже создан" }
+        return s.copy(profile = s.profile.copy(lookChosen = false))
+    }
+
+    /**
+     * Имя после внешности. Экран не даёт нажать «Готово» с пустым полем; пустое имя здесь всё равно
+     * становится «Финни», чтобы правило не зависело от экрана.
+     */
+    fun namePet(s: GameState, name: String): GameState {
+        rule(s.profile.lookChosen) { "Сначала выбирается внешность" }
+        rule(!s.profile.created) { "Питомец уже создан" }
+        val petName = name.trim().ifEmpty { content.texts["create.defaultName"] }
+        return s.copy(profile = s.profile.copy(petName = petName, created = true))
+    }
+
+    /** Внешность и имя одним ходом: для тестов и демо-профиля. */
+    fun createPet(s: GameState, name: String, fur: Fur, accessory: Accessory): GameState =
+        namePet(chooseLook(s, fur, accessory), name)
 
     /** Цель выбирается один раз в начале главы, до первого плана — E13. */
     fun chooseGoal(s: GameState, goalId: String): GameState {
