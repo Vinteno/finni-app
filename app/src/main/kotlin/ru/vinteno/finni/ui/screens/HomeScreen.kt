@@ -429,17 +429,19 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
         val needsH = needs.maxOf { it.height }
         val stacked = needsW + purseW + pad * 3 > width
         val needsY = if (stacked) pad + purseH + 4.dp.roundToPx() else pad
-        // «Взрослым» — под кошельком справа (I49, F6); на крупном шрифте — в строку с потребностями,
-        // не помещается — строкой ниже.
+        // «Взрослым» — под кошельком справа (I49, F6). На крупном шрифте потребности уходят строкой ниже, а
+        // слева от кошелька место пустое — плашка встаёт туда и лишней строки шапке не добавляет.
         val gate = subcompose(Slot.GATE) { AdultGate(a.t("home.adult"), onOpen = { open(HomeTarget.ADULT) }) }.map { it.measure(loose) }
         val gateW = gate.maxOf { it.width }
         val gateH = gate.maxOf { it.height }
         val gap4 = 4.dp.roundToPx()
+        val gateBeside = stacked && gateW + purseW + pad * 3 <= width
         val gateY = when {
             !stacked -> pad + purseH + gap4
-            needsW + gateW + pad * 3 <= width -> needsY
+            gateBeside -> pad + maxOf(0, (purseH - gateH) / 2)
             else -> needsY + needsH + gap4
         }
+        val gateX = if (gateBeside) pad else width - pad - gateW
         val leftTop = (needsY + needsH).toDp()
         val rightTop = maxOf(if (stacked) needsY + needsH else pad + purseH, gateY + gateH).toDp()
         val headerH = maxOf(needsY + needsH, pad + purseH, gateY + gateH)
@@ -558,7 +560,7 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
             if (scrolling) hint.forEach { it.place(0, viewTop) }
             needs.forEach { it.place(pad, needsY) }
             purse.forEach { it.place(width - pad - purseW, pad) }
-            gate.forEach { it.place(width - pad - gateW, gateY) }
+            gate.forEach { it.place(gateX, gateY) }
             dark.forEach { it.place(0, 0) }
             placedPlate.forEach { it.place(0, if (onFloor) height - it.height else topY) }
         }
@@ -841,7 +843,8 @@ private fun Room(
                 ) {
                     // Клетки по 5 монет и «Накопили N», рядом цель с ценой.
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        // Колонка с клетками уступает: цена цели справа меряется первой и не рвётся по цифрам.
+                        Column(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             goal?.let { gl -> ProgressCells(minOf(s.progress.savings, gl.price) / 5, (gl.price + 4) / 5, cell = p.cell) }
                             Txt(saved, PlateText)
                         }

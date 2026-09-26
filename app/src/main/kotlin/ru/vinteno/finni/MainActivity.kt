@@ -33,6 +33,7 @@ class MainActivity : ComponentActivity() {
 class FinniApp : android.app.Application() {
     val content: Content by lazy { Content.fromResources() }
     val game: Game by lazy { Game(content) }
-    val store: GameStore by lazy { GameStore(this) }
+    // Старое сохранение прототипа главы 1 продолжается в главе 2 (Game.migrate).
+    val store: GameStore by lazy { GameStore(this).also { st -> st.update(game::migrate) } }
     val model: AppModel by lazy { AppModel(game, store) }
 }

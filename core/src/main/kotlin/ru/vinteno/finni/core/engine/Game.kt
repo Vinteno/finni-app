@@ -900,7 +900,40 @@ class Game(val content: Content) {
         return GameState(profile = s.profile, demo = s.demo)
     }
 
+    /**
+     * Сохранение прототипа главы 1 (версия 1): после дня рождения Киры игра стояла в свободной игре —
+     * конце прототипа. Теперь дальше глава 2: такое сохранение продолжается плашкой перехода, строка
+     * причины — по отметкам главы 1. Остальное в старых сохранениях читается как есть.
+     */
+    fun migrate(s: GameState): GameState {
+        if (s.version >= CURRENT_VERSION) return s
+        val stuck = s.phase == Phase.FREE_PLAY && !ch(s).last
+        if (!stuck) return s.copy(version = CURRENT_VERSION)
+        val p = s.progress
+        val reason = when {
+            p.marksCare >= 2 -> Reason.CARE
+            p.marksSave >= 2 -> Reason.SAVE
+            else -> Reason.PLAN
+        }
+        val weeks = when (reason) {
+            Reason.CARE -> p.marksCare
+            Reason.SAVE -> p.marksSave
+            Reason.PLAN -> p.marksPlan
+        }
+        return s.copy(
+            version = CURRENT_VERSION,
+            progress = p.copy(chapter = p.chapter + 1, weekInChapter = 1, weekTotal = maxOf(p.weekTotal, s.week?.number ?: 0)),
+            chapter = ChapterState(),
+            phase = Phase.TRANSITION,
+            week = null,
+            transition = Transition(p.chapter + 1, reason, weeks),
+        )
+    }
+
     companion object {
+        /** Версия сохранения: 2 — три главы. */
+        const val CURRENT_VERSION = 2
+
         /** Инвариант 9: любое число на экране не выше 100 — копилка тоже. */
         const val CEILING = 100
 

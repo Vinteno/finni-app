@@ -405,4 +405,30 @@ class ChaptersTest {
         t = game.buy(t, listOf("kasha", "mylo") + game.situationCart(t))
         assertEquals("Мы взяли лампу с абажуром", explain.summaryLines(t).first())
     }
+
+    // ---------- Сохранение ----------
+
+    @Test fun `сохранение — глава 3 с носимым, бонусом, дневником и отметками читается целиком`() {
+        val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true; encodeDefaults = true }
+        var s = plan(demo.weekStart(6), 14, 10)
+        s = game.adultBonus(game.chooseSituation(s, 1))
+        s = game.buy(s, listOf("kasha", "mylo") + game.situationCart(s))
+        val back = json.decodeFromString(GameState.serializer(), json.encodeToString(GameState.serializer(), s))
+        assertEquals(s, back)
+        assertTrue(back.progress.history.size == 5 && "kurtka" in back.progress.inventory && back.week!!.bonus == 5)
+    }
+
+    @Test fun `старое сохранение после дня рождения продолжается переходом в главу 2`() {
+        var s = demo.playWeek(demo.weekStart(2))
+        s = game.playEvent(s)
+        // Так выглядело сохранение прототипа: глава 1, свободная игра, версия 1.
+        val old = s.copy(version = 1, phase = Phase.FREE_PLAY, progress = s.progress.copy(chapter = 1), chapter = s.chapter.copy(goalId = "podarok_kniga"), transition = null)
+        val m = game.migrate(old)
+        assertEquals(Phase.TRANSITION, m.phase)
+        assertEquals(2, m.progress.chapter)
+        assertEquals("Мы ели две недели", explain.transitionLines(m).first())
+        assertEquals(m, game.migrate(m))
+        val fresh = game.migrate(GameState(version = 1))
+        assertEquals(Phase.ONBOARDING, fresh.phase)
+    }
 }
