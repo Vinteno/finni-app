@@ -94,7 +94,8 @@ private fun allowed(sc: Screen, s: GameState, game: Game): Screen {
         Screen.SUMMARY -> game.summaryOpen(s)
         Screen.EVENT -> s.phase == Phase.EVENT
         Screen.SITUATION -> game.situationOpen(s)
-        Screen.SORT -> game.sortPending(s) && game.shopDone(s)
+        // F6 открыт и после раскладки — на нём объяснение с «Домой».
+        Screen.SORT -> s.phase == Phase.WEEK && game.weekTask(s)?.template == ru.vinteno.finni.core.content.TaskTemplate.SORT && game.shopDone(s)
         Screen.DIARY -> s.week != null
         else -> true
     }

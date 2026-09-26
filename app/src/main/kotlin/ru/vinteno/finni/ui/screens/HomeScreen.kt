@@ -199,7 +199,7 @@ private fun stepProp(step: Step, canFeed: Boolean): Prop? = when (step) {
 /** Слова шага на записке — те же, что были на нижней кнопке. */
 private val STEP_KEYS = listOf(
     "step.parcel", "step.plan", "step.shop", "step.care", "step.wash", "step.save", "step.piggy",
-    "step.sort", "step.summary", "step.nextWeek", "home.note.chapterDone",
+    "step.sort", "step.summary", "step.nextWeek", "home.note.chapterDone", "end.title",
 )
 
 /**
@@ -362,7 +362,8 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
         Step.SORT -> "step.sort"
         Step.SUMMARY -> "step.summary"
         Step.NEXT_WEEK -> "step.nextWeek"
-        Step.EVENT, Step.NONE -> "home.note.chapterDone"
+        // После новоселья — «Мы обжились»: пройдена игра, а не глава.
+        Step.EVENT, Step.NONE -> if (s.phase == Phase.FREE_PLAY && g.ch(s).last) "end.title" else "home.note.chapterDone"
     }.let(a::t)
     // Плашка накоплений: цель с клетками по 5 монет и «N из M». После события цели нет — только
     // «Накопили N» (QA-M4).

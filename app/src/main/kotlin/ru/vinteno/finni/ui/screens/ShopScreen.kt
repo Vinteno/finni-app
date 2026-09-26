@@ -183,6 +183,7 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
     // Корзина хранит место под самый полный набор этой недели: со второй строкой «Хочу», если хотелки
     // на неделе бывают. Так полки не прыгают, когда в корзину кладут первую вещь «Хочу».
     val fullest = g.activeShelves(s).flatMap { sh -> sh.tiers.maxBy { it.size } } + (if (wantAvailable) listOf(wantId) else emptyList())
+    val onScreenItems = g.activeShelves(s).filter { it.onScreen }.flatMap { it.tiers.flatten() }.toSet()
 
     Box(Modifier.fillMaxSize()) {
         SoftScreen(
@@ -195,7 +196,8 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
                 // и объяснение после покупки встают на то же место: полки не прыгают.
                 Box(contentAlignment = Alignment.BottomCenter) {
                     Column(Modifier.alpha(0f).clearAndSetSemantics {}, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        CartBasket(s, fullest, Modifier)
+                        // Место — под самую полную корзину недели, со строками вещи ситуации и дубля F3 в 48 dp.
+                        CartBasket(s, fullest, Modifier, extra = listOfNotNull(dupId), removable = onScreenItems + listOfNotNull(dupId))
                         MainButton(a.t("shop.buy"), onClick = {})
                     }
                     val after = explained
@@ -522,10 +524,9 @@ private fun CartBasket(
                             val name = if (addons.isEmpty()) base.name else a.t("shop.tier.$key")
                             // Вещь ситуации и вторая куртка F3 убираются касанием в корзине: на полках их нет (I51).
                             // Вещи с полок убираются на полке, как и выбирались.
-                            val remove = onRemove?.takeIf { base.id in removable }?.let { f ->
-                                Modifier.sizeIn(minWidth = FinniDimens.MinTouch, minHeight = FinniDimens.MinTouch)
-                                    .clickable(remember { MutableInteractionSource() }, null, role = Role.Button) { f(base.id) }
-                            } ?: Modifier
+                            val remove = if (base.id !in removable) Modifier else Modifier.sizeIn(minWidth = FinniDimens.MinTouch, minHeight = FinniDimens.MinTouch).then(
+                                onRemove?.let { f -> Modifier.clickable(remember { MutableInteractionSource() }, null, role = Role.Button) { f(base.id) } } ?: Modifier,
+                            )
                             Row(remove, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Picture(key, THUMB, description = name)
                                 Txt((base.price + addons.sumOf { it.price }).toString(), FinniText.Button)
