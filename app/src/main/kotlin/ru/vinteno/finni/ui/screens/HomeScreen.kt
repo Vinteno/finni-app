@@ -253,7 +253,7 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
     val noteTitle = w?.takeIf { s.phase != Phase.FREE_PLAY }
         ?.let { g.weekContent(s).taskId }?.let { a.t(g.content.chapter1.task(it).title) }
     // Плашка накоплений: цель с клетками по 5 монет и «N из M». После события цели нет — только
-    // «Накопил N», и копилка не нажимается (QA-M4).
+    // «Накопили N», и копилка не нажимается (QA-M4).
     val goal = s.chapter.goalId?.takeIf { s.phase != Phase.FREE_PLAY }?.let { g.content.goal(it) }
     val savedText = when {
         goal != null || s.phase == Phase.FREE_PLAY -> a.f("home.saved", "n" to s.progress.savings)
@@ -640,7 +640,7 @@ private fun Room(
                     maxWidth = p.plateMaxW,
                     modifier = if (onPiggy != null) Modifier.clickable(null, null, onClick = onPiggy) else Modifier,
                 ) {
-                    // Клетки по 5 монет и «Накопил N», рядом цель с ценой — как было на панели копилки.
+                    // Клетки по 5 монет и «Накопили N», рядом цель с ценой — как было на панели копилки.
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             texts.cells?.let { cells ->

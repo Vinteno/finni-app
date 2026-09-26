@@ -442,7 +442,7 @@ class EconomyTest {
 
     @Test fun `QA-B6 объяснение не повторяет предмет, купленный дважды`() {
         val ex = ru.vinteno.finni.core.engine.Explain(game)
-        assertEquals("Ты купил крупу и мыло.", ex.did(listOf("krupa", "mylo", "krupa")))
+        assertEquals("Мы купили крупу и мыло.", ex.did(listOf("krupa", "mylo", "krupa")))
     }
 
     @Test fun `QA-M1 полка закрыта до конца недели после покупки`() {
