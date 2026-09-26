@@ -31,8 +31,9 @@ class ExplainTest {
         var s = game.buy(week1(), listOf("kasha", "yagody", "mylo"), agreedWant = true)
         assertEquals("Мы купили кашу и мыло.", explain.did(listOf("kasha", "yagody", "mylo")))
         s = game.deposit(game.leaveShop(s))
-        // Третья строка — куда делась разница 30 и 21 (решение Эмиля 24.09). Экран — 25 слов из 25.
-        assertEquals(listOf("Мы взяли кашу с ягодами.", "Из «Хочу» 1 монета.", "У тебя 9 монет."), explain.summaryLines(s))
+        // Последняя строка объясняет разницу 30 и 21 (решение Эмиля 24.09). Надбавка платится из «Хочу»,
+        // поэтому строки перелива из «Хочу» в «Нужное» на каноническом пути больше нет.
+        assertEquals(listOf("Мы взяли кашу с ягодами.", "У тебя 9 монет."), explain.summaryLines(s))
     }
 
     @Test fun `третья строка после магазина — есть ли всё нужное на неделю`() {

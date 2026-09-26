@@ -158,10 +158,14 @@ class Game(val content: Content) {
 
     // ---------- Магазин ----------
 
-    fun direction(item: Item): Direction {
-        val base = item.addonOf?.let { content.item(it) } ?: item
-        return if (base.category == Category.NEED) Direction.NEED else Direction.WANT
-    }
+    /**
+     * Направление по категории самой вещи. Надбавка (ягоды, пена) это «Хочу», как её и подписывает
+     * корзина (I25), даже если продаётся вместе с нужной вещью: база из «Нужного», надбавка из «Хочу».
+     * Раньше надбавка шла по базе и видна была, только когда «Нужное» кончалось; с пустым стартовым
+     * планом это случайность, а не урок.
+     */
+    fun direction(item: Item): Direction =
+        if (item.category == Category.NEED) Direction.NEED else Direction.WANT
 
     fun needLeft(s: GameState): Int = s.requireWeek().let { it.plan.need - it.paidNeed }
     fun wantLeft(s: GameState): Int = s.requireWeek().let { it.plan.want - it.paidWant }
@@ -456,7 +460,7 @@ class Game(val content: Content) {
         val fed = w.fed || bought(s, Impact.FED)
         val p = s.progress
         val nextPlan = when (choice) {
-            SummaryChoice.KEEP_PLAN -> Plan.DEFAULT
+            SummaryChoice.KEEP_PLAN -> w.plan
             SummaryChoice.TAKE_ACTUAL -> summary(s).fact
         }
         val last = w.number >= ch.lastWeek
