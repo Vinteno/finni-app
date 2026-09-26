@@ -29,8 +29,14 @@ class TextLintTest {
     private fun phrases(s: String): List<String> =
         s.split(Regex("(?<=[.?])\\s+")).map { it.trim() }.filter { it.isNotEmpty() }
 
+    /**
+     * Раздел для взрослого — для взрослого: лимиты 5 и 25 слов там не действуют, числа больше 100
+     * разрешены (final-plan §4). Запрещённые слова и «!» — и там нет.
+     */
+    private fun adult(key: String) = key.startsWith("adult.")
+
     @Test fun `фраза не длиннее пяти слов`() {
-        val over = texts.strings.filterKeys { it !in knownOverLimit }
+        val over = texts.strings.filterKeys { it !in knownOverLimit && !adult(it) }
             .flatMap { (key, s) -> phrases(s).filter { words(it).size > 5 }.map { "$key: «$it»" } }
         assertTrue("Длиннее 5 слов:\n" + over.joinToString("\n"), over.isEmpty())
     }
@@ -51,7 +57,7 @@ class TextLintTest {
     }
 
     @Test fun `числа в текстах не выше 100`() {
-        val big = texts.strings.flatMap { (key, s) ->
+        val big = texts.strings.filterKeys { !adult(it) }.flatMap { (key, s) ->
             Regex("\\d+").findAll(s).map { it.value.toInt() }.filter { it > 100 }.map { "$key: $it" }
         }
         assertTrue(big.joinToString("\n"), big.isEmpty())

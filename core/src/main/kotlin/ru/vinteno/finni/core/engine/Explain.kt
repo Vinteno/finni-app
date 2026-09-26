@@ -2,6 +2,7 @@ package ru.vinteno.finni.core.engine
 
 import ru.vinteno.finni.core.content.Impact
 import ru.vinteno.finni.core.model.GameState
+import ru.vinteno.finni.core.model.Reason
 
 /**
  * Тексты, которые собираются из состояния. Структура одна для любого исхода — style-guide.md §12.7:
@@ -40,13 +41,18 @@ class Explain(private val game: Game) {
         )
     }
 
-    /** «Всё нужное на неделю есть.» или чего на неделю пока нет — по закрытым полкам обязательного. */
+    /**
+     * «Всё нужное на неделю есть.» или чего на неделю пока нет — по закрытым полкам обязательного.
+     * Полка ситуации называется своей вещью: «Куртки пока нет».
+     */
     fun weekNeeds(s: GameState): String {
-        val missing = game.weekContent(s).shelves.filter { it.mandatory && it.id !in game.boughtShelves(s) }
-        return when (missing.size) {
-            0 -> texts["explain.needs.all"]
-            1 -> texts["explain.needs.no." + missing.single().id]
-            else -> texts["explain.needs.none"]
+        val missing = game.activeShelves(s).filter { it.mandatory && it.id !in game.boughtShelves(s) }
+        fun key(sh: ru.vinteno.finni.core.content.Shelf) = if (sh.onScreen) sh.tiers.first().first() else sh.id
+        return when {
+            missing.isEmpty() -> texts["explain.needs.all"]
+            missing.size == 1 -> texts["explain.needs.no." + key(missing.single())]
+            missing.map { it.id }.toSet() == setOf("food", "soap") -> texts["explain.needs.none"]
+            else -> texts["explain.needs.some"]
         }
     }
 
@@ -84,7 +90,9 @@ class Explain(private val game: Game) {
         val first = when {
             tier != null -> texts.format("summary.took", "what" to texts["tier.acc." + tier.joinToString("_")])
             situationIsFood -> texts.format("summary.notFed", "name" to name(s))
-            else -> texts.format("summary.notWashed", "name" to name(s))
+            week.situationShelf == "soap" -> texts.format("summary.notWashed", "name" to name(s))
+            // Ситуация с предметом не куплена — нейтральный факт, без подсказки «купи» (сценарий §11).
+            else -> texts.format("summary.notTaken", "what" to game.content.item(shelf.tiers.first().first()).accusative)
         }
         val sum = game.summary(s)
         val candidates = listOfNotNull(
@@ -100,6 +108,116 @@ class Explain(private val game: Game) {
         return candidates.filterIndexed { i, line ->
             val n = texts.screenWords(line)
             (i == 0 || n <= budget).also { if (it) budget -= n }
+        }
+    }
+
+    /**
+     * Объяснение после F4 — три строки, как всегда: сколько откладываем, сколько будет к событию, хватит ли.
+     * Числа считаются от выбранной цели и плана, одна структура при любой сумме.
+     */
+    fun afterPlanTask(s: GameState): List<String> {
+        val w = s.requireWeek()
+        val atEvent = game.savingsAtEvent(s, w.plan.save)
+        val third = if (game.goalReached(s)) chapterText(s, "enough.ready") else texts[
+            when (game.enoughForGoal(s)) {
+                Enough.SURPLUS -> "enough.surplus"
+                Enough.EXACT -> "enough.exact"
+                Enough.SHORT -> "enough.short"
+            }
+        ]
+        return listOf(
+            texts.format("f4.did", "n" to w.plan.save),
+            texts.format("f4.result.${s.progress.chapter}", "n" to atEvent.coerceAtMost(Game.CEILING)),
+            third,
+        )
+    }
+
+    /** F3 «Куртка уже есть»: одинаково при любом выборе — убрал дубль или нажал «Купить». */
+    fun afterDuplicate(): List<String> = listOf(texts["f3.did"], texts["f3.result"], texts["f3.meaning"])
+
+    /** F2 «Чем заплатить»: оба способа верны, в кошельке — чистая стоимость, сдача — пояснение. */
+    fun afterPay(s: GameState, exact: Boolean): List<String> {
+        val price = game.weekTask(s)?.itemId?.let { game.content.item(it).price } ?: 0
+        val given = if (exact) price else changeCoin(price)
+        return listOf(
+            texts.format("f2.did", "n" to given),
+            if (exact) texts["f2.noChange"] else texts.format("f2.change", "n" to given - price),
+            texts.format("f2.meaning", "n" to price),
+        )
+    }
+
+    /** «Отдать 10 и взять сдачу»: ближайшая десятка сверху. */
+    fun changeCoin(price: Int): Int = (price / 10 + 1) * 10
+
+    /**
+     * F6 «Что задумал и что вышло»: что сделали, сколько ушло на нужное, и как это против плана.
+     * Факт по категории вещей, а не по тому, как ребёнок разложил, — вывод не подсказывается раньше.
+     */
+    fun afterSort(s: GameState): List<String> {
+        val cards = game.sortCards(s)
+        if (cards.isEmpty()) return listOf(texts["f6.empty"])
+        val need = cards.filter { it.direction == Direction.NEED }.sumOf { it.price }
+        val plan = s.requireWeek().plan.need
+        return listOf(
+            texts["f6.did"],
+            texts.format("f6.need", "n" to need),
+            texts[
+                when {
+                    need > plan -> "f6.more"
+                    need < plan -> "f6.less"
+                    else -> "f6.same"
+                }
+            ],
+        )
+    }
+
+    /** Строка, у которой бывает своя форма для главы: `key.2` — для главы 2; нет своей — общая. */
+    fun chapterText(s: GameState, key: String, vararg args: Pair<String, Any>): String {
+        val own = "$key.${s.progress.chapter}"
+        return if (own in texts.strings) texts.format(own, *args) else texts.format(key, *args)
+    }
+
+    /**
+     * Плашка перехода главы: строка причины — действие ребёнка, замкнувшее порог (сценарий главы 1, §9),
+     * потом две строки о смене обстановки. Строка считается, а не зашита.
+     */
+    fun transitionLines(s: GameState): List<String> {
+        val t = s.transition ?: return emptyList()
+        val reason = when (t.reason) {
+            Reason.CARE -> texts.format("reason.care", "weeks" to weeksWord(t.weeks))
+            Reason.SAVE -> texts.format("reason.save", "weeks" to weeksWord(t.weeks))
+            Reason.PLAN -> texts["reason.plan"]
+        }
+        return listOf(reason) + game.content.chapter(t.chapter).enterLines.map { texts[it] }
+    }
+
+    /** «две недели» словами: число в строке причины — недели, когда действие было (D6). */
+    private fun weeksWord(n: Int): String = texts["weeks.${n.coerceIn(1, 4)}"]
+
+    /**
+     * Строки события главы. Исход считается по копилке, а после события — по сохранённому исходу.
+     * Оба исхода одной длины и тона; «не хватило» — факт, без «надо было» (сценарии, шаг 9).
+     */
+    fun eventLines(s: GameState): List<String> {
+        val goalId = s.chapter.goalId ?: s.eventGoal ?: return emptyList()
+        val goal = game.content.goal(goalId)
+        val given = if (s.phase == ru.vinteno.finni.core.model.Phase.EVENT) s.progress.savings >= goal.price
+        else s.eventOutcome == ru.vinteno.finni.core.model.EventOutcome.GIFT_GIVEN
+        val chapter = goal.chapter
+        return when (chapter) {
+            1 -> listOf(texts["event.1"]) + if (given) {
+                listOf(texts.format("event.a.2", "what" to goal.accusative), texts["event.a.3"])
+            } else listOf(texts["event.b.2"], texts.format("event.b.3", "name" to name(s)), texts["event.b.4"])
+            2 -> listOf(texts["event.snow.1"]) + if (given) {
+                listOf(texts.format("event.bought", "what" to goal.accusative), texts["event.snow.a.$goalId"])
+            } else listOfNotNull(
+                texts.format("event.short", "what" to goal.accusative),
+                texts["event.snow.b.3"],
+                if (game.owns(s, "kurtka")) texts["event.snow.b.4"] else null,
+            )
+            else -> listOf(texts["event.home.1"]) + if (given) {
+                listOf(texts.format("event.bought", "what" to goal.accusative), texts["event.home.a.3"])
+            } else listOf(texts.format("event.short", "what" to goal.accusative), texts["event.home.b.3"], texts["event.home.b.4"])
         }
     }
 

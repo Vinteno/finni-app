@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -41,26 +42,37 @@ import ru.vinteno.finni.ui.screens.PiggyScreen
 import ru.vinteno.finni.ui.screens.PlanScreen
 import ru.vinteno.finni.ui.screens.ShopScreen
 import ru.vinteno.finni.ui.screens.SummaryScreen
+import ru.vinteno.finni.ui.screens.SituationScreen
+import ru.vinteno.finni.ui.screens.SortScreen
+import ru.vinteno.finni.ui.screens.DiaryScreen
+import ru.vinteno.finni.ui.screens.AdultScreen
+import ru.vinteno.finni.ui.screens.EndScreen
+import ru.vinteno.finni.ui.components.RoomArt
 import ru.vinteno.finni.ui.theme.FinniColors
 import ru.vinteno.finni.ui.theme.FinniMotion
 
 /**
- * Экраны прототипа — screen-map.md §2 минус снятое build-plan.md §2: «Выбор масштаба», прогресс,
- * раздел взрослого, плашка перехода, конец игры. Экрана ситуации в неделях 1 и 2 нет:
- * выбор ступеньки сделан на полке магазина.
+ * Экраны — screen-map.md §2. Экрана ситуации в неделях 1 и 2 нет: выбор ступеньки сделан на полке
+ * магазина; в главах 2 и 3 ситуация недели — свой экран перед магазином. Плашка перехода главы — на Доме.
  */
 enum class Screen(val hasBack: Boolean) {
     INTRO(false), LOOK(false), NAME(false), GOAL(false),
-    HOME(false), PLAN(true), SHOP(true), PIGGY(true), SUMMARY(true),
-    EVENT(false),
+    HOME(false), PLAN(true), SITUATION(true), SHOP(true), PIGGY(true), SORT(true), SUMMARY(true),
+    DIARY(true), ADULT(true),
+    EVENT(false), END(false),
 }
 
-/** Первый запуск проигрывается один раз; дальше точка возврата — Дом. */
+/**
+ * Первый запуск проигрывается один раз; дальше точка возврата — Дом. Переход главы — плашкой на Доме,
+ * потом выбор цели новой главы; после новоселья — экран конца игры.
+ */
 fun startScreen(s: GameState): Screen = when {
     !s.profile.introSeen -> Screen.INTRO
     !s.profile.created && !s.profile.lookChosen -> Screen.LOOK
     !s.profile.created -> Screen.NAME
-    s.chapter.goalId == null -> Screen.GOAL
+    s.phase == Phase.TRANSITION -> Screen.HOME
+    s.phase == Phase.GAME_OVER -> Screen.END
+    s.chapter.goalId == null && s.phase == Phase.ONBOARDING -> Screen.GOAL
     s.phase == Phase.EVENT -> Screen.EVENT
     else -> Screen.HOME
 }
@@ -81,6 +93,9 @@ private fun allowed(sc: Screen, s: GameState, game: Game): Screen {
         Screen.PIGGY -> w != null && w.parcel != null && s.phase != Phase.FREE_PLAY
         Screen.SUMMARY -> game.summaryOpen(s)
         Screen.EVENT -> s.phase == Phase.EVENT
+        Screen.SITUATION -> game.situationOpen(s)
+        Screen.SORT -> game.sortPending(s) && game.shopDone(s)
+        Screen.DIARY -> s.week != null
         else -> true
     }
     return if (ok) sc else Screen.HOME
@@ -94,8 +109,12 @@ private fun allowed(sc: Screen, s: GameState, game: Game): Screen {
 @Composable
 fun FinniNavHost(state: GameState) {
     var chosen by rememberSaveable { mutableStateOf(Screen.HOME) }
-    val onboarding = startScreen(state).takeIf { it != Screen.HOME && it != Screen.EVENT }
-    val screen = onboarding ?: if (state.phase == Phase.EVENT && chosen != Screen.SUMMARY) Screen.EVENT else allowed(chosen, state, app().game)
+    // Раздел взрослого открыт поверх всего, кроме первого запуска: из него запускается демо.
+    val onboarding = startScreen(state).takeIf { it != Screen.HOME && it != Screen.EVENT && !(chosen == Screen.ADULT && state.profile.created) }
+    val screen = onboarding ?: if (state.phase == Phase.EVENT && chosen != Screen.SUMMARY && chosen != Screen.ADULT) Screen.EVENT else allowed(chosen, state, app().game)
+    // Комната главы: холодная, новый дом, со светом лампы — фон всех экранов с комнатой.
+    val room = RoomArt.of(state.progress.chapter, "lampa" in state.progress.inventory)
+    SideEffect { RoomArt.name = room }
     val home = { chosen = Screen.HOME }
     BackHandler(enabled = screen.hasBack) { home() }
 
@@ -131,13 +150,22 @@ fun FinniNavHost(state: GameState) {
                         chosen = when (target) {
                             HomeTarget.PLAN -> Screen.PLAN
                             HomeTarget.SHOP -> Screen.SHOP
+                            HomeTarget.SITUATION -> Screen.SITUATION
                             HomeTarget.PIGGY -> Screen.PIGGY
+                            HomeTarget.SORT -> Screen.SORT
                             HomeTarget.SUMMARY -> Screen.SUMMARY
+                            HomeTarget.DIARY -> Screen.DIARY
+                            HomeTarget.ADULT -> Screen.ADULT
                             HomeTarget.EVENT -> Screen.EVENT
                         }
                     }
                     Screen.PLAN -> PlanScreen(state, onBack = home, onConfirmed = home)
+                    Screen.SITUATION -> SituationScreen(state, onBack = home, onChosen = { chosen = Screen.SHOP })
                     Screen.SHOP -> ShopScreen(state, onLeave = home)
+                    Screen.SORT -> SortScreen(state, onBack = home, onDone = home)
+                    Screen.DIARY -> DiaryScreen(state, onBack = home)
+                    Screen.ADULT -> AdultScreen(state, onBack = home)
+                    Screen.END -> EndScreen(state)
                     Screen.PIGGY -> PiggyScreen(state, onBack = home)
                     Screen.SUMMARY -> SummaryScreen(state, onBack = home, onDone = {
                         chosen = Screen.HOME

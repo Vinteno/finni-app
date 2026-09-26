@@ -73,6 +73,26 @@ private val opaque = mapOf(
     "posylka" to Rect(34f, 50f, 479f, 484f),
     "kacheli" to Rect(45f, 82f, 462f, 446f),
     "myachik" to Rect(45f, 46f, 467f, 468f),
+    "okno_inej" to Rect(15f, 0f, 499f, 490f),
+    "okno_sneg" to Rect(14f, 24f, 499f, 503f),
+    "plaid" to Rect(16f, 42f, 502f, 512f),
+    "lezhanka" to Rect(52f, 165f, 461f, 512f),
+    "pechka" to Rect(43f, 4f, 488f, 512f),
+    "sanki" to Rect(42f, 272f, 470f, 512f),
+    "korobki_pereezd" to Rect(4f, 26f, 507f, 499f),
+    "korobka" to Rect(0f, 0f, 508f, 512f),
+    "lampa" to Rect(43f, 24f, 490f, 502f),
+    "polotence" to Rect(43f, 8f, 487f, 506f),
+    "girlyanda" to Rect(0f, 139f, 512f, 476f),
+    "polka_veshchey_full" to Rect(27f, 15f, 494f, 498f),
+    "korzina_full" to Rect(32f, 17f, 486f, 504f),
+    "sunduk_full" to Rect(13f, 27f, 504f, 502f),
+    "polka_veshchey" to Rect(29f, 15f, 493f, 498f),
+    "korzina" to Rect(32f, 32f, 498f, 504f),
+    "sunduk" to Rect(14f, 27f, 503f, 501f),
+    "ugoshchenie" to Rect(4f, 33f, 508f, 487f),
+    "kurtka" to Rect(49f, 104f, 463f, 465f),
+    "lechenie" to Rect(86f, 11f, 446f, 485f),
 )
 
 /** Высота к ширине у непрозрачной части предмета. */
@@ -89,7 +109,7 @@ private fun files(id: String): List<String> = when (id) {
     "food_kasha" -> listOf("item_kasha")
     "food_kasha_yagody" -> listOf("item_kasha", "item_yagody")
     "food_krupa" -> listOf("item_krupa")
-    else -> listOf("item_$id")
+    else -> artFiles(id)
 }
 
 /**

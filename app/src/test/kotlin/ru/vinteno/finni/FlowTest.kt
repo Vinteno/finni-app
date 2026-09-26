@@ -119,8 +119,9 @@ class FlowTest {
     @Test fun weekOneAndTwo() {
         app(week1())
         noteSays("Открой посылку"); shot("w1_01_parcel")
-        // До посылки предметы отвечают репликой, а не молчат.
-        tap("Неделя 1"); assertTrue(shown("Сначала открой посылку")); shot("w1_02_say_parcel_first")
+        // До посылки предметы отвечают репликой, а не молчат; календарь, пока не ведёт к итогу, — дневник (I49, F4).
+        tap("Магазин"); assertTrue(shown("Сначала открой посылку")); shot("w1_02_say_parcel_first")
+        tap("Неделя 1"); assertTrue(shown("Покупки")); shot("w1_02b_diary"); tap("Назад")
         tap("Посылка"); shot("w1_03_parcel_note")
         press("Понятно"); shot("w1_04_announce")
         press("Понятно"); noteSays("Разложи монеты"); shot("w1_05_step_plan")
@@ -129,7 +130,9 @@ class FlowTest {
         tap("Назад")
         tap("Копилка"); assertTrue(shown("Сначала разложи монеты")); assertFalse(shown("Отложить")); shot("w1_07_piggy_before_plan")
         tap("Назад")
-        tap("Неделя 1"); assertTrue(shown("Сначала разложи монеты")); shot("w1_08_say_plan_first")
+        tap("Неделя 1"); assertTrue(shown("Слова")); tap("Назад")
+        // Касание Финни — подсказка шага словами записки (I49, F5).
+        tap("Бублик"); assertTrue(shown("Разложи монеты")); shot("w1_08_finni_hint")
         tap(jars); shot("w1_09_plan")
         press("Подтвердить план"); noteSays("В магазин"); shot("w1_10_step_shop")
         tap(jars); assertTrue(shown("Монеты в банках")); assertFalse(shown("Подтвердить план")); shot("w1_11_plan_frozen")
@@ -137,7 +140,7 @@ class FlowTest {
         // Зашёл и вышел без покупки: шаг остаётся, награды нет, итог ещё закрыт.
         tap("Магазин"); tap("Назад")
         noteSays("В магазин"); assertEquals(0, s.progress.savings); assertFalse(s.week!!.taskDone)
-        tap("Неделя 1"); assertTrue(shown("Итог в конце недели")); shot("w1_12_say_summary_later")
+        tap("Неделя 1"); assertTrue(shown("Задания")); shot("w1_12_diary_before_summary"); tap("Назад")
         tap("Миска"); assertTrue(shown("Миска пустая")); shot("w1_13_say_bowl_empty")
         // Покупка: каша в «Нужном», ягоды в «Хочу» (надбавка платится из «Хочу», PR №3); объяснение в магазине, с «Домой».
         tap("Магазин")
@@ -187,9 +190,11 @@ class FlowTest {
         tap("Неделя 2"); press("Оставить план")
         assertEquals(Phase.EVENT, s.phase); shot("w2_08_event")
         press("Дальше")
-        assertEquals(Phase.FREE_PLAY, s.phase); noteSays("Глава пройдена"); shot("w2_09_free_play")
-        tap("Неделя 2"); tap("Магазин"); tap(jars); tap("Копилка")
-        assertEquals(Phase.FREE_PLAY, s.phase); shot("w2_10_free_play_taps")
+        // Смена главы: плашка со строкой причины на холодной комнате, потом выбор цели главы 2.
+        assertEquals(Phase.TRANSITION, s.phase); assertTrue(shown("Мы ели две недели")); shot("w2_09_transition")
+        tap("Магазин"); assertEquals(Phase.TRANSITION, s.phase)
+        press("Понятно")
+        assertTrue(shown("Что купим к снегу?")); shot("w2_10_goal_ch2")
     }
 
     /** Ничего не покупал всю неделю: итог доступен, неделя кончается, упрёков нет. Путь — через копилку. */
@@ -235,7 +240,7 @@ class FlowTest {
         w2 = game.confirmPlan(game.setPlan(w2, Plan(10, 19, 10)))
         w2 = game.wash(game.feed(game.buy(w2, listOf("kasha", "mylo", "kacheli"))))
         val w2f5 = game.deposit(w2)
-        val free = game.playEvent(game.finishWeek(game.leavePiggy(game.chooseBall(w2f5, true)), SummaryChoice.KEEP_PLAN))
+        val free = game.playEvent(game.finishWeek(game.leavePiggy(game.chooseBall(w2f5, true)), SummaryChoice.KEEP_PLAN)) // переход главы
         return listOf(
             "01_parcel" to parcel, "02_parcel_note" to note, "03_plan" to plan, "04_shop" to shop, "05_shop_left" to shopLeft,
             "06_feed" to feed, "07_wash" to wash, "08_save" to save, "09_summary" to summary, "10_next_week" to next,
@@ -347,7 +352,7 @@ class FlowTest {
             "после плана, поел, не умыт" to fed,
             "после плана, умыт" to washed,
             "после итога недели" to summary,
-            "после события" to event,
+            "переход главы" to event,
         )
         val props = listOf("Посылка", "Нужное, Хочу, Копилка", "Магазин", "Копилка", "Миска", "Мыло", "Неделя")
         val rows = mutableListOf<String>()
@@ -376,8 +381,14 @@ class FlowTest {
                         HomeTarget.PIGGY -> if (before.week!!.planConfirmed && before.phase == Phase.WEEK) "копилка" else "копилка (смотреть)"
                         HomeTarget.SUMMARY -> "итог недели"
                         HomeTarget.EVENT -> "событие"
+                        HomeTarget.SITUATION -> "ситуация недели"
+                        HomeTarget.SORT -> "задание F6"
+                        HomeTarget.DIARY -> "дневник"
+                        HomeTarget.ADULT -> "раздел взрослого"
                     }
                     said != null -> "реплика «$said»"
+                    // Предмет под плашкой: касание приходится на её «Понятно».
+                    after.phase != before.phase -> "под плашкой: «Понятно»"
                     after.week?.number != before.week?.number -> "следующая неделя"
                     after.week?.parcel != before.week?.parcel -> "открывает посылку"
                     after.week?.fed != before.week?.fed -> "кормит"

@@ -1,0 +1,11 @@
+{
+  "_source": "Шесть заданий сценариев глав 1–3; распределение по неделям — I49 (B4). Награда падает в копилку. Новое задание — строка здесь на готовый шаблон.",
+  "tasks": [
+    { "id": "F1", "template": "shop",      "title": "task.F1.title", "reward": 10, "theme": "plan" },
+    { "id": "F5", "template": "choice",    "title": "task.F5.title", "reward": 10, "itemId": "myachik", "theme": "save" },
+    { "id": "F4", "template": "plan",      "title": "task.F4.title", "reward": 10, "theme": "save" },
+    { "id": "F3", "template": "duplicate", "title": "task.F3.title", "reward": 0,  "itemId": "kurtka", "theme": "shop" },
+    { "id": "F2", "template": "pay",       "title": "task.F2.title", "reward": 10, "itemId": "korobka", "theme": "shop" },
+    { "id": "F6", "template": "sort",      "title": "task.F6.title", "reward": 10, "theme": "plan" }
+  ]
+}

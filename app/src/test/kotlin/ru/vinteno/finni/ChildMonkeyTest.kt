@@ -177,7 +177,7 @@ class ChildMonkeyTest {
             prev = s
         }
         val s = store.state.value
-        return "${s.phase}, неделя ${s.week?.number ?: 0}"
+        return "${s.phase}, глава ${s.progress.chapter}, неделя ${s.week?.number ?: 0}"
     }
 
     @Test fun childPlays() {
@@ -194,9 +194,18 @@ class ChildMonkeyTest {
         }
         val sessions = 80
         val steps = 300
+        val demo = ru.vinteno.finni.core.engine.Demo(game)
         for (seed in 1..sessions) {
             compose.runOnUiThread {
-                store.replace(GameState().let { it.copy(profile = it.profile.copy(animationOn = false)) })
+                // Четверть партий — с первого запуска, остальные — с начала недель 3, 5 и 7 канонического
+                // пути: так «ребёнок» проходит все три главы (final-plan §10, п. 2).
+                val start = when (seed % 4) {
+                    1 -> demo.weekStart(3)
+                    2 -> demo.weekStart(5)
+                    3 -> demo.weekStart(7)
+                    else -> GameState()
+                }
+                store.replace(start.let { it.copy(profile = it.profile.copy(animationOn = false)) })
                 model.pendingPlate = null
                 run++
             }

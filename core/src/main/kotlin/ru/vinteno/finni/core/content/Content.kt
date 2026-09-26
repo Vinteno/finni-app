@@ -36,8 +36,10 @@ data class Item(
     val price: Int,
     val type: ItemType,
     val impact: Impact? = null,
-    /** Надбавка к базовой позиции; оплачивается из направления базовой покупки — data-model §5. */
+    /** Надбавка к базовой позиции; платится из «Хочу» по своей категории (I48 п. 2). */
     val addonOf: String? = null,
+    /** Носимое со сроком: снимается само через столько недель после покупки (бинт — через неделю). */
+    val wearWeeks: Int? = null,
 ) {
     /** Долговременная вещь покупается один раз — правило долговременной вещи, items.md §1. */
     val isDurable: Boolean get() = type != ItemType.CONSUMABLE
@@ -60,6 +62,12 @@ data class Shelf(
     val mandatory: Boolean,
     /** Ступеньки полки, по одной на выбор: дешевле, обычно, с надбавкой. */
     val tiers: List<List<String>>,
+    /**
+     * Полка ситуации недель глав 2 и 3: выбирается на отдельном экране ситуации двумя одинаковыми
+     * карточками и оттуда кладётся в корзину. На полках магазина её нет; [caption] у неё — подпись под
+     * обеими карточками («Обе куртки одинаково тёплые»).
+     */
+    val onScreen: Boolean = false,
 )
 
 @Serializable
@@ -73,10 +81,28 @@ data class WeekContent(
     val announceItem: String? = null,
     val shelves: List<Shelf>,
     val taskId: String? = null,
+    /**
+     * Запасная третья неделя главы (сценарий главы 1, §9а): играется при недоборе отметок, задание —
+     * по недостающему типу, награды нет. Ребёнку нигде не сообщается, что неделя дополнительная.
+     */
+    val spare: Boolean = false,
 )
 
+/**
+ * Шаблоны заданий: новое задание добавляется строкой в `tasks.json` на готовый шаблон, без переделки
+ * логики (ТЗ 2.5.14). `shop` — купить на неделю (F1); `choice` — выбор на копилке (F5); `plan` — сколько
+ * отложить на экране плана (F4); `duplicate` — вторая вещь в корзине (F3); `pay` — чем заплатить (F2);
+ * `sort` — разложить траты по направлениям (F6).
+ */
 @Serializable
-enum class TaskTemplate { @SerialName("shop") SHOP, @SerialName("choice") CHOICE }
+enum class TaskTemplate {
+    @SerialName("shop") SHOP,
+    @SerialName("choice") CHOICE,
+    @SerialName("plan") PLAN,
+    @SerialName("duplicate") DUPLICATE,
+    @SerialName("pay") PAY,
+    @SerialName("sort") SORT,
+}
 
 @Serializable
 data class TaskDef(
@@ -84,7 +110,10 @@ data class TaskDef(
     val template: TaskTemplate,
     val title: String,
     val reward: Int,
+    /** Предмет задания: мячик F5, куртка F3, коробка F2. */
     val itemId: String? = null,
+    /** Тема ТЗ 2.5.8, к которой относится задание: `plan`, `save` или `shop` — для раздела взрослого. */
+    val theme: String = "shop",
 )
 
 @Serializable
@@ -97,15 +126,23 @@ data class ChapterContent(
     val goalIds: List<String>,
     val chapterWantId: String,
     val weeks: List<WeekContent>,
-    val tasks: List<TaskDef>,
+    /** Длина главы: главы 1 и 2 — от двух до трёх недель, глава 3 — всегда четыре (сценарий главы 1, §9). */
+    val minWeeks: Int,
+    val maxWeeks: Int,
+    /** Сколько отметок каждого типа нужно, чтобы глава кончилась после [minWeeks]: 2 и 4. У последней — нет. */
+    val marksToLeave: Int? = null,
+    /** Две строки плашки перехода в эту главу — после строки причины. */
+    val enterLines: List<String> = emptyList(),
 ) {
-    val lastWeek: Int get() = weeks.maxOf { it.week }
     fun week(n: Int): WeekContent = weeks.first { it.week == n }
-    fun task(id: String): TaskDef = tasks.first { it.id == id }
+    val last: Boolean get() = marksToLeave == null
 }
 
 @Serializable
 private data class Catalog(val items: List<Item>, val goals: List<Goal>)
+
+@Serializable
+private data class TaskList(val tasks: List<TaskDef>)
 
 /**
  * Незаполненный `{ключ}`. Закрывающая скобка экранирована: движок регулярных выражений Android (ICU)
@@ -157,30 +194,38 @@ data class Texts(val plural: Map<String, List<String>>, val strings: Map<String,
 class Content(
     val items: Map<String, Item>,
     val goals: Map<String, Goal>,
-    val chapter1: ChapterContent,
+    val chapters: Map<Int, ChapterContent>,
+    val tasks: Map<String, TaskDef>,
     val texts: Texts,
 ) {
     fun item(id: String): Item = items[id] ?: error("Нет предмета $id")
     fun goal(id: String): Goal = goals[id] ?: error("Нет цели $id")
+    fun chapter(n: Int): ChapterContent = chapters[n] ?: error("Нет главы $n")
+    fun task(id: String): TaskDef = tasks[id] ?: error("Нет задания $id")
+    val chapter1: ChapterContent get() = chapter(1)
+    val lastChapter: Int get() = chapters.keys.max()
 
     companion object {
         private val json = Json { ignoreUnknownKeys = true }
 
-        fun load(read: (String) -> String): Content {
-            val catalog = json.decodeFromString<Catalog>(read("items.json"))
+        /** Глав столько, сколько файлов `chapterN.json` подряд с первого. */
+        fun load(read: (String) -> String?): Content {
+            val catalog = json.decodeFromString<Catalog>(read("items.json")!!)
+            val chapters = generateSequence(1) { it + 1 }
+                .map { n -> read("chapter$n.json")?.let { json.decodeFromString<ChapterContent>(it) } }
+                .takeWhile { it != null }.filterNotNull().associateBy { it.chapter }
             return Content(
                 items = catalog.items.associateBy { it.id },
                 goals = catalog.goals.associateBy { it.id },
-                chapter1 = json.decodeFromString(read("chapter1.json")),
-                texts = json.decodeFromString(read("texts.ru.json")),
+                chapters = chapters,
+                tasks = json.decodeFromString<TaskList>(read("tasks.json")!!).tasks.associateBy { it.id },
+                texts = json.decodeFromString(read("texts.ru.json")!!),
             )
         }
 
         /** Из ресурсов модуля core — так же на JVM в тестах и в APK. */
         fun fromResources(): Content = load { name ->
-            val stream = Content::class.java.getResourceAsStream("/content/$name")
-                ?: error("Нет файла контента $name")
-            stream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            Content::class.java.getResourceAsStream("/content/$name")?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
         }
     }
 }

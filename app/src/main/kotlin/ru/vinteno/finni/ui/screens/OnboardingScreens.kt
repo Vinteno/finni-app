@@ -577,7 +577,8 @@ private object NoSuggestions : PlatformTextInputInterceptor {
 @Composable
 fun GoalScreen() {
     val a = app()
-    val ch = a.game.content.chapter1
+    val st = a.state.value
+    val ch = a.game.ch(st)
     var picked by rememberSaveable { mutableStateOf<String?>(null) }
     val big = bigFont()
     SoftScreen(
@@ -598,11 +599,11 @@ fun GoalScreen() {
             val names = goals.map { cardName(it.name) }
             FitColumn(viewport) {
                 Box(Modifier.height(FinniDimens.TitleTop - FinniDimens.ScreenPadding))
-                Txt(a.t("goal.title"), FinniText.Title)
+                Txt(a.explain.chapterText(st, "goal.title"), FinniText.Title)
                 Box(Modifier.height(8.dp))
                 // Киру и праздник ребёнок уже знает из предыстории (решение 25.09 отменяет QA-U7),
                 // строка напоминает, зачем выбирать подарок.
-                Txt(a.t("goal.why"), FinniText.Body)
+                Txt(a.explain.chapterText(st, "goal.why"), FinniText.Body)
                 Box(Modifier.height(FinniDimens.CardGap + 4.dp))
                 if (big) {
                     // Крупный шрифт: карточки столбиком, картинка слева, название и цена справа.
@@ -667,7 +668,7 @@ private val GOAL_LIST_PIC = 72.dp
 private val GoalName = FinniText.Body.copy(fontWeight = FontWeight.Bold)
 
 /** «для Киры» не разрывается: на узкой карточке «Киры» одна на строке читалась бы отдельно. */
-private fun cardName(name: String) = name.replace("для ", "для\u00A0")
+private fun cardName(name: String) = name.replace("для Киры", "для\u00A0Киры")
 
 /** Подарок на светлом круге, как вещь на витрине. */
 @Composable

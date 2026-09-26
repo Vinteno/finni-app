@@ -125,6 +125,8 @@ fun Finni(
     hop: Float = 0f,
     moving: Boolean = false,
     description: String? = null,
+    wear: Set<String> = emptySet(),
+    cold: Boolean = false,
 ) {
     val pose = remember { Pose() }
     var eyes by remember { mutableStateOf(Eyes.OPEN) }
@@ -164,9 +166,23 @@ fun Finni(
         }
     }
 
+    // `зябнет` (§6.3): лапы обхватывают тело на 20° — главный сигнал, он держится и без анимаций;
+    // едва заметная дрожь ±2 dp, три колебания и пауза, — только с анимациями. Дома до покупки куртки.
+    val shake = remember { Animatable(0f) }
+    LaunchedEffect(cold, animate) {
+        shake.snapTo(0f)
+        while (cold && animate) {
+            repeat(3) { shake.animateTo(2.7f, tween(53)); shake.animateTo(-2.7f, tween(53)) }
+            shake.animateTo(0f, tween(53))
+            delay(1500)
+        }
+    }
+    val coldK = if (cold && reaction != Reaction.SLEEP) 1f else 0f
+
     val idleK = if (live) 1f else 0f
     val sleepK = if (animate && reaction == Reaction.SLEEP) 1f else 0f
-    val motion = { Motion(pose, idleK, sleepK, breath.value, earWave.value, sleepBreath.value, hop, moving) }
+    val kurtka = "kurtka" in wear
+    val motion = { Motion(pose, idleK, sleepK, breath.value, earWave.value, sleepBreath.value, hop, moving, coldK, shake.value, kurtka) }
     val semantics = if (description != null) Modifier.semantics { contentDescription = description } else Modifier
 
     // Финни из PNG, если в сборке есть все его слои и finni_pivots.json; иначе — заглушка целиком.
@@ -182,7 +198,7 @@ fun Finni(
         Art.warmUp(furs.flatMap { f -> accs.flatMap { a -> spec.files(f, a, false) } }.distinct())
     }
     if (spec != null && files!!.none(Art::missing)) {
-        PngFinni(spec, fur, accessory, headOnly, { eyes }, { mouthOpen }, motion, modifier.then(semantics))
+        PngFinni(spec, fur, accessory, headOnly, { eyes }, { mouthOpen }, motion, modifier.then(semantics), wear.filter { !headOnly }.toSet())
     } else {
         StubFinni(palette(fur), accessory, headOnly, motion(), eyes, mouthOpen, modifier.then(semantics))
     }
@@ -192,7 +208,10 @@ fun Finni(
  * Поза в кадре из анимируемых значений: углы в градусах, смещения в единицах канвы 100 × 212.
  * Углы ушей и лап — свои, относительно родителя; поворот головы они получают от неё.
  */
-private class Motion(pose: Pose, idleK: Float, sleepK: Float, breath: Float, earWave: Float, sleepBreath: Float, hop: Float, moving: Boolean) {
+private class Motion(
+    pose: Pose, idleK: Float, sleepK: Float, breath: Float, earWave: Float, sleepBreath: Float, hop: Float, moving: Boolean,
+    coldK: Float = 0f, shake: Float = 0f, kurtka: Boolean = false,
+) {
     // Прыжок при перемещении — §6.1 и §6.4: у земли присед (≤ 4%), в воздухе вытяжка и подъём на 7%
     // высоты, уши отстают, тень в верхней точке сжимается до 0,8. `hop` — высота прыжка 0..1.
     private val crouch = if (moving) (1f - hop).let { it * it * it * it * it * it } else 0f
@@ -200,13 +219,16 @@ private class Motion(pose: Pose, idleK: Float, sleepK: Float, breath: Float, ear
     private val armWave = idleK * breath * 1.6f
 
     val bodyDy = pose.bodyY.value - hop * 0.07f * H
+    val bodyDx = shake * coldK
+    /** В куртке лапы отводятся не больше чем на 25° — рукав шире лапы (final-plan §3, п. 1). */
+    private val armMax = if (kurtka) 25f else 180f
     val bodySX = pose.bodySX.value * (1f - 0.02f * hop + 0.03f * crouch)
     val bodySY = pose.bodySY.value * (1f + breathe) * (1f + 0.03f * hop - 0.04f * crouch)
     val headRot = pose.headRot.value + sleepK * 5f
     val headDrop = pose.headDrop.value
-    val armL = pose.armL.value + armWave
-    val armR = -pose.armR.value - armWave
-    val earB = pose.earB.value - idleK * earWave * 2.5f - 9f * hop + 4f * crouch
+    val armL = (pose.armL.value + armWave - 20f * coldK).coerceIn(-armMax, armMax)
+    val armR = (-pose.armR.value - armWave + 20f * coldK).coerceIn(-armMax, armMax)
+    val earB = pose.earB.value - idleK * earWave * 2.5f - 9f * hop + 4f * crouch - 4f * coldK
     val earF = pose.earF.value + idleK * earWave * 2f + 7f * hop - 3f * crouch
     val shadow = 1f - 0.2f * hop
 }
@@ -228,12 +250,15 @@ private fun PngFinni(
     mouthOpen: () -> Boolean,
     motion: () -> Motion,
     modifier: Modifier,
+    wear: Set<String> = emptySet(),
 ) {
     val box = if (headOnly) spec.headBox else spec.figureBox
+    val clothes = wornFiles(fur, wear).filterNot(Art::missing)
+    val kurtka = "kurtka" in wear && clothes.size == wornFiles(fur, wear).size
     val ratio = if (headOnly) box.width / box.height else W / H
     Canvas(modifier.aspectRatio(ratio).then(if (headOnly) Modifier.clipToBounds() else Modifier)) {
         // Пока слои декодируются, не рисуем ничего — это доли секунды при первом показе.
-        val img = spec.files(fur, accessory, headOnly).associateWith { Art.image(it) ?: return@Canvas }
+        val img = (spec.files(fur, accessory, headOnly) + clothes).associateWith { Art.image(it) ?: return@Canvas }
         val m = motion()
         val u = spec.figureBox.height / H
         val e = eyes()
@@ -242,7 +267,7 @@ private fun PngFinni(
         fun DrawTransform.local(part: String) {
             val pivot = spec.pivots[part] ?: return
             when (part) {
-                "torso" -> { translate(0f, m.bodyDy * u); scale(m.bodySX, m.bodySY, pivot) }
+                "torso" -> { translate(m.bodyDx * u, m.bodyDy * u); scale(m.bodySX, m.bodySY, pivot) }
                 FinniSpec.HEAD -> { translate(0f, m.headDrop * u); rotate(m.headRot, pivot) }
                 "arm_left" -> rotate(m.armL, pivot)
                 "arm_right" -> rotate(m.armR, pivot)
@@ -278,15 +303,36 @@ private fun PngFinni(
                         Eyes.HAPPY -> FinniSpec.body(fur, "eyes_happy")
                     }
                     "mouth" -> if (mouth) FinniSpec.body(fur, "mouth_open") else null
+                    // В куртке лапы — рукава с кистью, та же точка поворота (final-plan §3, п. 1).
+                    "arm_left", "arm_right" -> if (kurtka) FinniSpec.body(fur, "kurtka_$part") else FinniSpec.body(fur, part)
                     else -> spec.files(part, fur, accessory).firstOrNull()
                 } ?: continue
                 val layer = img[file] ?: continue
                 withTransform({ chain(part) }) {
                     drawImage(layer.bitmap, Offset(layer.left.toFloat(), layer.top.toFloat()))
                 }
+                // Носимое — дочерний слой части тела: бинт на правой лапе, пола куртки и рисунок — на
+                // туловище поверх лап. Ездят с поворотом и масштабом сами (items.md §6).
+                if (part == "arm_right" && !headOnly) {
+                    val bandage = if (kurtka) "item_bint_worn_kurtka" else "item_bint_worn"
+                    img[bandage]?.let { b -> withTransform({ chain("arm_right") }) { drawImage(b.bitmap, Offset(b.left.toFloat(), b.top.toFloat())) } }
+                    if (kurtka) listOf("item_kurtka_body", "item_risunok_worn").forEach { f ->
+                        img[f]?.let { b -> withTransform({ chain("torso") }) { drawImage(b.bitmap, Offset(b.left.toFloat(), b.top.toFloat())) } }
+                    }
+                }
             }
         }
     }
+}
+
+/** Слои носимого на стоящем Финни: куртка — пола и рукава по окрасу, рисунок — на поле, бинт — на правой лапе. */
+private fun wornFiles(fur: Fur, wear: Set<String>): List<String> = buildList {
+    val kurtka = "kurtka" in wear
+    if (kurtka) {
+        add(FinniSpec.body(fur, "kurtka_arm_left")); add(FinniSpec.body(fur, "kurtka_arm_right")); add("item_kurtka_body")
+        if ("risunok" in wear) add("item_risunok_worn")
+    }
+    if ("bint" in wear) add(if (kurtka) "item_bint_worn_kurtka" else "item_bint_worn")
 }
 
 /** Заглушка из простых фигур — пока нет PNG или если хоть один слой не прочитался. */
@@ -508,4 +554,35 @@ private fun DrawScope.drawBow() {
     val r = Path().apply { moveTo(78f, 36f); lineTo(88f, 29f); lineTo(87f, 42f); close() }
     fillStroke(l, Bow); fillStroke(r, Bow)
     oval(78f, 36f, 2.6f, 2.6f, Bow)
+}
+
+/** Рамка позы лёжа на канве листа 640 × 960: целый рисунок, не режется (animation-howto §6.5). */
+private val LYING_BOX = Rect(12f, 39f, 634f, 935f)
+
+/** Ширина к высоте у Финни лёжа. */
+const val LYING_RATIO = (634f - 12f) / (935f - 39f)
+
+/**
+ * Финни лёжа — одна статичная поза для событий главы 2: свернулся на пледе, на лежанке, у печки или
+ * у окна. Одинакова в обоих исходах, меняется только место. Аксессуар и носимое — слоями позы лёжа
+ * (`acc_*_lying`, `item_kurtka_lying`…): в событии первого снега Финни одет. Нет картинки — ничего.
+ */
+@Composable
+fun FinniLying(fur: Fur, accessory: Accessory, wear: Set<String>, modifier: Modifier = Modifier, description: String? = null) {
+    Art.init(LocalContext.current)
+    val kurtka = "kurtka" in wear
+    val files = buildList {
+        add(FinniSpec.body(fur, "lying"))
+        if (kurtka) { add("item_kurtka_lying"); if ("risunok" in wear) add("item_risunok_lying") }
+        add("acc_${accessory.name.lowercase()}_lying")
+        if ("bint" in wear) add("item_bint_lying")
+    }.filterNot(Art::missing)
+    val semantics = if (description != null) Modifier.semantics { contentDescription = description } else Modifier
+    Canvas(modifier.aspectRatio(LYING_RATIO).then(semantics)) {
+        val img = files.map { Art.image(it) ?: return@Canvas }
+        val k = size.width / LYING_BOX.width
+        withTransform({ scale(k, k, Offset.Zero); translate(-LYING_BOX.left, -LYING_BOX.top) }) {
+            img.forEach { drawImage(it.bitmap, Offset(it.left.toFloat(), it.top.toFloat())) }
+        }
+    }
 }

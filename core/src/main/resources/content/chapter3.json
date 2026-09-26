@@ -1,0 +1,64 @@
+{
+  "_source": "internal/design/scenario-chapter-3.md, версия 1.4; тексты — в стиле I48 п. 1; задания — I49 B4.",
+  "chapter": 3,
+  "background": "room_home",
+  "income": 30,
+  "eventName": "housewarming",
+  "goalIds": ["polka_veshchey", "korzina", "sunduk"],
+  "chapterWantId": "girlyanda",
+  "minWeeks": 4,
+  "maxWeeks": 4,
+  "enterLines": ["transition.3.1", "transition.3.2"],
+  "weeks": [
+    {
+      "week": 1,
+      "situation": "korobka",
+      "situationShelf": "situation",
+      "announcement": ["announce.korobka.1", "announce.korobka.2", "announce.price.korobka"],
+      "announceItem": "korobka",
+      "shelves": [
+        { "id": "food", "caption": "shop.caption.food", "mandatory": true, "tiers": [["krupa"], ["kasha"]] },
+        { "id": "soap", "caption": null, "mandatory": true, "tiers": [["mylo"]] },
+        { "id": "situation", "caption": "sit.caption.korobka", "mandatory": true, "onScreen": true, "tiers": [["korobka"], ["korobka", "nakleyki"]] }
+      ],
+      "taskId": "F2"
+    },
+    {
+      "week": 2,
+      "situation": "lampa",
+      "situationShelf": "situation",
+      "announcement": ["announce.lampa.1", "announce.lampa.2", "announce.price.lampa"],
+      "announceItem": "lampa",
+      "shelves": [
+        { "id": "food", "caption": "shop.caption.food", "mandatory": true, "tiers": [["krupa"], ["kasha"]] },
+        { "id": "soap", "caption": null, "mandatory": true, "tiers": [["mylo"]] },
+        { "id": "situation", "caption": "sit.caption.lampa", "mandatory": true, "onScreen": true, "tiers": [["lampa"], ["lampa", "abazhur"]] }
+      ]
+    },
+    {
+      "week": 3,
+      "situation": "ugoshchenie",
+      "situationShelf": "situation",
+      "announcement": ["announce.ugoshchenie.1", "announce.ugoshchenie.2", "announce.price.ugoshchenie"],
+      "announceItem": "ugoshchenie",
+      "shelves": [
+        { "id": "food", "caption": "shop.caption.food", "mandatory": true, "tiers": [["krupa"], ["kasha"]] },
+        { "id": "soap", "caption": null, "mandatory": true, "tiers": [["mylo"]] },
+        { "id": "situation", "caption": "sit.caption.ugoshchenie", "mandatory": true, "onScreen": true, "tiers": [["ugoshchenie"], ["ugoshchenie", "glazur"]] }
+      ],
+      "taskId": "F6"
+    },
+    {
+      "week": 4,
+      "situation": "polotence",
+      "situationShelf": "situation",
+      "announcement": ["announce.polotence.1", "announce.polotence.2", "announce.price.polotence"],
+      "announceItem": "polotence",
+      "shelves": [
+        { "id": "food", "caption": "shop.caption.food", "mandatory": true, "tiers": [["krupa"], ["kasha"]] },
+        { "id": "soap", "caption": null, "mandatory": true, "tiers": [["mylo"]] },
+        { "id": "situation", "caption": "sit.caption.polotence", "mandatory": true, "onScreen": true, "tiers": [["polotence"], ["polotence", "vyshivka"]] }
+      ]
+    }
+  ]
+}

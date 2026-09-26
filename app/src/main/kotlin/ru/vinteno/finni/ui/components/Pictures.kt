@@ -3,6 +3,9 @@ package ru.vinteno.finni.ui.components
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -41,6 +44,22 @@ private fun layers(id: String): List<String> = when (id) {
     "food_kasha" -> listOf("item_kasha")
     "food_kasha_yagody" -> listOf("item_kasha", "item_yagody")
     "food_krupa" -> listOf("item_krupa")
+    else -> artFiles(id)
+}
+
+/**
+ * Файлы вещей глав 2 и 3: вещь с надбавкой — основа и слой надбавки на её канве (art-brief §3); цели
+ * главы 3 без суффикса — пустые (выбор цели, копилка), с `_full` — с вещами после новоселья.
+ */
+fun artFiles(id: String): List<String> = when (id) {
+    "kurtka_risunok" -> listOf("item_kurtka", "item_risunok")
+    "lechenie_bint" -> listOf("item_lechenie", "item_bint")
+    "korobka_nakleyki" -> listOf("item_korobka", "item_nakleyki")
+    "lampa_abazhur" -> listOf("item_lampa", "item_abazhur")
+    "ugoshchenie_glazur" -> listOf("item_ugoshchenie", "item_glazur")
+    "polotence_vyshivka" -> listOf("item_polotence", "item_vyshivka")
+    "polka_veshchey", "korzina", "sunduk" -> listOf("item_${id}_empty")
+    "deposit" -> listOf("item_kopilka_obj")
     else -> listOf("item_$id")
 }
 
@@ -223,17 +242,17 @@ private fun DrawScope.hedgehog() {
  * в квадрат. Нет PNG — заглушка.
  */
 @Composable
-fun KiraFigure(finniWidth: Dp, modifier: Modifier = Modifier, description: String? = null) {
+fun KiraFigure(finniWidth: Dp, modifier: Modifier = Modifier, description: String? = null, image: String = KIRA) {
     Art.init(LocalContext.current)
     val spec = Art.finni
-    if (spec == null || Art.missing(KIRA)) {
+    if (spec == null || Art.missing(image)) {
         Picture("kira", finniWidth, modifier, description)
         return
     }
     val box = spec.figureBox
     val unit = finniWidth / box.width
     Canvas(modifier.size(unit * KIRA_CANVAS_W, unit * box.height).semantics { description?.let { contentDescription = it } }) {
-        val img = Art.image(KIRA) ?: return@Canvas
+        val img = Art.image(image) ?: return@Canvas
         val k = size.height / box.height
         scale(k, k, Offset.Zero) { drawImage(img.bitmap, Offset(img.left.toFloat(), img.top - box.top)) }
     }
@@ -242,16 +261,31 @@ fun KiraFigure(finniWidth: Dp, modifier: Modifier = Modifier, description: Strin
 private const val KIRA = "kira_birthday"
 private const val KIRA_CANVAS_W = 640f
 
-/** Линия пола на `room_sand`: доля высоты картинки от верха. По ТЗ художнику — 82%, по пикселям — 81,3%. */
+/** Линия пола на `room_*`: доля высоты картинки от верха. По ТЗ художнику — 82%, по пикселям — 81,3%. */
 private const val ROOM_FLOOR = 1952f / 2400f
 
 /**
- * Фон комнаты главы 1 под всем экраном дома: линия пола картинки ложится на [floorY] — пол комнаты
+ * Какая комната сейчас: `room_sand` в главе 1, `room_cold` в главе 2, `room_home` в главе 3, со светом
+ * лампы — `room_home_light` (целая комната на замену). Ставит навигация по состоянию игры; чтение в
+ * рисовании подписывает фон на смену.
+ */
+object RoomArt {
+    var name by mutableStateOf("room_sand")
+
+    fun of(chapter: Int, lamp: Boolean): String = when (chapter) {
+        1 -> "room_sand"
+        2 -> "room_cold"
+        else -> if (lamp) "room_home_light" else "room_home"
+    }
+}
+
+/**
+ * Фон комнаты под всем экраном: линия пола картинки ложится на [floorY] — пол комнаты
  * в коде. Пропорции не меняются: картинка шире экрана или равна ему, лишнее срезается сверху и по
  * краям. Стена и пол однородны, поэтому срез краёв не виден. Пока картинка не готова — фон экрана.
  */
-fun DrawScope.drawRoom(floorY: Float) {
-    val img = Art.image("room_sand") ?: return
+fun DrawScope.drawRoom(floorY: Float, name: String = RoomArt.name) {
+    val img = Art.image(name) ?: return
     val w = img.canvasWidth.toFloat()
     val h = img.canvasHeight.toFloat()
     // Масштаб: во всю ширину, и чтобы пол доставал до низа экрана, а стена — до верха.

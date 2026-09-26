@@ -14,6 +14,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import ru.vinteno.finni.ui.pet.Reaction
+import ru.vinteno.finni.ui.components.softPlate
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
@@ -51,6 +57,7 @@ import ru.vinteno.finni.ui.components.directionStyle
 import ru.vinteno.finni.ui.components.flex
 import ru.vinteno.finni.ui.components.scrollHint
 import ru.vinteno.finni.ui.components.textHeight
+import ru.vinteno.finni.ui.components.textWidth
 import ru.vinteno.finni.ui.pet.Finni
 import ru.vinteno.finni.ui.theme.FinniColors
 import ru.vinteno.finni.ui.theme.FinniDimens
@@ -104,9 +111,27 @@ fun PlanScreen(s: GameState, onBack: () -> Unit, onConfirmed: () -> Unit) {
         Triple(Direction.WANT, shown.want, { v -> plan.copy(want = v) }),
         Triple(null, shown.save, { v -> plan.copy(save = v) }),
     )
-    val title = a.t(if (frozen) "plan.titleFrozen" else "plan.title")
+    // F4 «Сколько отложить» живёт на плане (A6): свой заголовок; после подтверждения — объяснение здесь же.
+    var taskLines by remember(w.number) { mutableStateOf<List<String>?>(null) }
+    val task = a.game.planTask(s)
+    val title = a.t(
+        when {
+            task -> "f4.title"
+            frozen && taskLines == null -> "plan.titleFrozen"
+            frozen -> "f4.title"
+            else -> "plan.title"
+        },
+    )
     // Масштаб один на три банки: по доходу недели или по самому большому числу, что больше.
-    val scaleMax = maxOf(a.game.content.chapter1.income, shown.need, shown.want, shown.save)
+    val scaleMax = maxOf(a.game.ch(s).income, shown.need, shown.want, shown.save)
+    fun confirm() {
+        if (!a.act(a.game::confirmPlan)) return
+        if (task) {
+            // `доволен` одинаков для любой суммы (сценарий главы 2, шаг 3а).
+            a.react(Reaction.HAPPY)
+            taskLines = a.explain.afterPlanTask(a.state.value)
+        } else onConfirmed()
+    }
 
     SoftScreen(
         onBack = onBack,
@@ -118,7 +143,15 @@ fun PlanScreen(s: GameState, onBack: () -> Unit, onConfirmed: () -> Unit) {
         // Строка остатка — над кнопкой, всегда на виду: она и объясняет, почему кнопка закрыта. Над ней —
         // «Я хочу есть», когда в «Нужном» ноль. Место под обе — по самым длинным вариантам:
         // банки не прыгают, когда строка меняется.
-        bottom = if (frozen) null else ({
+        bottom = if (frozen) taskLines?.let { lines ->
+            {
+                Column(
+                    Modifier.fillMaxWidth().softPlate(FinniDimens.RadiusCard - 6.dp).padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) { lines.forEachIndexed { i, l -> Txt(l, if (i == 0) FinniText.Button else FinniText.Body) } }
+                MainButton(a.t("common.home"), onClick = onConfirmed)
+            }
+        } else ({
             val zero = a.f("plan.needZero", "name" to s.profile.petName)
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val reserve = textHeight(listOf(zero), FinniText.Body, maxWidth) + 4.dp + textHeight(restVariants(wallet), FinniText.Subtitle, maxWidth)
@@ -134,21 +167,24 @@ fun PlanScreen(s: GameState, onBack: () -> Unit, onConfirmed: () -> Unit) {
                     )
                 }
             }
-            MainButton(a.t("plan.confirm"), onClick = { if (a.act(a.game::confirmPlan)) onConfirmed() }, enabled = a.game.canConfirmPlan(s))
+            MainButton(a.t("plan.confirm"), onClick = ::confirm, enabled = a.game.canConfirmPlan(s))
         }),
     ) { viewport ->
         val scroll = rememberScrollState()
         BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = FinniDimens.ScreenPadding).scrollHint(scroll).verticalScroll(scroll)) {
             val width = maxWidth
             val colW = (width - COL_GAP * 2) / 3
-            val titleH = textHeight(listOf(title), FinniText.Title, width - FinniDimens.PetHead - 12.dp)
+            // Длинный заголовок F4 «Сколько отложишь?» в строку кеглем заголовка не встаёт — тогда кегль
+            // подзаголовка: две строки выталкивали строку «хватит» за край 360 × 600.
+            val titleStyle = if (textWidth(title, FinniText.Title) <= width - FinniDimens.PetHead - 12.dp) FinniText.Title else FinniText.Subtitle
+            val titleH = textHeight(listOf(title), titleStyle, width - FinniDimens.PetHead - 12.dp)
             val counter: @Composable (Direction?, Int, (Int) -> Plan) -> Unit = { d, v, copy ->
                 Counter(frozen, onMinus = { if (v > 0) set(copy(v - 1)) }, onPlus = { set(copy((v + 1).coerceAtMost(MAX_NUMBER))) })
             }
             FitColumn(viewport) {
                 Box(Modifier.height(4.dp))
                 // Заголовок с головой Финни: голова уступает место вторая, после банок.
-                TitleRow(s, title, Modifier.fillMaxWidth().flex(min = titleH, max = maxOf(titleH, FinniDimens.PetHead / HEAD_RATIO), order = 2))
+                TitleRow(s, title, Modifier.fillMaxWidth().flex(min = titleH, max = maxOf(titleH, FinniDimens.PetHead / HEAD_RATIO), order = 2), titleStyle)
                 Box(Modifier.height(4.dp))
                 if (big) {
                     // Крупный шрифт: направление — строка, маленькая банка и слово слева, число и «− +» справа.
@@ -220,7 +256,7 @@ private fun Columns(colW: Dp, modifier: Modifier = Modifier.fillMaxWidth(), fill
 }
 
 @Composable
-private fun TitleRow(s: GameState, title: String, modifier: Modifier) {
+private fun TitleRow(s: GameState, title: String, modifier: Modifier, style: androidx.compose.ui.text.TextStyle = FinniText.Title) {
     BoxWithConstraints(modifier) {
         val head = minOf(FinniDimens.PetHead, maxHeight * HEAD_RATIO)
         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -228,7 +264,7 @@ private fun TitleRow(s: GameState, title: String, modifier: Modifier) {
                 // На плане движения нет: голова неподвижна (animation-howto §10).
                 Finni(s.profile.fur, s.profile.accessory, Modifier.width(head), animate = false, idle = false, headOnly = true)
             }
-            Txt(title, FinniText.Title, Modifier.weight(1f))
+            Txt(title, style, Modifier.weight(1f))
         }
     }
 }
@@ -272,7 +308,7 @@ private fun EnoughLine(s: GameState, tailX: Dp) {
                 Coin(22.dp)
                 Txt(goal.price.toString(), FinniText.Button)
             }
-            val line = if (a.game.goalReached(s)) a.t("enough.ready") else a.t(enoughKey(a.game.enoughForGoal(s)))
+            val line = if (a.game.goalReached(s)) a.explain.chapterText(s, "enough.ready") else a.t(enoughKey(a.game.enoughForGoal(s)))
             Txt(line, EnoughText, Modifier.weight(1f).padding(start = 4.dp))
         }
     }

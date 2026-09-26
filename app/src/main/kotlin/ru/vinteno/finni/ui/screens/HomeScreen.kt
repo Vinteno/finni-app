@@ -61,6 +61,7 @@ import ru.vinteno.finni.core.model.GameState
 import ru.vinteno.finni.core.model.ParcelResult
 import ru.vinteno.finni.core.model.Phase
 import ru.vinteno.finni.ui.app
+import ru.vinteno.finni.ui.components.AdultGate
 import ru.vinteno.finni.ui.components.CALENDAR_RATIO
 import ru.vinteno.finni.ui.components.Calendar
 import ru.vinteno.finni.ui.components.Coin
@@ -104,7 +105,7 @@ import ru.vinteno.finni.ui.theme.FinniDimens
 import ru.vinteno.finni.ui.theme.FinniMotion
 import ru.vinteno.finni.ui.theme.FinniText
 
-enum class HomeTarget { PLAN, SHOP, PIGGY, SUMMARY, EVENT }
+enum class HomeTarget { PLAN, SHOP, SITUATION, PIGGY, SORT, SUMMARY, DIARY, ADULT, EVENT }
 
 /** Свободная игра без касаний дольше 30 секунд — Финни засыпает (сценарий §7, свободная игра). */
 private const val SLEEP_AFTER_MS = 30_000L
@@ -176,6 +177,7 @@ private val NOTE_MAX = 150.dp
 private val GOAL_PIC = 28.dp
 private val PRICE_COIN = 14.dp
 private val CELL = 10.dp
+private val CELL_MIN = 7.dp
 
 /** Предметы комнаты, у каждого шага недели — свой (I45). */
 private enum class Prop { PARCEL, JARS, DOOR, BOWL, SOAP, PIGGY, CALENDAR }
@@ -190,14 +192,14 @@ private fun stepProp(step: Step, canFeed: Boolean): Prop? = when (step) {
     Step.SHOP -> Prop.DOOR
     Step.CARE -> if (canFeed) Prop.BOWL else Prop.SOAP
     Step.SAVE -> Prop.PIGGY
-    Step.SUMMARY, Step.NEXT_WEEK -> Prop.CALENDAR
+    Step.SORT, Step.SUMMARY, Step.NEXT_WEEK -> Prop.CALENDAR
     Step.EVENT, Step.NONE -> null
 }
 
 /** Слова шага на записке — те же, что были на нижней кнопке. */
 private val STEP_KEYS = listOf(
     "step.parcel", "step.plan", "step.shop", "step.care", "step.wash", "step.save", "step.piggy",
-    "step.summary", "step.nextWeek", "home.note.chapterDone",
+    "step.sort", "step.summary", "step.nextWeek", "home.note.chapterDone",
 )
 
 /**
@@ -232,10 +234,16 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
 
     val canFeed = w != null && s.phase != Phase.ONBOARDING && g.canFeed(s)
     val target = stepProp(step, canFeed)
-    // Плашка посылки или объявления на экране: пока её не закрыли, предметы только замечают её.
-    val plateUp = parcelNote || step == Step.ANNOUNCE
+    // Плашка перехода главы и плашка бонуса взрослого — после посылки и объявления, по одной.
+    val transitionUp = s.phase == Phase.TRANSITION
+    val bonusUp = w != null && w.bonus > 0 && !w.bonusSeen && !parcelNote && step != Step.ANNOUNCE
+    // Смена обстановки на переходе главы: кроссфейд или затемнение, 320 мс; без анимаций — сразу.
+    val fade = remember(s.transition?.chapter) { Animatable(if (s.phase == Phase.TRANSITION && a.animationOn) 1f else 0f) }
+    LaunchedEffect(s.transition?.chapter) { fade.animateTo(0f, tween(FinniMotion.SCREEN_MS)) }
+    // Плашка на экране: пока её не закрыли, предметы только замечают её.
+    val plateUp = parcelNote || step == Step.ANNOUNCE || transitionUp || bonusUp
     val stage = when {
-        s.phase == Phase.FREE_PLAY -> Stage.AFTER_EVENT
+        s.phase == Phase.FREE_PLAY || s.phase == Phase.TRANSITION -> Stage.AFTER_EVENT
         s.phase == Phase.AFTER_SUMMARY || s.phase == Phase.EVENT -> Stage.AFTER_SUMMARY
         w == null || w.parcel == null -> Stage.BEFORE_PARCEL
         !w.planConfirmed -> Stage.BEFORE_PLAN
@@ -318,7 +326,9 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
             }
             Prop.DOOR -> when (stage) {
                 Stage.BEFORE_PARCEL -> line("home.say.parcelFirst")
-                Stage.BEFORE_PLAN, Stage.AFTER_PLAN -> open(HomeTarget.SHOP)
+                Stage.BEFORE_PLAN -> open(HomeTarget.SHOP)
+                // Неделя с ситуацией: сначала экран выбора, вариант ложится в корзину (главы 2 и 3).
+                Stage.AFTER_PLAN -> open(if (g.situationOpen(s)) HomeTarget.SITUATION else HomeTarget.SHOP)
                 Stage.AFTER_SUMMARY -> line("home.say.weekOver")
                 Stage.AFTER_EVENT -> happy()
             }
@@ -327,12 +337,16 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
                 Stage.AFTER_EVENT -> happy()
                 else -> open(HomeTarget.PIGGY)
             }
+            // Календарь ведёт к итогу и следующей неделе; когда не ведёт — открывает дневник (I49, F4).
             Prop.CALENDAR -> when (stage) {
-                Stage.BEFORE_PARCEL -> line("home.say.parcelFirst")
-                Stage.BEFORE_PLAN -> line("home.say.planFirst")
-                Stage.AFTER_PLAN -> if (g.summaryOpen(s)) open(HomeTarget.SUMMARY) else line("home.say.summaryLater")
+                Stage.AFTER_PLAN -> when {
+                    g.sortPending(s) && g.shopDone(s) -> open(HomeTarget.SORT)
+                    g.summaryOpen(s) -> open(HomeTarget.SUMMARY)
+                    else -> open(HomeTarget.DIARY)
+                }
                 Stage.AFTER_SUMMARY -> a.act(g::nextWeek)
-                Stage.AFTER_EVENT -> happy()
+                Stage.AFTER_EVENT -> if (s.week != null) open(HomeTarget.DIARY) else happy()
+                else -> if (w != null) open(HomeTarget.DIARY) else line("home.say.parcelFirst")
             }
         }
     }
@@ -345,6 +359,7 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
         Step.SHOP -> "step.shop"
         Step.CARE -> if (canFeed) "step.care" else "step.wash"
         Step.SAVE -> if (g.canDeposit(s)) "step.save" else "step.piggy"
+        Step.SORT -> "step.sort"
         Step.SUMMARY -> "step.summary"
         Step.NEXT_WEEK -> "step.nextWeek"
         Step.EVENT, Step.NONE -> "home.note.chapterDone"
@@ -374,12 +389,16 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
     val plateLines: List<String>? = when {
         parcelNote -> parcelLines(s)
         step == Step.ANNOUNCE -> g.weekContent(s).announcement.map { a.f(it, "name" to s.profile.petName) }
+        transitionUp -> a.explain.transitionLines(s)
+        bonusUp -> listOf(a.f("bonus.plate", "n" to w!!.bonus))
         else -> null
     }
-    // Картинка плашки: посылка — у записки бабушки, предмет недели — у объявления (гайд §12.2).
+    // Картинка плашки: посылка — у записки бабушки, предмет недели — у объявления (гайд §12.2), копилка —
+    // у бонуса взрослого.
     val platePicture = when {
         parcelNote -> "posylka"
         step == Step.ANNOUNCE -> g.weekContent(s).announceItem
+        bonusUp -> "kopilka"
         else -> null
     }
     // Плашка выезжает и уезжает обратно (§7.4); пока уезжает, показывает прежние строки.
@@ -401,7 +420,7 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
         // Шапка: потребности слева, кошелёк справа. Не помещаются в ряд (крупный шрифт) — потребности
         // строкой ниже.
         val purse = subcompose(Slot.PURSE) { WalletPlate(s.progress.wallet) }.map { it.measure(loose) }
-        val needs = subcompose(Slot.NEEDS) { Needs(fed = w?.fed == true, clean = w?.washed == true) }.map { it.measure(loose) }
+        val needs = subcompose(Slot.NEEDS) { Needs(fed = w?.fed == true, clean = w?.washed == true, warm = !g.cold(s)) }.map { it.measure(loose) }
         val pad = HEADER_PAD.roundToPx()
         val purseW = purse.maxOf { it.width }
         val purseH = purse.maxOf { it.height }
@@ -409,9 +428,20 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
         val needsH = needs.maxOf { it.height }
         val stacked = needsW + purseW + pad * 3 > width
         val needsY = if (stacked) pad + purseH + 4.dp.roundToPx() else pad
+        // «Взрослым» — под кошельком справа (I49, F6); на крупном шрифте — в строку с потребностями,
+        // не помещается — строкой ниже.
+        val gate = subcompose(Slot.GATE) { AdultGate(a.t("home.adult"), onOpen = { open(HomeTarget.ADULT) }) }.map { it.measure(loose) }
+        val gateW = gate.maxOf { it.width }
+        val gateH = gate.maxOf { it.height }
+        val gap4 = 4.dp.roundToPx()
+        val gateY = when {
+            !stacked -> pad + purseH + gap4
+            needsW + gateW + pad * 3 <= width -> needsY
+            else -> needsY + needsH + gap4
+        }
         val leftTop = (needsY + needsH).toDp()
-        val rightTop = (if (stacked) needsY + needsH else pad + purseH).toDp()
-        val headerH = maxOf(needsY + needsH, pad + purseH)
+        val rightTop = maxOf(if (stacked) needsY + needsH else pad + purseH, gateY + gateH).toDp()
+        val headerH = maxOf(needsY + needsH, pad + purseH, gateY + gateH)
 
         val floor = height.toDp() - STRIP - DEPTH_BOWL
         val plan = planRoom(width.toDp(), leftTop, rightTop, floor, texts, tm, this)
@@ -426,8 +456,21 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
         plan.props(fl).forEach { (p, x) -> propX[p] = x.toPx() }
         finniX = (plan.finniX + plan.finniW / 2).toPx()
 
-        val back = subcompose(Slot.BACK) { Canvas(Modifier.fillMaxSize()) { drawRoom(floor.toPx()) } }
-            .map { it.measure(Constraints.fixed(width, height)) }
+        val back = subcompose(Slot.BACK) {
+            Box(Modifier.fillMaxSize()) {
+                Canvas(Modifier.fillMaxSize()) { drawRoom(floor.toPx()) }
+                // Переход в главу 2: холодная комната проявляется сквозь прежнюю, 320 мс.
+                if (transitionUp && s.progress.chapter == 2) {
+                    Canvas(Modifier.fillMaxSize().graphicsLayer { alpha = fade.value }) { drawRoom(floor.toPx(), "room_sand") }
+                }
+            }
+        }.map { it.measure(Constraints.fixed(width, height)) }
+        // Переезд в главу 3: экран гаснет на 320 мс — единственное затемнение в игре — и открывается новый дом.
+        val dark = subcompose(Slot.DARK) {
+            if (transitionUp && s.progress.chapter == 3) {
+                Box(Modifier.fillMaxSize().graphicsLayer { alpha = fade.value }.background(androidx.compose.ui.graphics.Color.Black))
+            }
+        }.map { it.measure(Constraints.fixed(width, height)) }
         val stage = subcompose(Slot.STAGE) {
             Box(Modifier.fillMaxSize().then(if (scrolling) Modifier.verticalScroll(stageScroll) else Modifier)) {
                 Room(
@@ -446,7 +489,11 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
                         scope.launch { ballJump.animateTo(1f, tween(160)); ballJump.animateTo(0f, tween(160)) }
                         a.react(Reaction.HAPPY)
                     },
-                    onFinni = { poke++ },
+                    // Касание Финни — реакция ушами и подсказка, что сделать сейчас, словами записки (I49, F5).
+                    onFinni = {
+                        poke++
+                        if (!plateUp && step != Step.NONE && step != Step.EVENT) say = noteStep
+                    },
                     finni = { m ->
                         // Событийное перемещение к миске — тремя прыжками, не скольжением (animation-howto §6.4).
                         val hop = kotlin.math.abs(kotlin.math.sin(walk.value * 3f * Math.PI.toFloat()))
@@ -461,6 +508,9 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
                                 earPoke = poke,
                                 hop = hop, moving = moving,
                                 description = s.profile.petName,
+                                wear = g.worn(s),
+                                // `зябнет` — только дома, с перехода в главу 2 до покупки куртки (I49, G2).
+                                cold = g.cold(s) && !sleeping && !moving,
                             )
                         }
                     },
@@ -484,14 +534,20 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
         val plate = subcompose(Slot.PLATE) {
             SlideUp(plateLines != null) {
                 BottomPlate(lastPlate.first, lastPlate.second, a.t("common.ok")) {
-                    if (parcelNote) parcelNote = false else a.act(g::seeAnnouncement)
+                    when {
+                        parcelNote -> parcelNote = false
+                        transitionUp -> a.act(g::seeTransition)
+                        step == Step.ANNOUNCE -> a.act(g::seeAnnouncement)
+                        bonusUp -> a.act(g::seeBonus)
+                    }
                 }
             }
         }
         val natural = plate.maxOfOrNull { it.maxIntrinsicHeight(width) } ?: 0
         val below = height - finniBottom - gap
         val onFloor = natural <= below
-        val topY = headerH + gap
+        // Плашка может закрыть «Взрослым»: пока она открыта, раздел взрослого не нужен, а место — нужно.
+        val topY = (if (stacked) headerH else maxOf(needsY + needsH, pad + purseH)) + gap
         val room = if (onFloor) below else (finniTop - gap - topY).coerceAtLeast(FinniDimens.MainButtonHeight.roundToPx() * 2)
         val placedPlate = plate.map { it.measure(Constraints(maxWidth = width, minWidth = width, maxHeight = room)) }
 
@@ -501,12 +557,14 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
             if (scrolling) hint.forEach { it.place(0, viewTop) }
             needs.forEach { it.place(pad, needsY) }
             purse.forEach { it.place(width - pad - purseW, pad) }
+            gate.forEach { it.place(width - pad - gateW, gateY) }
+            dark.forEach { it.place(0, 0) }
             placedPlate.forEach { it.place(0, if (onFloor) height - it.height else topY) }
         }
     }
 }
 
-private enum class Slot { PURSE, NEEDS, BACK, STAGE, HINT, PLATE }
+private enum class Slot { PURSE, NEEDS, GATE, BACK, STAGE, HINT, DARK, PLATE }
 
 private val HEADER_PAD = 12.dp
 
@@ -534,6 +592,8 @@ private data class RoomPlan(
     val plateMaxW: Dp, val plateH: Dp,
     /** Сколько высоты не хватило при самом маленьком Финни: на столько комната прокручивается. */
     val lack: Dp,
+    /** Клетка плашки накоплений. */
+    val cell: Dp = CELL,
 ) {
     val shelfLeft: Dp get() = bowlX + BOWL - shelfW
     val shelfH: Dp get() = shelfW * thingRatio("polka")
@@ -592,14 +652,16 @@ private fun planRoom(width: Dp, leftTop: Dp, rightTop: Dp, floor: Dp, t: RoomTex
     val priceSize = t.price?.let { with(d) { tm.measure(it.toString(), PlateText, density = d).size.let { z -> z.width.toDp() to z.height.toDp() } } }
     val goalCol = priceSize?.let { maxOf(GOAL_PIC, PRICE_COIN + 4.dp + it.first) } ?: 0.dp
     val pic = if (t.price != null) goalCol + 8.dp else 0.dp
-    val cellsW = t.cells?.let { CELL * it + 4.dp * (it - 1) } ?: 0.dp
     val plateFrame = 20.dp + pic + 2.dp
     val besideNote = width - SIDE - (SIDE + 4.dp + reserveW + 8.dp)
+    // Клетки мельчают, чтобы плашка встала рядом с запиской: у целей глав 2 и 3 их до 12, а не 6–9.
+    val cell = t.cells?.let { n -> ((besideNote - plateFrame - 4.dp * (n - 1)) / n).coerceIn(CELL_MIN, CELL) } ?: CELL
+    val cellsW = t.cells?.let { cell * it + 4.dp * (it - 1) } ?: 0.dp
     val plateMinW = t.saved?.let { plateFrame + maxOf(cellsW, wordW(it)) } ?: 0.dp
     val below = plateMinW > besideNote
     val plateMaxW = if (below) width - SIDE * 2 else besideNote
     val plateH = t.saved?.let { saved ->
-        val cells = if (t.cells != null) CELL + 4.dp else 0.dp
+        val cells = if (t.cells != null) cell + 4.dp else 0.dp
         maxOf(FinniDimens.MinTouch, 12.dp + maxOf(priceSize?.let { GOAL_PIC + it.second } ?: 0.dp, cells + textH(saved, PlateText, plateMaxW - plateFrame)))
     } ?: 0.dp
     val plateTop = if (below) maxOf(rightTop, leftTop + 8.dp + noteReserve) + 8.dp else rightTop + 8.dp
@@ -672,6 +734,7 @@ private fun planRoom(width: Dp, leftTop: Dp, rightTop: Dp, floor: Dp, t: RoomTex
         windowW = windowW, windowX = windowX, windowTop = doorTop,
         plateMaxW = plateMaxW, plateH = plateH,
         lack = lack,
+        cell = cell,
     )
 }
 
@@ -719,7 +782,16 @@ private fun Room(
         // Записка читается диктором, но не нажимается.
         WallNote(note, null, p.noteW, p.noteH, Modifier.offset(x = SIDE + 4.dp, y = p.noteTop).semantics(mergeDescendants = true) {})
         // Окно — декор на стене между дверью и Финни, может уходить за Финни. Места мало — окна нет.
-        if (p.windowW > 0.dp) Thing("okno", p.windowW, Modifier.offset(x = p.windowX, y = p.windowTop))
+        // В главе 2 — окно с инеем целиком на замену обычного (final-plan §3, п. 1).
+        val window = if (s.progress.chapter == 2) "okno_inej" else "okno"
+        if (p.windowW > 0.dp) Thing(window, p.windowW, Modifier.offset(x = p.windowX, y = p.windowTop))
+        // Гирлянда — на стене над окном, огоньки статичные (сценарий главы 3, §10).
+        if ("girlyanda" in s.progress.inventory) {
+            val gw = if (p.windowW > 0.dp) p.windowW * 1.3f else 96.dp * (p.finniH / FINNI_REF)
+            val gx = if (p.windowW > 0.dp) p.windowX - (gw - p.windowW) / 2 else SIDE + p.doorW + 4.dp
+            val gy = (if (p.windowW > 0.dp) p.windowTop else floor - p.doorH) - gw * thingRatio("girlyanda") * 0.7f
+            Appear("girlyanda", Modifier.offset(x = gx, y = gy)) { Thing("girlyanda", gw, description = g.content.item("girlyanda").name) }
+        }
 
         // Полка справа, над календарём и миской. На ней банки плана, мыло, пока оно куплено, и копилка.
         Thing("polka", p.shelfW, Modifier.offset(x = p.shelfLeft, y = p.shelfTop))
@@ -729,7 +801,7 @@ private fun Room(
                     .prop(a.t("plan.need") + ", " + a.t("plan.want") + ", " + a.t("plan.save")) { onProp(Prop.JARS) },
                 contentAlignment = Alignment.BottomCenter,
             ) {
-                val scaleMax = maxOf(g.content.chapter1.income, jars.max())
+                val scaleMax = maxOf(g.ch(s).income, jars.max())
                 RoomJars(jars, scaleMax, p.jarsH)
             }
         }
@@ -769,7 +841,7 @@ private fun Room(
                     // Клетки по 5 монет и «Накопили N», рядом цель с ценой.
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            goal?.let { gl -> ProgressCells(minOf(s.progress.savings, gl.price) / 5, (gl.price + 4) / 5, cell = CELL) }
+                            goal?.let { gl -> ProgressCells(minOf(s.progress.savings, gl.price) / 5, (gl.price + 4) / 5, cell = p.cell) }
                             Txt(saved, PlateText)
                         }
                         goal?.let { gl ->
@@ -787,7 +859,8 @@ private fun Room(
         }
 
         // Календарь — листок на стене над миской, неделя цифрой. Итог и следующая неделя — через него.
-        val weekNo = w?.number ?: 1
+        // Номер на календаре — сквозной за игру: «Неделя 3» в главе 2.
+        val weekNo = g.weekNumber(s)
         Box(
             Modifier.offset(x = p.calendarX, y = p.calendarTop)
                 .prop(a.t("home.week") + " " + weekNo) { onProp(Prop.CALENDAR) },
@@ -811,11 +884,27 @@ private fun Room(
             }
         }
 
+        // Полотенце висит на крючке двери: другого места на стене при 360 dp нет (решение I50). Касания
+        // проходят к двери.
+        if ("polotence" in s.progress.inventory) {
+            val tw = p.doorW * 0.34f
+            val id = if ("vyshivka" in s.progress.inventory) "polotence_vyshivka" else "polotence"
+            Appear("polotence", Modifier.offset(x = SIDE + p.doorW * 0.6f, y = floor - p.doorH * 0.78f)) {
+                Thing(id, tw, box = "polotence", description = g.content.item("polotence").name)
+            }
+        }
+
+        // Задний ряд у стены — вещи глав 2 и 3 (санки, коробки переезда, коробка, лампа, цели глав 2 и 3):
+        // стоят на линии пола, мельче вещей на полу и за ними; касания не ловят.
+        BackRow(s, p, floor)
+
         // Качели и мячик — купленные вещи остаются навсегда. Стоят между дверью и Финни: мячик — на месте
-        // посылки (посылки в это время уже нет), качели — у стены, за посылкой и мячиком.
+        // посылки (посылки в это время уже нет), качели — у стены, за посылкой и мячиком. После новоселья
+        // с целью главы 3 вещи сложены в неё.
         val slotL = SIDE + p.doorW + 4.dp
         val slotR = p.finniX - 4.dp
-        if ("kacheli" in s.progress.inventory) {
+        val packed = packedAway(s)
+        if ("kacheli" in s.progress.inventory && !packed) {
             val sw = minOf(slotR - slotL, 84.dp * (p.finniH / FINNI_REF))
             Box(Modifier.standOn(slotL + (slotR - slotL - sw) / 2, floor + DEPTH_SWING)) {
                 Appear("kacheli", Modifier.align(Alignment.BottomStart)) {
@@ -848,7 +937,7 @@ private fun Room(
                 }
             }
         }
-        if ("myachik" in s.progress.inventory) {
+        if ("myachik" in s.progress.inventory && !packed && !(w != null && w.parcel == null)) {
             val x = (slotL + slotR) / 2 - FinniDimens.MinTouch / 2
             Box(Modifier.standOn(x, floor + DEPTH_BOWL)) {
                 Box(
@@ -892,14 +981,74 @@ private fun Room(
     }
 }
 
-/** Три потребности: миска, мыло, шарф. «Тепло» в главе 1 всегда закрыто (I9). */
+/** Цели главы 3 — куда складываются вещи на новоселье. */
+private val STORAGE = listOf("polka_veshchey", "korzina", "sunduk")
+
+/** Вещи сложены в цель главы 3: она куплена на новоселье (сценарий главы 3, §7). */
+private fun packedAway(s: GameState): Boolean = STORAGE.any { it in s.progress.inventory }
+
+/**
+ * Задний ряд у стены: что стоит и в каком порядке слева направо, с шириной при Финни обычного роста.
+ * Санки — у двери; коробки переезда — пока вещи не сложены; дальше коробка, лампа, мебель главы 2,
+ * цель главы 3 с вещами.
+ */
+private fun backRow(s: GameState): List<Pair<String, Dp>> {
+    val inv = s.progress.inventory
+    val packed = packedAway(s)
+    return buildList {
+        if ("sanki" in inv && !packed) add("sanki" to 62.dp)
+        // Мячик стоит на месте посылки; пока посылка у двери (главы 2 и 3), он лежит у стены.
+        if ("myachik" in inv && !packed && s.week?.parcel == null && s.week != null) add("myachik" to 30.dp)
+        if (s.progress.chapter == 3 && !packed) add("korobki_pereezd" to 70.dp)
+        if ("korobka" in inv && !packed) add((if ("nakleyki" in inv) "korobka_nakleyki" else "korobka") to 38.dp)
+        if ("lampa" in inv) add((if ("abazhur" in inv) "lampa_abazhur" else "lampa") to 34.dp)
+        listOf("plaid" to 66.dp, "lezhanka" to 62.dp, "pechka" to 40.dp).forEach { (id, w) -> if (id in inv) add(id to w) }
+        STORAGE.forEach { if (it in inv) add("${it}_full" to 58.dp) }
+    }
+}
+
+/** Рамка картинки вещи заднего ряда: у вещи с надбавкой — рамка основы. */
+private fun rowBox(id: String) = when (id) {
+    "korobka_nakleyki" -> "korobka"
+    "lampa_abazhur" -> "lampa"
+    else -> id
+}
+
+/**
+ * Задний ряд: от двери до правого края, вещи ровно по местам с одинаковыми промежутками; не помещаются —
+ * все уменьшаются вместе, но не мельче 0,6. Появляются по правилу появления §7.1, одинаково для базы и
+ * надбавки.
+ */
 @Composable
-private fun Needs(fed: Boolean, clean: Boolean) {
+private fun BackRow(s: GameState, p: RoomPlan, floor: Dp) {
+    val items = backRow(s)
+    if (items.isEmpty()) return
+    val u = p.finniH / FINNI_REF
+    val left = SIDE + p.doorW + 2.dp
+    val avail = (p.bowlX + BOWL - left).coerceAtLeast(1.dp)
+    val natural = items.fold(0.dp) { acc, it -> acc + it.second * u }
+    val k = minOf(1f, (avail / natural)).coerceAtLeast(0.6f)
+    val gap = ((avail - natural * k) / (items.size + 1)).coerceAtLeast(0.dp)
+    var x = left + gap
+    items.forEach { (id, w) ->
+        val iw = w * u * k
+        Box(Modifier.standOn(x, floor + 2.dp)) {
+            Appear("row:$id", Modifier.align(Alignment.BottomStart)) {
+                Thing(id, iw, box = rowBox(id), description = app().game.content.items[id.substringBefore("_")]?.name)
+            }
+        }
+        x += iw + gap
+    }
+}
+
+/** Три потребности: миска, мыло, тепло. «Тепло» закрыто всегда, кроме главы 2 до покупки куртки (I9). */
+@Composable
+private fun Needs(fed: Boolean, clean: Boolean, warm: Boolean) {
     val a = app()
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         NeedBadge("item_miska", FinniIcons.Fed, a.t("home.state.fed"), fed)
         NeedBadge("item_mylo", FinniIcons.Clean, a.t("home.state.clean"), clean)
-        NeedBadge("acc_scarf", FinniIcons.Warm, a.t("home.state.warm"), true)
+        NeedBadge(if (warm) "acc_scarf" else "item_kurtka", FinniIcons.Warm, a.t("home.state.warm"), warm)
     }
 }
 

@@ -1,0 +1,55 @@
+{
+  "_source": "internal/design/scenario-chapter-2.md, версия 2.0; тексты — в стиле I48 п. 1; задания — I49 B4.",
+  "chapter": 2,
+  "background": "room_cold",
+  "income": 30,
+  "eventName": "snow",
+  "goalIds": ["plaid", "lezhanka", "pechka"],
+  "chapterWantId": "sanki",
+  "minWeeks": 2,
+  "maxWeeks": 3,
+  "marksToLeave": 4,
+  "enterLines": ["transition.2.1", "transition.2.2"],
+  "weeks": [
+    {
+      "week": 1,
+      "situation": "kurtka",
+      "situationShelf": "situation",
+      "announcement": ["announce.kurtka.1", "announce.price.kurtka", "announce.common.3"],
+      "announceItem": "kurtka",
+      "shelves": [
+        { "id": "food", "caption": "shop.caption.food", "mandatory": true, "tiers": [["krupa"], ["kasha"]] },
+        { "id": "soap", "caption": null, "mandatory": true, "tiers": [["mylo"]] },
+        { "id": "situation", "caption": "sit.caption.kurtka", "mandatory": true, "onScreen": true, "tiers": [["kurtka"], ["kurtka", "risunok"]] }
+      ],
+      "taskId": "F4"
+    },
+    {
+      "week": 2,
+      "situation": "lechenie",
+      "situationShelf": "situation",
+      "announcement": ["announce.lechenie.1", "announce.lechenie.2", "announce.price.lechenie"],
+      "announceItem": "lechenie",
+      "shelves": [
+        { "id": "food", "caption": "shop.caption.food", "mandatory": true, "tiers": [["krupa"], ["kasha"]] },
+        { "id": "soap", "caption": null, "mandatory": true, "tiers": [["mylo"]] },
+        { "id": "situation", "caption": "sit.caption.lechenie", "mandatory": true, "onScreen": true, "tiers": [["lechenie"], ["lechenie", "bint"]] }
+      ],
+      "taskId": "F3"
+    },
+    {
+      "week": 3,
+      "_week": "«Снег всё не идёт» — только при недоборе отметок. Куртка на полке, пока не куплена.",
+      "spare": true,
+      "situation": "food",
+      "situationShelf": "food",
+      "announcement": ["announce.spare2.1", "announce.food.1", "announce.price.kasha"],
+      "announceItem": "kasha",
+      "shelves": [
+        { "id": "food", "caption": "shop.caption.food", "mandatory": true, "tiers": [["krupa"], ["kasha"], ["kasha", "yagody"]] },
+        { "id": "soap", "caption": null, "mandatory": true, "tiers": [["mylo"]] },
+        { "id": "situation", "caption": "sit.caption.kurtka", "mandatory": true, "onScreen": true, "tiers": [["kurtka"], ["kurtka", "risunok"]] }
+      ]
+    }
+  ]
+}

@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
@@ -46,6 +47,7 @@ import ru.vinteno.finni.core.engine.Checkout
 import ru.vinteno.finni.core.engine.Direction
 import ru.vinteno.finni.core.engine.requireWeek
 import ru.vinteno.finni.core.model.GameState
+import ru.vinteno.finni.core.model.PayChoice
 import ru.vinteno.finni.ui.app
 import ru.vinteno.finni.ui.components.Basket
 import ru.vinteno.finni.ui.components.TakeCells
@@ -79,7 +81,7 @@ import ru.vinteno.finni.ui.theme.FinniDimens
 import ru.vinteno.finni.ui.theme.FinniText
 
 /** Какое окно открыто поверх корзины. Модальных окон в игре ровно два вида — нехватка и копилка. */
-private enum class Ask { NONE, WANT, SAVINGS, NO_SAVINGS }
+private enum class Ask { NONE, WANT, SAVINGS, NO_SAVINGS, PAY }
 
 /**
  * Магазин — единственное место, где уходят деньги за покупки (сценарий главы 1, шаг 4). До плана —
@@ -104,11 +106,28 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
     var agreedWant by remember { mutableStateOf(false) }
     // Объяснение после покупки — здесь же, на месте корзины (I45); дома оно больше не показывается.
     var explained by remember { mutableStateOf<List<String>?>(null) }
+    // Объяснение F3 — с «Понятно», после него покупки продолжаются.
+    var dupPlate by remember { mutableStateOf<List<String>?>(null) }
     val showcase = !w.planConfirmed
+    // Согласия из окон, пока открыто окно «Чем заплатишь?» (F2).
+    var agreedSavings by remember { mutableStateOf(false) }
 
-    val wantId = g.content.chapter1.chapterWantId
-    val cart = week.shelves.flatMap { sh -> tiers[sh.id]?.let { sh.tiers[it] } ?: emptyList() } +
+    val wantId = g.ch(s).chapterWantId
+    val shelves = g.shopShelves(s)
+    // Вариант ситуации (главы 2 и 3) лежит в корзине с экрана ситуации; убрать — касанием в корзине.
+    val situation = if (showcase) emptyList() else g.situationCart(s)
+    // F3: в корзине вторая куртка, пока задание не пройдено; убрать — касанием, «Купить» — не списывает.
+    val dupId = if (g.duplicatePending(s)) g.weekTask(s)?.itemId else null
+    val cart = shelves.flatMap { sh -> tiers[sh.id]?.let { sh.tiers[it] } ?: emptyList() } + situation +
         (if (wantPicked && !g.owns(s, wantId)) listOf(wantId) else emptyList())
+
+    /** F3 пройдено: дубль убран или «Купить» — одно объяснение, награды нет, и это не комментируется. */
+    fun resolveDuplicate() {
+        if (a.act(g::resolveDuplicate)) {
+            a.react(Reaction.HAPPY)
+            dupPlate = a.explain.afterDuplicate()
+        }
+    }
 
     fun leave() {
         // Витрина до плана ничего не отмечает: магазин закрыт для трат.
@@ -118,18 +137,27 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
     // Системное «назад» (жест, кнопка телефона) закрывает шаг так же, как кнопка на экране.
     BackHandler { leave() }
 
-    fun buy(q: Checkout, withWant: Boolean, withSavings: Boolean) {
-        if (a.act { g.buy(it, cart, agreedWant = withWant, agreedSavings = withSavings) }) {
-            explained = a.explain.afterShop(a.state.value, q.items.map { it.id })
+    fun buy(q: Checkout, withWant: Boolean, withSavings: Boolean, pay: PayChoice? = null) {
+        // F2: перед оплатой коробки — «Чем заплатишь?», два равных способа.
+        if (pay == null && g.asksPay(s, q)) {
+            agreedWant = withWant; agreedSavings = withSavings
+            ask = Ask.PAY
+            return
+        }
+        if (a.act { g.buy(it, cart, agreedWant = withWant, agreedSavings = withSavings, pay = pay) }) {
+            explained = if (pay != null) a.explain.afterPay(a.state.value, pay == PayChoice.EXACT)
+            else a.explain.afterShop(a.state.value, q.items.map { it.id })
             tiers.clear(); wantPicked = false
             // `доволен` одинаков для любого набора — инвариант 8.
             a.react(Reaction.HAPPY)
         }
-        ask = Ask.NONE; agreedWant = false
+        ask = Ask.NONE; agreedWant = false; agreedSavings = false
     }
 
     /** Порядок один для любой покупки: своё направление → «Хочу» → копилка с отдельным окном. */
     fun proceed(q: Checkout, wantOk: Boolean) {
+        // F3: «Купить» при второй куртке в корзине — она не списывается, объяснение, покупки дальше.
+        if (dupId != null) { resolveDuplicate(); return }
         when {
             q.asksWant && !wantOk -> ask = Ask.WANT
             q.asksSavings && q.savingsAfter < 0 -> ask = Ask.NO_SAVINGS
@@ -143,7 +171,7 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
     // места нет — на свою полку, на то же третье место.
     val wantAvailable = !g.owns(s, wantId)
     val rows = buildList {
-        week.shelves.filter { it.id !in g.boughtShelves(s) }.forEach { shelf ->
+        shelves.filter { it.id !in g.boughtShelves(s) }.forEach { shelf ->
             add(ShelfView(shelf.id, shelf.caption?.let(a::t), shelf.tiers.mapIndexed { i, tier -> tierSlot(tier, i) }))
         }
         if (wantAvailable) {
@@ -154,7 +182,7 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
     }
     // Корзина хранит место под самый полный набор этой недели: со второй строкой «Хочу», если хотелки
     // на неделе бывают. Так полки не прыгают, когда в корзину кладут первую вещь «Хочу».
-    val fullest = week.shelves.flatMap { sh -> sh.tiers.maxBy { it.size } } + (if (wantAvailable) listOf(wantId) else emptyList())
+    val fullest = g.activeShelves(s).flatMap { sh -> sh.tiers.maxBy { it.size } } + (if (wantAvailable) listOf(wantId) else emptyList())
 
     Box(Modifier.fillMaxSize()) {
         SoftScreen(
@@ -171,7 +199,16 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
                         MainButton(a.t("shop.buy"), onClick = {})
                     }
                     val after = explained
+                    val dupAfter = dupPlate
                     when {
+                        // Объяснение F3 — на месте корзины, «Понятно» возвращает к покупкам.
+                        dupAfter != null -> Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom)) {
+                            Column(
+                                Modifier.fillMaxWidth().softPlate(FinniDimens.RadiusCard - 6.dp).padding(horizontal = 14.dp, vertical = 10.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) { dupAfter.forEachIndexed { i, l -> Txt(l, if (i == 0) FinniText.Button else FinniText.Body) } }
+                            MainButton(a.t("common.ok"), onClick = { dupPlate = null })
+                        }
                         // Три строки объяснения выше пустой корзины: место растёт по ним — полки после покупки
                         // и так меняются (купленная полка уходит).
                         after != null -> Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom)) {
@@ -186,11 +223,18 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
                             contentAlignment = Alignment.Center,
                         ) { Txt(a.t("home.say.planFirst"), FinniText.Subtitle.copy(textAlign = TextAlign.Center)) }
                         else -> Column(Modifier.matchParentSize(), verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom)) {
-                            Box(Modifier.weight(1f).fillMaxWidth()) { CartBasket(s, cart, Modifier.matchParentSize()) }
+                            Box(Modifier.weight(1f).fillMaxWidth()) {
+                                CartBasket(
+                                    s, cart, Modifier.matchParentSize(), extra = listOfNotNull(dupId),
+                                    removable = (situation + listOfNotNull(dupId)).toSet(),
+                                    onRemove = { id -> if (id == dupId) resolveDuplicate() else a.act(g::clearSituation) },
+                                )
+                            }
+                            val empty = cart.isEmpty() && dupId == null
                             MainButton(
                                 a.t("shop.buy"),
-                                onClick = { if (cart.isNotEmpty()) proceed(g.quote(s, cart), false) },
-                                modifier = if (cart.isEmpty()) Modifier.alpha(0f).clearAndSetSemantics {} else Modifier,
+                                onClick = { if (!empty) proceed(g.quote(s, cart), false) },
+                                modifier = if (empty) Modifier.alpha(0f).clearAndSetSemantics {} else Modifier,
                             )
                         }
                     }
@@ -206,7 +250,7 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
                 FitColumn(viewport) {
                     Box(Modifier.height(4.dp))
                     // Заголовок — одной строкой, как в макете: двухстрочный на 360 × 600 выталкивал вторую полку.
-                    Txt(a.t("shop.title"), FinniText.Subtitle)
+                    Txt(a.t(if (dupId != null) "f3.title" else "shop.title"), FinniText.Subtitle)
                     Box(Modifier.height(4.dp))
                     Txt(a.f("shop.hint", "n" to g.needLeft(s).coerceAtLeast(0)), HintText)
                     rows.forEach { row ->
@@ -239,6 +283,9 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
             }
             Ask.NO_SAVINGS -> q?.let {
                 SavingsSheet(s, it, onTake = null, onBack = { ask = Ask.NONE; agreedWant = false })
+            }
+            Ask.PAY -> q?.let {
+                PaySheet(s, onPay = { choice -> buy(it, agreedWant, agreedSavings, choice) }, onBack = { ask = Ask.NONE; agreedWant = false; agreedSavings = false })
             }
             Ask.NONE -> {}
         }
@@ -436,10 +483,17 @@ private fun Sign(caption: String, impact: Impact?, modifier: Modifier) {
  * один раз (QA-M11), у надбавки метка «Хочу» (I25). Пустая корзина — без слов.
  */
 @Composable
-private fun CartBasket(s: GameState, cart: List<String>, modifier: Modifier) {
+private fun CartBasket(
+    s: GameState,
+    cart: List<String>,
+    modifier: Modifier,
+    extra: List<String> = emptyList(),
+    removable: Set<String> = emptySet(),
+    onRemove: ((String) -> Unit)? = null,
+) {
     val a = app()
     val g = a.game
-    val q = if (cart.isEmpty() || !s.requireWeek().planConfirmed) null else g.quote(s, cart)
+    val q = if ((cart.isEmpty() && extra.isEmpty()) || !s.requireWeek().planConfirmed) null else g.quote(s, cart)
     Basket(modifier.fillMaxWidth().heightIn(min = 64.dp)) {
         if (q == null) return@Basket
         val groups: @Composable (Modifier) -> Unit = { m ->
@@ -452,16 +506,27 @@ private fun CartBasket(s: GameState, cart: List<String>, modifier: Modifier) {
                 // отдельной позицией: каша 5 под «Нужное», ягоды 3 под «Хочу». Если бы надбавка платилась
                 // в том же направлении, что основа, она легла бы на картинку основы одной позицией.
                 listOf(Direction.NEED, Direction.WANT).forEach { dir ->
-                    val items = q.items.filter { g.direction(it) == dir }
+                    // Вторая куртка F3 лежит в корзине своей категорией, но в сумму не входит: не списывается.
+                    val items = q.items.filter { g.direction(it) == dir } + extra.map(g.content::item).filter { g.direction(it) == dir }
                     if (items.isEmpty()) return@forEach
                     val st = directionStyle(dir)
                     FlowRowGroup {
                         DirectionLabel(st.icon, st.color, a.t(st.labelKey))
                         items.filter { it.addonOf == null || items.none { b -> b.id == it.addonOf } }.forEach { base ->
                             val addons = if (base.addonOf == null) items.filter { it.addonOf == base.id } else emptyList()
-                            val key = (listOf(base.id) + addons.map { it.id }).joinToString("_")
+                            // Надбавка-слой (рисунок, наклейки, абажур…) отдельно — пустой слой; в «Хочу» она
+                            // стоит на картинке своей вещи.
+                            val key = (listOf(base.id) + addons.map { it.id }).joinToString("_").let { k ->
+                                if (base.addonOf != null && base.id in LAYER_ADDONS) "${base.addonOf}_${base.id}" else k
+                            }
                             val name = if (addons.isEmpty()) base.name else a.t("shop.tier.$key")
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                            // Вещь ситуации и вторая куртка F3 убираются касанием в корзине: на полках их нет (I51).
+                            // Вещи с полок убираются на полке, как и выбирались.
+                            val remove = onRemove?.takeIf { base.id in removable }?.let { f ->
+                                Modifier.sizeIn(minWidth = FinniDimens.MinTouch, minHeight = FinniDimens.MinTouch)
+                                    .clickable(remember { MutableInteractionSource() }, null, role = Role.Button) { f(base.id) }
+                            } ?: Modifier
+                            Row(remove, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Picture(key, THUMB, description = name)
                                 Txt((base.price + addons.sumOf { it.price }).toString(), FinniText.Button)
                             }
@@ -487,6 +552,9 @@ private fun CartBasket(s: GameState, cart: List<String>, modifier: Modifier) {
 }
 
 private val THUMB = 26.dp
+
+/** Надбавки, нарисованные слоем на канве своей вещи: без вещи они не читаются. */
+val LAYER_ADDONS = setOf("risunok", "bint", "nakleyki", "abazhur", "glazur", "vyshivka")
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -601,6 +669,42 @@ private fun SavingsSheet(s: GameState, q: Checkout, onTake: (() -> Unit)?, onBac
             Txt(a.t("shortfall.savings.2"), FinniText.Body)
             Txt(a.f("shortfall.savings.3", "n" to q.savingsAfter, "goal" to goal), FinniText.Body)
         } else Txt(a.f("shortfall.none.2", "s" to s.progress.savings), FinniText.Body)
+    }
+}
+
+/**
+ * Окно «Чем заплатишь?» — задание F2 (сценарий главы 3, неделя 5). Два одинаковых способа, оба верны:
+ * отдать ровно или отдать десятку и взять сдачу; в кошельке — чистая стоимость. Монетами-картинками.
+ */
+@Composable
+private fun PaySheet(s: GameState, onPay: (PayChoice) -> Unit, onBack: () -> Unit) {
+    val a = app()
+    val item = a.game.weekTask(s)?.itemId?.let(a.game.content::item) ?: return
+    val ten = a.explain.changeCoin(item.price)
+    FinniSheet(
+        buttons = {
+            SheetButtons(
+                a.f("f2.exact", "n" to item.price) to { onPay(PayChoice.EXACT) },
+                a.f("f2.withChange", "n" to ten) to { onPay(PayChoice.CHANGE) },
+            )
+        },
+    ) {
+        Txt(a.t("f2.title"), FinniText.Subtitle)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround, verticalAlignment = Alignment.CenterVertically) {
+            Picture(item.id, 64.dp, description = item.name)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Coin(24.dp)
+                Txt(item.price.toString(), FinniText.Title)
+            }
+        }
+        // Два способа картинками: пять монет — или одна десятка.
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround, verticalAlignment = Alignment.CenterVertically) {
+            Row(horizontalArrangement = Arrangement.spacedBy((-6).dp)) { repeat(item.price) { Coin(22.dp) } }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Coin(34.dp)
+                Txt(ten.toString(), FinniText.Button)
+            }
+        }
     }
 }
 

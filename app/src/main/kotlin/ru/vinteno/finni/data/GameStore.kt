@@ -15,6 +15,8 @@ import java.io.File
 class GameStore(context: Context) {
     private val file = File(context.filesDir, "state.json")
     private val tmp = File(context.filesDir, "state.json.tmp")
+    /** Игра ребёнка, отложенная на время демо: вернётся по кнопке в разделе взрослого. */
+    private val child = File(context.filesDir, "child.json")
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
     private val _state = MutableStateFlow(read())
@@ -28,6 +30,33 @@ class GameStore(context: Context) {
 
     /** Заменить состояние целиком: сброс профиля и проверочные прогоны. */
     fun replace(s: GameState) = update { s }
+
+    /** Отложена ли игра ребёнка — идёт демо. */
+    val childSaved: Boolean get() = child.exists()
+
+    /**
+     * Демо поверх игры ребёнка: его игра сохраняется отдельным файлом один раз — повторный вход в демо
+     * или переход к другой неделе её не трогает (ТЗ 2.5.13).
+     */
+    fun startDemo(demo: GameState) {
+        if (!child.exists()) child.writeText(json.encodeToString(GameState.serializer(), _state.value))
+        replace(demo)
+    }
+
+    /** Вернуть игру ребёнка, как её оставили. */
+    fun endDemo() {
+        val saved = runCatching { json.decodeFromString<GameState>(child.readText()) }.getOrElse { GameState() }
+        replace(saved)
+        child.delete()
+    }
+
+    /** Удалить данные игры целиком — и отложенную на время демо; дальше первый запуск (ТЗ 3.5). */
+    fun wipe() {
+        child.delete()
+        tmp.delete()
+        file.delete()
+        _state.value = GameState()
+    }
 
     private fun read(): GameState =
         runCatching { json.decodeFromString<GameState>(file.readText()) }.getOrElse { GameState() }

@@ -255,16 +255,18 @@ class EconomyTest {
         assertEquals(w, s.progress.wallet)
     }
 
-    @Test fun `E12 кошелёк и копилка не уходят ниже нуля ни на каком пути`() {
+    @Test fun `E12 кошелёк и копилка не уходят ниже нуля и выше 100 ни на каком пути, игра всегда кончается`() {
         val rnd = Random(2026)
-        repeat(3000) {
+        repeat(1500) {
             var s = newGame(content.chapter1.goalIds.random(rnd))
             var steps = 0
-            while (s.phase != Phase.FREE_PLAY && steps < 200) {
+            while (s.phase != Phase.FREE_PLAY && steps < 3000) {
                 steps++
+                val before = s
                 s = randomMove(s, rnd) ?: continue
-                assertTrue("кошелёк ${s.progress.wallet}", s.progress.wallet >= 0)
-                assertTrue("копилка ${s.progress.savings}", s.progress.savings >= 0)
+                assertTrue("кошелёк ${s.progress.wallet}", s.progress.wallet in 0..100)
+                assertTrue("копилка ${s.progress.savings}\n${before.week}\n${s.week}\n${before.progress.savings} ${before.phase} ${s.phase}", s.progress.savings in 0..100)
+                assertTrue("недель ${s.progress.weekTotal}", s.progress.weekTotal <= 10) // 3 + 3 + 4
             }
             assertEquals(Phase.FREE_PLAY, s.phase) // тупиков нет: игра доходит до конца
         }
@@ -273,8 +275,11 @@ class EconomyTest {
     private fun randomMove(s: GameState, rnd: Random): GameState? = try {
         val w = s.week
         when {
+            s.phase == Phase.GAME_OVER -> game.keepPlaying(s)
+            s.phase == Phase.TRANSITION -> game.seeTransition(s)
+            s.phase == Phase.ONBOARDING -> game.chooseGoal(s, game.ch(s).goalIds.random(rnd))
             s.phase == Phase.EVENT -> game.playEvent(s)
-            s.phase == Phase.AFTER_SUMMARY -> game.nextWeek(s)
+            s.phase == Phase.AFTER_SUMMARY -> if (rnd.nextInt(6) == 0 && game.canBonus(s)) game.adultBonus(s) else game.nextWeek(s)
             w!!.parcel == null -> game.openParcel(s)
             !w.announcementSeen -> game.seeAnnouncement(s)
             !w.planConfirmed -> {
@@ -287,18 +292,22 @@ class EconomyTest {
                 val s2 = game.setPlan(s, p)
                 if (game.canConfirmPlan(s2)) game.confirmPlan(s2) else s2
             }
-            else -> when (rnd.nextInt(8)) {
+            else -> when (rnd.nextInt(11)) {
                 0 -> {
-                    val shelves = game.weekContent(s).shelves
-                    val cart = shelves.filter { rnd.nextBoolean() }.flatMap { it.tiers.random(rnd) } +
-                        (if (rnd.nextBoolean()) listOf("kacheli") else emptyList())
-                    game.buy(s, cart, agreedWant = rnd.nextBoolean(), agreedSavings = rnd.nextBoolean())
+                    val shelves = game.shopShelves(s)
+                    val cart = shelves.filter { rnd.nextBoolean() }.flatMap { it.tiers.random(rnd) } + game.situationCart(s) +
+                        (if (rnd.nextBoolean()) listOf(game.ch(s).chapterWantId) else emptyList())
+                    val pay = if (rnd.nextBoolean()) ru.vinteno.finni.core.model.PayChoice.EXACT else ru.vinteno.finni.core.model.PayChoice.CHANGE
+                    game.buy(s, cart, agreedWant = rnd.nextBoolean(), agreedSavings = rnd.nextBoolean(), pay = pay)
                 }
                 1 -> game.leaveShop(s)
                 2 -> game.deposit(s)
-                3 -> game.chooseBall(s, rnd.nextBoolean())
+                3 -> if (game.choiceOpen(s) && !game.ballOffer(s).available) game.acknowledgeNoBall(s) else game.chooseBall(s, rnd.nextBoolean())
                 4 -> if (rnd.nextBoolean()) game.feed(s) else game.wash(s)
                 5 -> game.leavePiggy(s)
+                6 -> game.situationShelf(s)?.let { game.chooseSituation(s, rnd.nextInt(it.tiers.size)) }
+                7 -> if (game.duplicatePending(s)) game.resolveDuplicate(s) else game.finishSort(s)
+                8 -> if (game.canBonus(s)) game.adultBonus(s) else null
                 else -> game.finishWeek(s, if (rnd.nextBoolean()) SummaryChoice.KEEP_PLAN else SummaryChoice.TAKE_ACTUAL)
             }
         }
@@ -314,7 +323,7 @@ class EconomyTest {
     @Test fun `E15 достигнутая цель не списывается на копилке и не отменяет отметку взноса`() {
         var s = game.finishWeek(canonicalWeek1(), SummaryChoice.KEEP_PLAN)
         s = toPlan(game.nextWeek(s))
-        s = game.deposit(game.leaveShop(s))
+        s = game.deposit(inShop(s, "kasha", "mylo"))
         s = game.leavePiggy(game.chooseBall(s, take = false)) // F5 — на копилке после взноса (QA-M3)
         assertEquals(40, s.progress.savings)
         assertTrue(game.goalReached(s)) // «Накопил 40. Подарок готов.» — ничего не списано
@@ -368,12 +377,19 @@ class EconomyTest {
         s = game.finishWeek(s, SummaryChoice.KEEP_PLAN)
         s = skipShop(toPlan(game.nextWeek(s)))
         s = game.finishWeek(s, SummaryChoice.KEEP_PLAN)
+        // Отметок заботы нет — играется запасная неделя, после неё глава кончается в любом случае (§9).
+        assertEquals(Phase.AFTER_SUMMARY, s.phase)
+        s = skipShop(toPlan(game.nextWeek(s)))
+        assertEquals(3, s.week!!.number)
+        s = game.finishWeek(s, SummaryChoice.KEEP_PLAN)
         assertEquals(Phase.EVENT, s.phase)
         val before = s.progress.savings
         s = game.playEvent(s)
         assertEquals(EventOutcome.NOT_ENOUGH, s.eventOutcome)
         assertEquals(before, s.progress.savings)
-        assertThrows { game.nextWeek(s) } // «Следующая неделя» в прототипе после события нет
+        assertEquals(Phase.TRANSITION, s.phase)
+        assertEquals(2, s.progress.chapter)
+        assertThrows { game.nextWeek(s) } // неделя новой главы — после выбора цели
     }
 
     /** Таблица F5 из сценария §8: в копилке 20 после недели 1 со взносом 10. */
@@ -537,6 +553,7 @@ class EconomyTest {
         assertThrows { game.buy(s, listOf("kasha")) }
         assertThrows { game.deposit(s) }
         s = game.finishWeek(skipShop(toPlan(game.nextWeek(s))), SummaryChoice.KEEP_PLAN)
+        s = game.finishWeek(skipShop(toPlan(game.nextWeek(s))), SummaryChoice.KEEP_PLAN) // запасная неделя
         s = game.playEvent(s)
         assertThrows { game.buy(s, listOf("kacheli")) }
         assertThrows { game.chooseBall(s, true) }

@@ -1,12 +1,15 @@
 {
-  "_source": "docs/design/scenario-chapter-1.md, версия 2.2 с правками 23 сентября; docs/design/build-plan.md — прототип: недели 1 и 2, событие.",
+  "_source": "internal/design/scenario-chapter-1.md, версия 2.2 с правками 23 сентября; запасная неделя — §9а.",
   "chapter": 1,
-  "background": "bg-sand",
+  "background": "room_sand",
   "income": 30,
   "_income": "Посылка приносит 30 и не приходит, если в кошельке уже 30 и больше — data-model §6.",
   "eventName": "birthday",
   "goalIds": ["podarok_myach", "podarok_kniga", "podarok_samokat"],
   "chapterWantId": "kacheli",
+  "minWeeks": 2,
+  "maxWeeks": 3,
+  "marksToLeave": 2,
   "weeks": [
     {
       "week": 1,
@@ -35,10 +38,21 @@
           "tiers": [["mylo"], ["mylo", "pena"]] }
       ],
       "taskId": "F5"
+    },
+    {
+      "week": 3,
+      "_week": "«Ещё день» — только при недоборе отметок, §9а. Задание — по недостающему типу, награды нет.",
+      "spare": true,
+      "situation": "food",
+      "situationShelf": "food",
+      "announcement": ["announce.spare1.1", "announce.food.1", "announce.price.kasha"],
+      "announceItem": "kasha",
+      "shelves": [
+        { "id": "food", "caption": "shop.caption.food", "mandatory": true,
+          "tiers": [["krupa"], ["kasha"], ["kasha", "yagody"]] },
+        { "id": "soap", "caption": null, "mandatory": true,
+          "tiers": [["mylo"]] }
+      ]
     }
-  ],
-  "tasks": [
-    { "id": "F1", "template": "shop",   "title": "task.F1.title", "reward": 10 },
-    { "id": "F5", "template": "choice", "title": "task.F5.title", "reward": 10, "itemId": "myachik" }
   ]
 }

@@ -70,19 +70,37 @@ class HomeLayoutTest {
         return s.copy(progress = s.progress.copy(inventory = s.progress.inventory + "kacheli"))
     }
 
-    /** Свободная игра после события: мячик и качели. */
-    private fun freePlay(): GameState {
-        var s = game.nextWeek(game.finishWeek(game.leavePiggy(game.deposit(week1Done())), SummaryChoice.KEEP_PLAN))
+    private val demo = ru.vinteno.finni.core.engine.Demo(game)
+
+    private fun quiet(s: GameState) = s.copy(profile = s.profile.copy(animationOn = false))
+
+    /** Свободная игра после новоселья: вещи сложены в корзину, лампа, гирлянда, полотенце, лежанка. */
+    private fun freePlay(): GameState = quiet(game.keepPlaying(game.playEvent(demo.playWeek(demo.weekStart(8)))).let {
+        it.copy(progress = it.progress.copy(inventory = it.progress.inventory + "myachik"))
+    })
+
+    /** Глава 2, начало: Финни зябнет, окно с инеем, у двери — посылка. */
+    private fun cold(): GameState = quiet(demo.weekStart(3))
+
+    /** Глава 2, неделя 4: в куртке с рисунком и бинтом, мячик, качели, санки. */
+    private fun dressed(): GameState {
+        var s = demo.weekStart(4)
         s = game.seeAnnouncement(game.openParcel(s))
-        s = game.leaveShop(game.confirmPlan(game.setPlan(s, Plan(10, 19, 10))))
-        s = game.leavePiggy(game.chooseBall(game.deposit(s), true))
-        s = game.playEvent(game.finishWeek(s, SummaryChoice.KEEP_PLAN))
-        return s.copy(progress = s.progress.copy(inventory = s.progress.inventory + "kacheli"))
+        s = game.confirmPlan(game.setPlan(s, Plan(12, s.progress.wallet - 22, 10)))
+        s = game.chooseSituation(game.resolveDuplicate(s), 1)
+        s = game.leaveShop(game.buy(s, listOf("kasha", "mylo") + game.situationCart(s)))
+        return quiet(s.copy(progress = s.progress.copy(inventory = s.progress.inventory + listOf("myachik", "sanki"))))
     }
+
+    /** Глава 3, неделя 8: коробки переезда, коробка с наклейками, лампа, гирлянда, лежанка, качели. */
+    private fun crowded(): GameState = quiet(demo.weekStart(8).let {
+        it.copy(progress = it.progress.copy(inventory = it.progress.inventory + listOf("myachik", "sanki", "polotence", "vyshivka")))
+    })
 
     private fun check(name: String, state: GameState, scale: Float = 1f) {
         val store = GameStore(RuntimeEnvironment.getApplication())
         store.replace(state)
+        ru.vinteno.finni.ui.components.RoomArt.name = ru.vinteno.finni.ui.components.RoomArt.of(state.progress.chapter, "lampa" in state.progress.inventory)
         val model = AppModel(game, store)
         compose.setContent {
             val s by store.state.collectAsState()
@@ -104,7 +122,7 @@ class HomeLayoutTest {
             assertTrue("$name: пересекаются «${zones[i].first}» и «${zones[j].first}»", x.width <= 0.5f || x.height <= 0.5f)
         }
         val parcel = zones.firstOrNull { "Посылка" in it.first }?.second ?: return
-        listOf("Магазин", "Бублик").forEach { n ->
+        listOf("Магазин", state.profile.petName).forEach { n ->
             val r = zones.first { n in it.first }.second
             assertTrue("$name: у посылки и «$n» ${gap(parcel, r) / dp} dp", gap(parcel, r) / dp >= 15.5f)
         }
@@ -132,4 +150,15 @@ class HomeLayoutTest {
     @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun parcel915() = check("parcel_412x915", week1())
     @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun care915() = check("care_412x915", shopped())
     @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun free915() = check("free_412x915", freePlay())
+
+    // ---------- Главы 2 и 3 ----------
+    @Test fun cold640() = check("ch2_cold_360x640", cold())
+    @Test fun dressed640() = check("ch2_dressed_360x640", dressed())
+    @Test fun crowded640() = check("ch3_crowded_360x640", crowded())
+    @Test fun crowdedBig640() = check("ch3_crowded_360x640_x2", crowded(), 2f)
+    @Test fun dressedBig640() = check("ch2_dressed_360x640_x2", dressed(), 2f)
+    @Config(qualifiers = "w360dp-h760dp-xxhdpi") @Test fun dressed800() = check("ch2_dressed_360x800", dressed())
+    @Config(qualifiers = "w360dp-h760dp-xxhdpi") @Test fun crowded800() = check("ch3_crowded_360x800", crowded())
+    @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun dressed915() = check("ch2_dressed_412x915", dressed())
+    @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun crowded915() = check("ch3_crowded_412x915", crowded())
 }

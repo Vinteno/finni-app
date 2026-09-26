@@ -6,6 +6,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import ru.vinteno.finni.core.content.Texts
+import ru.vinteno.finni.core.engine.Demo
 import ru.vinteno.finni.core.engine.Explain
 import ru.vinteno.finni.core.engine.Game
 import ru.vinteno.finni.core.engine.IllegalMove
@@ -37,8 +38,13 @@ class AppModel(val game: Game, private val store: GameStore) {
      */
     var systemAnimations by mutableStateOf(true)
 
-    /** Флаг «Анимации» — animation-howto.md §9. Выключает всё, кроме отклика кнопки. */
-    val animationOn: Boolean get() = state.value.profile.animationOn && systemAnimations
+    /**
+     * Флаг «Анимации» — animation-howto.md §9. Выключает всё, кроме отклика кнопки. Пока взрослый не
+     * выбирал в разделе — как в телефоне; выбрал — его выбор (ТЗ 3.6).
+     */
+    val animationOn: Boolean get() = state.value.profile.let { if (it.animationSet) it.animationOn else it.animationOn && systemAnimations }
+
+    fun setAnimations(on: Boolean) = act { game.setAnimations(it, on) }
 
     /** Плашка объяснения, ждущая показа на Доме: после выхода из магазина. */
     var pendingPlate by mutableStateOf<List<String>?>(null)
@@ -59,6 +65,26 @@ class AppModel(val game: Game, private val store: GameStore) {
         true
     } catch (e: IllegalMove) {
         false
+    }
+
+    // ---------- Раздел взрослого: демо и удаление (ТЗ 2.5.13, 3.5) ----------
+
+    val demo = Demo(game)
+
+    /** Игра ребёнка отложена — идёт демо. */
+    val inDemo: Boolean get() = store.childSaved || state.value.demo
+
+    /** «Начать демо» и «Сбросить демо» — готовый питомец без предыстории, цель выбирается, как обычно. */
+    fun startDemo() = store.startDemo(demo.profile())
+
+    /** «К неделе N» — начало недели с состоянием канонического пути сценариев. */
+    fun demoWeek(n: Int) = store.startDemo(demo.weekStart(n))
+
+    fun endDemo() = store.endDemo()
+
+    fun wipe() {
+        store.wipe()
+        seenInRoom.clear()
     }
 
     fun t(key: String) = texts[key]

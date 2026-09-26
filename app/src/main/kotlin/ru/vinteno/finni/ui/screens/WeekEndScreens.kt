@@ -21,6 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -76,6 +77,8 @@ import ru.vinteno.finni.ui.motion.CoinTarget
 import ru.vinteno.finni.ui.motion.SlideUp
 import ru.vinteno.finni.ui.motion.anchor
 import ru.vinteno.finni.ui.pet.Finni
+import ru.vinteno.finni.ui.pet.FinniLying
+import ru.vinteno.finni.ui.pet.LYING_RATIO
 import ru.vinteno.finni.ui.pet.Reaction
 import ru.vinteno.finni.ui.theme.FinniColors
 import ru.vinteno.finni.ui.theme.FinniDimens
@@ -237,7 +240,11 @@ private fun PiggyRoom(s: GameState, goal: ru.vinteno.finni.core.content.Goal, sa
                     val cell = ((maxWidth - 4.dp * (cells - 1)) / cells).coerceIn(CELL_MIN, CELL_MAX)
                     ProgressCells(minOf(arrived, goal.price) / COINS_PER_CELL, cells, Modifier.anchor(a.flights, "piggy"), cell = cell)
                 }
-                Txt(a.f(if (reached) "piggy.ready" else "piggy.saved", "n" to saved, "goal" to goal.price), FinniText.Subtitle)
+                Txt(
+                    if (reached) a.explain.chapterText(s, "piggy.ready", "n" to saved, "goal" to goal.price)
+                    else a.f("piggy.saved", "n" to saved, "goal" to goal.price),
+                    FinniText.Subtitle,
+                )
             }
         }
         Box(Modifier.height(TAIL + 6.dp))
@@ -339,23 +346,20 @@ private fun FactRow(label: String, value: Int, scale: Int) {
 }
 
 /**
- * Событие главы — день рождения Киры, сценарий §8, шаг 9. Играется всегда (I6). Комната; текст —
- * плашкой вверху, над героями; Финни и Кира стоят на полу в одном масштабе, подарок или открытка —
- * на полу между ними. Оба исхода наравне: одна реакция Финни, подарок и открытка одного размера, на
- * одном месте, появляются одинаково (инвариант 3). Кошелька нет (I40). Кнопки «назад» нет: событие
- * не отматывается.
+ * Событие главы — сценарии, шаг 9: день рождения Киры, первый снег, новоселье. Играется всегда (I6).
+ * Комната; текст — плашкой вверху, над героями; герои стоят на полу в одном масштабе. Оба исхода наравне:
+ * одна реакция Финни, вещи одного размера, на одном месте, появляются одинаково (инвариант 3). Кошелька
+ * нет (I40). Кнопки «назад» нет: событие не отматывается.
  */
 @Composable
 fun EventScreen(s: GameState, onDone: () -> Unit) {
     val a = app()
     val g = a.game
-    val given = s.progress.savings >= g.goalPrice(s) || s.eventOutcome == EventOutcome.GIFT_GIVEN
-    val name = s.profile.petName
-    val lines = listOf(a.t("event.1")) + if (given) {
-        listOf(a.f("event.a.2", "what" to g.content.goal(s.chapter.goalId!!).accusative), a.t("event.a.3"))
-    } else {
-        listOf(a.t("event.b.2"), a.f("event.b.3", "name" to name), a.t("event.b.4"))
-    }
+    // После «Дальше» состояние уже следующей главы, а экран ещё уезжает: цель — из сыгранного события.
+    val goalId = s.chapter.goalId ?: s.eventGoal ?: return
+    val goal = g.content.goal(goalId)
+    val given = if (s.phase == Phase.EVENT) s.progress.savings >= goal.price else s.eventOutcome == EventOutcome.GIFT_GIVEN
+    val lines = a.explain.eventLines(s)
     SoftScreen(
         onBack = null,
         backDescription = a.t("common.back"),
@@ -375,7 +379,11 @@ fun EventScreen(s: GameState, onDone: () -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) { lines.forEach { Txt(it, FinniText.Subtitle) } }
                 BoxWithConstraints(Modifier.fillMaxWidth().weight(1f).padding(top = EVENT_GAP, bottom = ROOM_LIFT - ROOM_DEPTH)) {
-                    Heroes(s, given, width, maxHeight)
+                    when (goal.chapter) {
+                        1 -> Heroes(s, goalId, given, width, maxHeight)
+                        2 -> SnowScene(s, goalId, given, width, maxHeight)
+                        else -> HomeScene(s, goalId, given, width, maxHeight)
+                    }
                 }
             }
         }
@@ -401,7 +409,7 @@ private val PRESENT_MIN = 40.dp
  * Рост — от свободной высоты между плашкой и полом и от ширины: в ряд встают Финни, подарок и Кира.
  */
 @Composable
-private fun Heroes(s: GameState, given: Boolean, width: Dp, height: Dp) {
+private fun Heroes(s: GameState, goalId: String, given: Boolean, width: Dp, height: Dp) {
     val a = app()
     val g = a.game
     val kiraVisible = (KIRA_RIGHT - KIRA_LEFT) / FIGURE_W
@@ -414,19 +422,99 @@ private fun Heroes(s: GameState, given: Boolean, width: Dp, height: Dp) {
         Finni(
             s.profile.fur, s.profile.accessory, Modifier.align(Alignment.BottomStart).width(fw),
             reaction = Reaction.HAPPY, reactionKey = 1, animate = a.animationOn, description = s.profile.petName,
+            wear = g.worn(s),
         )
         // Подарок или открытка — на одном месте, одного размера и появляются одинаково: оба исхода
         // выглядят наравне (инвариант 3).
-        val id = if (given) s.chapter.goalId else "otkrytka"
-        val label = if (given) s.chapter.goalId?.let { g.content.goal(it).name } else a.t("a11y.card")
-        id?.let {
-            Box(Modifier.align(Alignment.BottomStart).offset(x = (fw + kiraLeft) / 2 - present / 2)) {
-                Appear("event:$it") { StandPicture(it, present, description = label) }
-            }
+        val id = if (given) goalId else "otkrytka"
+        val label = if (given) g.content.goal(goalId).name else a.t("a11y.card")
+        Box(Modifier.align(Alignment.BottomStart).offset(x = (fw + kiraLeft) / 2 - present / 2)) {
+            Appear("event:$id") { StandPicture(id, present, description = label) }
         }
-        // Кира появляется здесь впервые — по правилу появления §7.1; видимый край — у края поля экрана.
+        // Кира — по правилу появления §7.1; видимый край — у края поля экрана.
         Box(Modifier.align(Alignment.BottomStart).offset(x = kiraLeft - unit * KIRA_LEFT)) {
             Appear("kira") { KiraFigure(fw, description = a.t("a11y.kira")) }
+        }
+    }
+}
+
+/** Окно со снегом, Финни лёжа и тёплая вещь — доли ширины сцены. */
+private const val SNOW_WINDOW_K = 0.42f
+private const val LYING_K = 0.46f
+
+/**
+ * Первый снег — сценарий главы 2, шаг 9. На стене окно со снегом, целым окном на замену (без падающего
+ * снега). Исход А: Финни свернулся на пледе или лежанке, у печки — рядом с ней. Исход Б: Финни свернулся
+ * у окна. Поза лёжа одна и та же, меняется только место; Финни одет в то, что куплено (§6.5).
+ */
+@Composable
+private fun SnowScene(s: GameState, goalId: String, given: Boolean, width: Dp, height: Dp) {
+    val a = app()
+    val g = a.game
+    val wear = g.worn(s)
+    val windowW = (width * SNOW_WINDOW_K).coerceAtMost(height * 0.55f)
+    val lw = minOf(width * LYING_K, height * LYING_RATIO * 0.8f).coerceAtLeast(64.dp)
+    val lh = lw / LYING_RATIO
+    Box(Modifier.fillMaxSize()) {
+        // Окно — на стене справа, верх у верха сцены.
+        Box(Modifier.align(Alignment.TopEnd)) { Thing("okno_sneg", windowW, description = null) }
+        val name = s.profile.petName
+        if (given) {
+            val gw = if (goalId == "pechka") lw * 0.8f else lw * 1.25f
+            val onTop = goalId != "pechka"
+            // Вещь — на полу слева; на пледе и лежанке Финни лежит сверху, у печки — справа от неё.
+            Box(Modifier.align(Alignment.BottomStart).padding(start = 4.dp)) {
+                Appear("event:$goalId") { Thing(goalId, gw, description = g.content.goal(goalId).name) }
+            }
+            val gh = gw * thingRatio(goalId)
+            val x = if (onTop) 4.dp + (gw - lw) / 2 else 4.dp + gw + 8.dp
+            val lift = if (onTop) gh * 0.45f else 0.dp
+            Box(Modifier.align(Alignment.BottomStart).offset(x = x, y = -lift)) {
+                FinniLying(s.profile.fur, s.profile.accessory, wear, Modifier.width(lw).height(lh), description = name)
+            }
+        } else {
+            // У окна: под окном справа, на полу.
+            Box(Modifier.align(Alignment.BottomEnd).padding(end = (windowW - lw).coerceAtLeast(0.dp) / 2)) {
+                FinniLying(s.profile.fur, s.profile.accessory, wear, Modifier.width(lw).height(lh), description = name)
+            }
+        }
+    }
+}
+
+/** Кира на новоселье — `kira_visit`: её видимая часть на канве 640 × 960. */
+private const val VISIT_LEFT = 0f
+private const val VISIT_RIGHT = 589f
+
+/**
+ * Новоселье — сценарий главы 3, §7. Кира в гостях, Финни `доволен`, затем `спит` — в обоих исходах.
+ * Исход А: цель с вещами стоит в комнате (перелёт вещей в неё снят по разделу 9 плана — подмена на
+ * `_full`). Исход Б: коробки переезда остаются у стены.
+ */
+@Composable
+private fun HomeScene(s: GameState, goalId: String, given: Boolean, width: Dp, height: Dp) {
+    val a = app()
+    val g = a.game
+    val kiraVisible = (VISIT_RIGHT - VISIT_LEFT) / FIGURE_W
+    val byWidth = (width - EVENT_GAP * 2 - PRESENT_MIN) / (1f + kiraVisible)
+    val fw = minOf(byWidth, maxOf(height, HERO_MIN) * FINNI_W)
+    val unit = fw / FIGURE_W
+    val thing = (fw * 0.9f).coerceIn(PRESENT_MIN, 110.dp)
+    val kiraLeft = width - unit * (VISIT_RIGHT - VISIT_LEFT)
+    var sleeping by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { kotlinx.coroutines.delay(1600); sleeping = true }
+    Box(Modifier.fillMaxSize()) {
+        Finni(
+            s.profile.fur, s.profile.accessory, Modifier.align(Alignment.BottomStart).width(fw),
+            reaction = if (sleeping) Reaction.SLEEP else Reaction.HAPPY, reactionKey = if (sleeping) 2 else 1,
+            animate = a.animationOn, description = s.profile.petName, wear = g.worn(s),
+        )
+        val id = if (given) "${goalId}_full" else "korobki_pereezd"
+        val label = if (given) g.content.goal(goalId).name else null
+        Box(Modifier.align(Alignment.BottomStart).offset(x = (fw + kiraLeft) / 2 - thing / 2)) {
+            Appear("event:$id") { Thing(id, thing, description = label) }
+        }
+        Box(Modifier.align(Alignment.BottomStart).offset(x = kiraLeft - unit * VISIT_LEFT)) {
+            Appear("kira_visit") { KiraFigure(fw, description = a.t("a11y.kira"), image = "kira_visit") }
         }
     }
 }
