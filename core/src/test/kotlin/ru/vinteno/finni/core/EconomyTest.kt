@@ -62,6 +62,29 @@ class EconomyTest {
         return game.leavePiggy(s)
     }
 
+    @Test fun `внешность и имя двумя ходами, внешность сохраняется сразу`() {
+        var s = game.seeIntro(GameState())
+        s = game.chooseLook(s, Fur.BROWN, Accessory.BOW)
+        assertTrue(s.profile.lookChosen)
+        assertFalse(s.profile.created)
+        assertEquals(Fur.BROWN, s.profile.fur)
+        assertEquals(Accessory.BOW, s.profile.accessory)
+        s = game.namePet(s, " Кнопка ")
+        assertTrue(s.profile.created)
+        assertEquals("Кнопка", s.profile.petName)
+    }
+
+    @Test fun `имя только после внешности, назад к внешности выбор не теряет`() {
+        val s0 = game.seeIntro(GameState())
+        assertThrows { game.namePet(s0, "Кнопка") }
+        val s1 = game.backToLook(game.chooseLook(s0, Fur.BLUE, Accessory.CAP))
+        assertFalse(s1.profile.lookChosen)
+        assertEquals(Fur.BLUE, s1.profile.fur)
+        assertEquals(Accessory.CAP, s1.profile.accessory)
+        val named = game.createPet(s0, "Ириска", Fur.GINGER, Accessory.SCARF)
+        assertThrows { game.chooseLook(named, Fur.BLUE, Accessory.CAP) }
+    }
+
     @Test fun `E01 посылка приходит при пустом кошельке`() {
         val s = game.openParcel(newGame())
         assertEquals(30, s.progress.wallet)
@@ -92,27 +115,43 @@ class EconomyTest {
         assertEquals(20, s.progress.savings)
     }
 
-    @Test fun `факт по направлению, из которого заплатили — 10 1 10`() {
+    @Test fun `факт по направлению, из которого заплатили, 8 3 10`() {
         val s = canonicalWeek1()
         val sum = game.summary(s)
         assertEquals(30, sum.planned)
-        assertEquals(Plan(10, 1, 10), sum.fact)
+        assertEquals(Plan(8, 3, 10), sum.fact)
         assertEquals(21, sum.fact.total)
         assertEquals(10, sum.reward)
-        assertEquals(1, sum.needFromWant)
+        assertEquals(0, sum.needFromWant)
         val next = game.finishWeek(s, SummaryChoice.TAKE_ACTUAL)
-        assertEquals(Plan(10, 1, 10), next.nextPlan)
+        assertEquals(Plan(8, 3, 10), next.nextPlan)
         assertEquals(Plan(10, 10, 10), game.finishWeek(s, SummaryChoice.KEEP_PLAN).nextPlan)
     }
 
-    @Test fun `надбавку нельзя взять, не тронув другое направление`() {
+    @Test fun `надбавка платится из Хочу, база из Нужного`() {
         val s = toPlan(newGame())
         val q = game.quote(s, listOf("kasha", "yagody", "mylo"))
         assertEquals(11, q.total)
-        assertEquals(1, q.needShortage)
-        assertEquals(1, q.needFromWant)
-        assertTrue(q.asksWant)
+        assertEquals(8, q.fromNeed)
+        assertEquals(3, q.fromWantOwn)
+        assertEquals(0, q.needShortage)
+        assertFalse(q.asksWant)
         assertFalse(q.asksSavings)
+    }
+
+    @Test fun `надбавка при пустом Хочу не берётся молча из Нужного`() {
+        val s = toPlan(newGame(), Plan(15, 0, 15))
+        val q = game.quote(s, listOf("kasha", "yagody"))
+        assertEquals(5, q.fromNeed)
+        assertEquals(0, q.fromWantOwn)
+        assertEquals(3, q.fromSavings)
+    }
+
+    @Test fun `Оставить план оставляет план этой недели`() {
+        var s = toPlan(newGame(), Plan(14, 6, 10))
+        // Итог открывается после магазина: зашёл и пошёл дальше в копилку (I45).
+        s = game.leavePiggy(game.leaveShop(s))
+        assertEquals(Plan(14, 6, 10), game.finishWeek(s, SummaryChoice.KEEP_PLAN).nextPlan)
     }
 
     @Test fun `E05 награда падает в копилку после покупки, кошелёк — только на цену`() {
@@ -506,7 +545,7 @@ class EconomyTest {
 
     @Test fun `QA-B6 объяснение не повторяет предмет, купленный дважды`() {
         val ex = ru.vinteno.finni.core.engine.Explain(game)
-        assertEquals("Ты купил крупу и мыло", ex.did(listOf("krupa", "mylo", "krupa")))
+        assertEquals("Мы купили крупу и мыло", ex.did(listOf("krupa", "mylo", "krupa")))
     }
 
     @Test fun `QA-M1 полка закрыта до конца недели после покупки`() {

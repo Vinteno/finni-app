@@ -1,5 +1,9 @@
 package ru.vinteno.finni
 
+import ru.vinteno.finni.ui.screens.NameScreen
+import ru.vinteno.finni.ui.screens.LookScreen
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -53,11 +57,10 @@ import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
-import ru.vinteno.finni.ui.screens.CreatePetScreen
 import ru.vinteno.finni.ui.screens.EventScreen
 import ru.vinteno.finni.ui.screens.GoalScreen
 import ru.vinteno.finni.ui.screens.HomeScreen
-import ru.vinteno.finni.ui.screens.IntroScreen
+import ru.vinteno.finni.ui.screens.StoryScreen
 import ru.vinteno.finni.ui.screens.PiggyScreen
 import ru.vinteno.finni.ui.screens.PlanScreen
 import ru.vinteno.finni.ui.screens.ShopScreen
@@ -106,8 +109,9 @@ class ScreensShotTest {
         compose.onRoot().captureRoboImage("build/shots/$name.png")
     }
 
-    @Test fun intro() = shot("01_intro", GameState()) { IntroScreen() }
-    @Test fun create() = shot("02_create", game.seeIntro(GameState())) { CreatePetScreen() }
+    @Test fun intro() = shot("01_intro", GameState()) { StoryScreen(it, autoPlay = false) }
+    @Test fun look() = shot("02_look", game.seeIntro(GameState())) { LookScreen(it) }
+    @Test fun name() = shot("02_name", game.chooseLook(game.seeIntro(GameState()), Fur.GINGER, Accessory.SCARF)) { NameScreen(it) }
     @Test fun goal() = shot("03_goal", base()) { GoalScreen() }
     @Test fun homeParcel() = shot("04_home_parcel", week1()) { HomeScreen(it) {} }
     @Test fun homeAnnounce() = shot("05_home_announce", game.openParcel(week1())) { HomeScreen(it) {} }
@@ -166,8 +170,10 @@ class ScreensShotTest {
 
     /** Окна нехватки: сначала «Хочу», потом копилка — порядок один для любой покупки (E10). */
     @Test fun dialogWant() {
-        shot("14_dialog_want", game.confirmPlan(planned(week1()))) { ShopScreen(it) {} }
-        listOf("Каша с ягодами", "Мыло").forEach { compose.onNodeWithContentDescription(it).performClick() }
+        // Нехватка в «Нужном»: каша и мыло стоят 8, а в «Нужном» 5. Надбавка теперь платится из «Хочу»
+        // и нехватки в «Нужном» сама не создаёт, поэтому план здесь с малым «Нужным».
+        shot("14_dialog_want", game.confirmPlan(planned(week1(), Plan(5, 15, 10)))) { ShopScreen(it) {} }
+        listOf("Каша", "Мыло").forEach { compose.onNodeWithContentDescription(it).performClick() }
         compose.onNodeWithText("Купить").performClick()
         compose.onRoot().captureRoboImage("build/shots/14_dialog_want.png")
     }
@@ -365,101 +371,102 @@ class ScreensShotTest {
 
     // ---------- Вступление, создание Финни, окна нехватки (I43, I44) ----------
 
-    private fun card(n: Int) = { repeat(n) { compose.onNodeWithText("Дальше").performClick() } }
+    // Предыстория: сцена в комнате, реплика над головой, монеты внизу. Кадры без часов, с нужной реплики.
+    private fun story(start: Int): @Composable (GameState) -> Unit = { StoryScreen(it, autoPlay = false, start = start) }
+    @Test fun sStory0() = screen("01_story_hello_360x600", GameState(), content = story(0))
+    @Test fun sStoryParcel() = screen("01_story_parcel_360x600", GameState(), content = story(3))
+    @Test fun sStoryCoins() = screen("01_story_coins_360x600", GameState(), content = story(5))
+    @Test fun sStoryKira() = screen("01_story_kira_360x600", GameState(), content = story(9))
+    @Test fun sStoryLast() = screen("01_story_last_360x600", GameState(), content = story(12))
+    @Config(qualifiers = "w360dp-h760dp-xxhdpi") @Test fun sStory800() = screen("01_story_coins_360x800", GameState(), content = story(6))
+    @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun sStory915() = screen("01_story_kira_412x915", GameState(), content = story(9))
+    @Test fun sStoryBig() = screen("01_story_coins_360x600_x2", GameState(), 2f, content = story(5))
 
-    // Вступление: три карточки; пол и предмет не прыгают между ними — плашка держит место под самую длинную строку.
-    @Test fun sIntroNeed600() = screen("01_intro_need_360x600", GameState()) { IntroScreen() }
-    @Test fun sIntroWant600() = screen("01_intro_want_360x600", GameState(), act = card(1)) { IntroScreen() }
-    @Test fun sIntroSave600() = screen("01_intro_save_360x600", GameState(), act = card(2)) { IntroScreen() }
-    @Config(qualifiers = "w360dp-h760dp-xxhdpi") @Test fun sIntro800() = screen("01_intro_360x800", GameState(), act = card(1)) { IntroScreen() }
-    @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun sIntro915() = screen("01_intro_412x915", GameState(), act = card(2)) { IntroScreen() }
-    @Test fun sIntroNeedBig() = screen("01_intro_need_360x600_x2", GameState(), 2f) { IntroScreen() }
-    @Test fun sIntroWantBig() = screen("01_intro_want_360x600_x2", GameState(), 2f, act = card(1)) { IntroScreen() }
+    /** Кнопка «Дальше» на последней реплике заканчивает историю: дальше экран внешности. */
+    @Test fun storyEnds() {
+        val store = onboarding(GameState()) { StoryScreen(GameState(), autoPlay = false, start = 12) }
+        compose.onNodeWithText("Сначала выбери мне цвет").assertExists()
+        compose.onNodeWithText("Дальше").performClick()
+        compose.waitForIdle()
+        assertTrue(store.state.value.profile.introSeen)
+    }
 
-    // Создание Финни: по умолчанию, готовое имя, открыт ввод, введено своё, своё на табличке, пустой ввод.
+    // Внешность и имя: два экрана подряд (решение 25.09). Питомец крупно, реплика сверху, лоток снизу.
     private fun fresh() = game.seeIntro(GameState()).let { it.copy(profile = it.profile.copy(animationOn = false)) }
-    private fun own() { compose.onNodeWithText("Своё").performClick() }
-    private fun typeKuzya() { own(); compose.onNode(hasSetTextAction()).performTextInput("Кузя 2") }
-    @Test fun sCreate600() = screen("02_create_360x600", fresh()) { CreatePetScreen() }
-    @Test fun sCreateNamed600() = screen("02_create_named_360x600", fresh(), act = { compose.onNodeWithText("Пушок").performClick() }) { CreatePetScreen() }
-    @Test fun sCreateTyping600() = screen("02_create_typing_360x600", fresh(), act = ::own) { CreatePetScreen() }
-    @Test fun sCreateTyped600() = screen("02_create_typed_360x600", fresh(), act = ::typeKuzya) { CreatePetScreen() }
-    @Test fun sCreateOwn600() = screen("02_create_own_360x600", fresh(), act = { typeKuzya(); compose.onNode(hasSetTextAction()).performImeAction() }) { CreatePetScreen() }
-    @Test fun sCreateEmpty600() = screen("02_create_empty_360x600", fresh(), act = {
-        compose.onNodeWithText("Пушок").performClick()
-        own()
-        compose.onNode(hasSetTextAction()).performImeAction()
-    }) { CreatePetScreen() }
-    @Config(qualifiers = "w360dp-h760dp-xxhdpi") @Test fun sCreate800() = screen("02_create_360x800", fresh(), act = { compose.onNodeWithText("Бублик").performClick() }) { CreatePetScreen() }
-    @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun sCreate915() = screen("02_create_412x915", fresh(), act = ::typeKuzya) { CreatePetScreen() }
-    @Test fun sCreateBig() = screen("02_create_360x600_x2", fresh(), 2f) { CreatePetScreen() }
-    @Test fun sCreateTypingBig() = screen("02_create_typing_360x600_x2", fresh(), 2f, act = ::typeKuzya) { CreatePetScreen() }
+    private fun looked() = game.chooseLook(fresh(), Fur.BLUE, Accessory.CAP)
+    private fun brownBow() { listOf("Бурый", "Бант").forEach { compose.onNodeWithContentDescription(it).performClick() } }
+    private fun typeKuzya() { compose.onNode(hasSetTextAction()).performTextInput("Кузя 2") }
+    @Test fun sLook600() = screen("02_look_360x600", fresh()) { LookScreen(it) }
+    @Test fun sLookPicked600() = screen("02_look_picked_360x600", fresh(), act = ::brownBow) { LookScreen(it) }
+    @Config(qualifiers = "w360dp-h760dp-xxhdpi") @Test fun sLook800() = screen("02_look_360x800", fresh(), act = ::brownBow) { LookScreen(it) }
+    @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun sLook915() = screen("02_look_412x915", fresh()) { LookScreen(it) }
+    @Test fun sLookBig() = screen("02_look_360x600_x2", fresh(), 2f) { LookScreen(it) }
+    @Test fun sName600() = screen("02_name_360x600", looked()) { NameScreen(it) }
+    @Test fun sNameTyped600() = screen("02_name_typed_360x600", looked(), act = ::typeKuzya) { NameScreen(it) }
+    @Test fun sNamePicked600() = screen("02_name_picked_360x600", looked(), act = { compose.onNodeWithText("Ириска").performClick() }) { NameScreen(it) }
+    @Config(qualifiers = "w360dp-h760dp-xxhdpi") @Test fun sName800() = screen("02_name_360x800", looked(), act = ::typeKuzya) { NameScreen(it) }
+    @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun sName915() = screen("02_name_412x915", looked()) { NameScreen(it) }
+    @Test fun sNameBig() = screen("02_name_360x600_x2", looked(), 2f, act = ::typeKuzya) { NameScreen(it) }
 
-    // Открыта клавиатура: над ней на телефоне 360 × 640 остаётся около 300 dp. Финни 96 dp и поле — над ней,
-    // лоток — под ней; на ×2,0 заголовок уходит вверх, поле и Финни видны.
-    // «Своё» нажато ещё без клавиатуры, поэтому здесь — действием, а не касанием: на 300 dp кнопка уже под краем.
-    private fun typeUnderKeyboard() {
-        compose.onNodeWithText("Своё").performSemanticsAction(SemanticsActions.OnClick)
-        compose.onNode(hasSetTextAction()).performTextInput("Кузя")
-    }
-    @Config(qualifiers = "w360dp-h300dp-xxhdpi") @Test fun sCreateKeyboard() = screen("02_create_keyboard_360x300", fresh(), act = ::typeUnderKeyboard) { CreatePetScreen() }
-    @Config(qualifiers = "w360dp-h300dp-xxhdpi") @Test fun sCreateKeyboardBig() = screen("02_create_keyboard_360x300_x2", fresh(), 2f, act = ::typeUnderKeyboard) { CreatePetScreen() }
+    // Открыта клавиатура: над ней на телефоне 360 × 640 остаётся около 300 dp. Питомец 96 dp и поле над ней,
+    // лоток под ней; на ×2,0 реплика уходит вверх, поле и питомец видны.
+    @Config(qualifiers = "w360dp-h300dp-xxhdpi") @Test fun sNameKeyboard() = screen("02_name_keyboard_360x300", looked(), act = ::typeKuzya) { NameScreen(it) }
+    @Config(qualifiers = "w360dp-h300dp-xxhdpi") @Test fun sNameKeyboardBig() = screen("02_name_keyboard_360x300_x2", looked(), 2f, act = ::typeKuzya) { NameScreen(it) }
 
-    /** По умолчанию имя с таблички — «Финни». */
-    @Test fun createDefaultName() {
+    private fun onboarding(state: GameState, content: @Composable () -> Unit): GameStore {
         val store = GameStore(RuntimeEnvironment.getApplication())
-        store.replace(fresh())
+        store.replace(state)
         val model = AppModel(game, store)
-        compose.setContent { CompositionLocalProvider(LocalApp provides model) { CreatePetScreen() } }
-        compose.onNodeWithText("Финни").assertExists()
-        compose.onNodeWithText("Готово").performClick()
+        compose.setContent { CompositionLocalProvider(LocalApp provides model) { content() } }
+        return store
+    }
+
+    /** Мех и аксессуар сохраняются ходом «Дальше»; реплика после выбора меха меняется. */
+    @Test fun lookSaves() {
+        val store = onboarding(fresh()) { LookScreen(fresh()) }
+        compose.onNodeWithText("Выбери мне цвет").assertExists()
+        brownBow()
+        compose.onNodeWithText("Что мне надеть?").assertExists()
+        compose.onNodeWithText("Дальше").performClick()
         compose.waitForIdle()
-        assertEquals("Финни", store.state.value.profile.petName)
+        val p = store.state.value.profile
+        assertTrue(p.lookChosen)
+        assertEquals(Fur.BROWN, p.fur)
+        assertEquals(Accessory.BOW, p.accessory)
     }
 
-    /** Своё имя — одно слово из букв и дефиса: пробел и цифра не входят; после «Готово» на клавиатуре — на табличке. */
-    @Test fun createOwnName() {
-        val store = GameStore(RuntimeEnvironment.getApplication())
-        store.replace(fresh())
-        val model = AppModel(game, store)
-        compose.setContent { CompositionLocalProvider(LocalApp provides model) { CreatePetScreen() } }
+    /** «Готово» только с именем. Имя: одно слово из букв и дефиса, пробел и цифра не входят. */
+    @Test fun nameNeedsText() {
+        val store = onboarding(looked()) { NameScreen(looked()) }
+        compose.onNodeWithText("Готово").assertIsNotEnabled()
         typeKuzya()
-        compose.onNode(hasSetTextAction()).performImeAction()
-        compose.waitForIdle()
-        // Поле снова табличка, на ней своё имя; «Своё» выбрано.
-        assertEquals(0, compose.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().size)
-        compose.onNodeWithText("Кузя").assertExists()
-        compose.onNodeWithText("Готово").performClick()
+        compose.onNodeWithText("Готово").assertIsEnabled().performClick()
         compose.waitForIdle()
         assertEquals("Кузя", store.state.value.profile.petName)
+        assertTrue(store.state.value.profile.created)
     }
 
-    @Test fun createEmptyOwnKeepsName() {
-        val store = GameStore(RuntimeEnvironment.getApplication())
-        store.replace(fresh())
-        val model = AppModel(game, store)
-        compose.setContent { CompositionLocalProvider(LocalApp provides model) { CreatePetScreen() } }
-        compose.onNodeWithText("Ушастик").performClick()
-        own()
-        compose.onNode(hasSetTextAction()).performImeAction()
+    /** Готовое имя ставится в поле, его можно отправить сразу. */
+    @Test fun namePicksReady() {
+        val store = onboarding(looked()) { NameScreen(looked()) }
+        compose.onNodeWithText("Ириска").performClick()
+        compose.onNodeWithText("Готово").assertIsEnabled().performClick()
         compose.waitForIdle()
-        // Табличка вернула прежнее имя: оно и на кнопке, и на табличке.
-        assertEquals(2, compose.onAllNodesWithText("Ушастик").fetchSemanticsNodes().size)
-        compose.onNodeWithText("Готово").performClick()
-        compose.waitForIdle()
-        assertEquals("Ушастик", store.state.value.profile.petName)
+        assertEquals("Ириска", store.state.value.profile.petName)
     }
 
     // Окна нехватки: «Хочу», копилка, мало монет. Зоны — только кнопок окна: экран под ним закрыт.
     // «Хочу» пусто, «Нужное» 4, в копилке взнос 26: добор 4 из копилки. Весь кошелёк разложен — иначе план не подтвердить (I45).
     private fun savingsShop() = game.leaveShop(game.deposit(game.confirmPlan(planned(week1(), Plan(4, 0, 26)))))
+    // Нехватка в «Нужном» при деньгах в «Хочу»: каша и мыло стоят 8, в «Нужном» 5.
+    private fun wantShop() = game.confirmPlan(planned(week1(), Plan(5, 15, 10)))
     private fun fewSavingsShop() = savingsShop().let { it.copy(progress = it.progress.copy(savings = 2)) }
     // На крупном шрифте полки прокручиваются: вещь сначала прокручивается в окно, потом нажимается.
     private fun buy(vararg items: String) {
         items.forEach { compose.onNodeWithContentDescription(it).performScrollTo().performClick() }
         compose.onNodeWithText("Купить").performClick()
     }
-    private fun openWant() = buy("Каша с ягодами", "Мыло")
+    private fun openWant() = buy("Каша", "Мыло")
     private fun openSavings() = buy("Каша", "Мыло")
 
     private fun sheet(name: String, state: GameState, scale: Float = 1f, open: () -> Unit, buttons: Int) {
@@ -477,14 +484,14 @@ class ScreensShotTest {
         assertTrue("$name: кнопки разного размера", found.map { it.size }.distinct().size == 1)
     }
 
-    @Test fun sSheetWant600() = sheet("10_sheet_want_360x600", shop1(), open = ::openWant, buttons = 2)
+    @Test fun sSheetWant600() = sheet("10_sheet_want_360x600", wantShop(), open = ::openWant, buttons = 2)
     @Test fun sSheetSavings600() = sheet("10_sheet_savings_360x600", savingsShop(), open = ::openSavings, buttons = 2)
     @Test fun sSheetNone600() = sheet("10_sheet_none_360x600", fewSavingsShop(), open = ::openSavings, buttons = 1)
-    @Config(qualifiers = "w360dp-h760dp-xxhdpi") @Test fun sSheetWant800() = sheet("10_sheet_want_360x800", shop1(), open = ::openWant, buttons = 2)
+    @Config(qualifiers = "w360dp-h760dp-xxhdpi") @Test fun sSheetWant800() = sheet("10_sheet_want_360x800", wantShop(), open = ::openWant, buttons = 2)
     @Config(qualifiers = "w360dp-h760dp-xxhdpi") @Test fun sSheetSavings800() = sheet("10_sheet_savings_360x800", savingsShop(), open = ::openSavings, buttons = 2)
-    @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun sSheetWant915() = sheet("10_sheet_want_412x915", shop1(), open = ::openWant, buttons = 2)
+    @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun sSheetWant915() = sheet("10_sheet_want_412x915", wantShop(), open = ::openWant, buttons = 2)
     @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun sSheetNone915() = sheet("10_sheet_none_412x915", fewSavingsShop(), open = ::openSavings, buttons = 1)
-    @Test fun sSheetWantBig() = sheet("10_sheet_want_360x600_x2", shop1(), 2f, open = ::openWant, buttons = 2)
+    @Test fun sSheetWantBig() = sheet("10_sheet_want_360x600_x2", wantShop(), 2f, open = ::openWant, buttons = 2)
     @Test fun sSheetSavingsBig() = sheet("10_sheet_savings_360x600_x2", savingsShop(), 2f, open = ::openSavings, buttons = 2)
     @Test fun sSheetNoneBig() = sheet("10_sheet_none_360x600_x2", fewSavingsShop(), 2f, open = ::openSavings, buttons = 1)
 

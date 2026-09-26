@@ -137,13 +137,14 @@ class FlowTest {
         // Зашёл и вышел без покупки: шаг остаётся, награды нет, итог ещё закрыт.
         tap("Магазин"); tap("Назад")
         noteSays("В магазин"); assertEquals(0, s.progress.savings); assertFalse(s.week!!.taskDone)
-        tap("Неделя 1"); assertTrue(shown("Итог — в конце недели")); shot("w1_12_say_summary_later")
+        tap("Неделя 1"); assertTrue(shown("Итог в конце недели")); shot("w1_12_say_summary_later")
         tap("Миска"); assertTrue(shown("Миска пустая")); shot("w1_13_say_bowl_empty")
-        // Покупка: каша с ягодами — в «Нужное» одной позицией 8; объяснение — в магазине, с «Домой».
+        // Покупка: каша в «Нужном», ягоды в «Хочу» (надбавка платится из «Хочу», PR №3); объяснение в магазине, с «Домой».
         tap("Магазин")
         listOf("Каша с ягодами", "Мыло").forEach { tap(it) }
         shot("w1_14_cart")
-        press("Купить"); press("Взять из «Хочу»")
+        // Ягоды платятся из «Хочу», «Нужного» хватает: окна нехватки нет.
+        press("Купить")
         assertEquals(10, s.progress.savings); assertTrue(s.week!!.taskDone)
         assertTrue(shown("Домой")); shot("w1_15_shop_explained")
         press("Домой"); noteSays("Покорми"); shot("w1_16_step_feed")
@@ -366,7 +367,7 @@ class FlowTest {
                 compose.onAllNodes(matcher and hasClickAction())[0].performClick()
                 idle()
                 val after = store.state.value
-                val said = listOf("Сначала открой посылку", "Сначала разложи монеты", "Итог — в конце недели",
+                val said = listOf("Сначала открой посылку", "Сначала разложи монеты", "Итог в конце недели",
                     "Неделя уже закончилась", "Миска пустая").firstOrNull { shown(it) }
                 val what = when {
                     opened != null -> "открывает: " + when (opened!!) {

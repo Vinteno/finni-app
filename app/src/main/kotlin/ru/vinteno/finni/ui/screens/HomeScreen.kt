@@ -350,7 +350,7 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
         Step.EVENT, Step.NONE -> "home.note.chapterDone"
     }.let(a::t)
     // Плашка накоплений: цель с клетками по 5 монет и «N из M». После события цели нет — только
-    // «Накопил N» (QA-M4).
+    // «Накопили N» (QA-M4).
     val goal = s.chapter.goalId?.takeIf { s.phase != Phase.FREE_PLAY }?.let { g.content.goal(it) }
     val savedText = when {
         goal != null || s.phase == Phase.FREE_PLAY -> a.f("home.saved", "n" to s.progress.savings)
@@ -766,7 +766,7 @@ private fun Room(
                     maxWidth = p.plateMaxW,
                     modifier = Modifier.prop(a.t("piggy.title")) { onProp(Prop.PIGGY) },
                 ) {
-                    // Клетки по 5 монет и «Накопил N», рядом цель с ценой.
+                    // Клетки по 5 монет и «Накопили N», рядом цель с ценой.
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             goal?.let { gl -> ProgressCells(minOf(s.progress.savings, gl.price) / 5, (gl.price + 4) / 5, cell = CELL) }

@@ -30,12 +30,13 @@ import ru.vinteno.finni.ui.motion.FlightLayer
 import ru.vinteno.finni.core.engine.Game
 import ru.vinteno.finni.core.model.GameState
 import ru.vinteno.finni.core.model.Phase
-import ru.vinteno.finni.ui.screens.CreatePetScreen
+import ru.vinteno.finni.ui.screens.LookScreen
+import ru.vinteno.finni.ui.screens.NameScreen
 import ru.vinteno.finni.ui.screens.EventScreen
 import ru.vinteno.finni.ui.screens.GoalScreen
 import ru.vinteno.finni.ui.screens.HomeScreen
 import ru.vinteno.finni.ui.screens.HomeTarget
-import ru.vinteno.finni.ui.screens.IntroScreen
+import ru.vinteno.finni.ui.screens.StoryScreen
 import ru.vinteno.finni.ui.screens.PiggyScreen
 import ru.vinteno.finni.ui.screens.PlanScreen
 import ru.vinteno.finni.ui.screens.ShopScreen
@@ -49,7 +50,7 @@ import ru.vinteno.finni.ui.theme.FinniMotion
  * выбор ступеньки сделан на полке магазина.
  */
 enum class Screen(val hasBack: Boolean) {
-    INTRO(false), CREATE_PET(false), GOAL(false),
+    INTRO(false), LOOK(false), NAME(false), GOAL(false),
     HOME(false), PLAN(true), SHOP(true), PIGGY(true), SUMMARY(true),
     EVENT(false),
 }
@@ -57,7 +58,8 @@ enum class Screen(val hasBack: Boolean) {
 /** Первый запуск проигрывается один раз; дальше точка возврата — Дом. */
 fun startScreen(s: GameState): Screen = when {
     !s.profile.introSeen -> Screen.INTRO
-    !s.profile.created -> Screen.CREATE_PET
+    !s.profile.created && !s.profile.lookChosen -> Screen.LOOK
+    !s.profile.created -> Screen.NAME
     s.chapter.goalId == null -> Screen.GOAL
     s.phase == Phase.EVENT -> Screen.EVENT
     else -> Screen.HOME
@@ -121,8 +123,9 @@ fun FinniNavHost(state: GameState) {
         ) { sc ->
             Box(Modifier.fillMaxSize().background(FinniColors.BgSand)) {
                 when (sc) {
-                    Screen.INTRO -> IntroScreen()
-                    Screen.CREATE_PET -> CreatePetScreen()
+                    Screen.INTRO -> StoryScreen(state)
+                    Screen.LOOK -> LookScreen(state)
+                    Screen.NAME -> NameScreen(state)
                     Screen.GOAL -> GoalScreen()
                     Screen.HOME -> HomeScreen(state) { target ->
                         chosen = when (target) {

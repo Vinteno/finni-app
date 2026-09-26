@@ -448,16 +448,17 @@ private fun CartBasket(s: GameState, cart: List<String>, modifier: Modifier) {
                 m.softPlate(FinniDimens.RadiusSmall + 4.dp).padding(horizontal = 6.dp, vertical = 2.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                // Группы — как платит игра (Game.direction): надбавка идёт с направлением своей основы и
-                // стоит на картинке основы, одной позицией с общей ценой — каша с ягодами 8 под «Нужное».
+                // Группы — как платит игра (Game.direction). Надбавка платится из «Хочу» и стоит там
+                // отдельной позицией: каша 5 под «Нужное», ягоды 3 под «Хочу». Если бы надбавка платилась
+                // в том же направлении, что основа, она легла бы на картинку основы одной позицией.
                 listOf(Direction.NEED, Direction.WANT).forEach { dir ->
                     val items = q.items.filter { g.direction(it) == dir }
                     if (items.isEmpty()) return@forEach
                     val st = directionStyle(dir)
                     FlowRowGroup {
                         DirectionLabel(st.icon, st.color, a.t(st.labelKey))
-                        items.filter { it.addonOf == null }.forEach { base ->
-                            val addons = items.filter { it.addonOf == base.id }
+                        items.filter { it.addonOf == null || items.none { b -> b.id == it.addonOf } }.forEach { base ->
+                            val addons = if (base.addonOf == null) items.filter { it.addonOf == base.id } else emptyList()
                             val key = (listOf(base.id) + addons.map { it.id }).joinToString("_")
                             val name = if (addons.isEmpty()) base.name else a.t("shop.tier.$key")
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {

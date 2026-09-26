@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import ru.vinteno.finni.core.engine.BallOffer
 import ru.vinteno.finni.core.engine.Direction
+import ru.vinteno.finni.core.engine.requireWeek
 import ru.vinteno.finni.core.model.EventOutcome
 import ru.vinteno.finni.core.model.GameState
 import ru.vinteno.finni.core.model.Phase
@@ -97,7 +98,7 @@ private val CELL_GAP = 6.dp
 
 /**
  * Копилка — сценарий главы 1, шаг 7. Комната, копилка стоит на полу, над ней плашка с хвостиком:
- * цель, клетки по 5 монет и «Накопил N из M.». Строки с ценой подарка нет (I40): цена уже в «из M».
+ * цель, клетки по 5 монет и «Накопили N из M.». Строки с ценой подарка нет (I40): цена уже в «из M».
  * Сумма здесь не выбирается: кнопка откладывает ровно то, что стоит в плане, и при набранной цели тоже —
  * излишек остаётся в копилке (QA-M2). При нуле в плане кнопки нет, её место пустое: пол не прыгает.
  * Цель не покупается кнопкой: «Подарок готов» ничего не списывает (I4).
@@ -273,7 +274,8 @@ fun SummaryScreen(s: GameState, onBack: () -> Unit, onDone: () -> Unit) {
         bottom = {
             // В каждой кнопке — название и план, с которым откроется следующая неделя: три числа с иконками
             // направлений, без слов. Кнопки одного вида и одной высоты — ни одна не выделена (§10.10).
-            val keep = Plan.DEFAULT
+            // «Оставить план» оставляет план этой недели, а не план по умолчанию.
+            val keep = s.requireWeek().plan
             EqualColumn(FinniDimens.CardGap) {
                 ChoiceButton({ choose(SummaryChoice.KEEP_PLAN) }) { ChoiceFace(a.t("summary.keepPlan"), keep) }
                 ChoiceButton({ choose(SummaryChoice.TAKE_ACTUAL) }) { ChoiceFace(a.t("summary.takeActual"), sum.fact) }

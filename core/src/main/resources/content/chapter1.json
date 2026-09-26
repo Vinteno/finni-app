@@ -12,7 +12,7 @@
       "week": 1,
       "situation": "food",
       "situationShelf": "food",
-      "announcement": ["announce.food.1", "announce.food.2", "announce.common.3"],
+      "announcement": ["announce.food.1", "announce.prices.food", "announce.common.3"],
       "announceItem": "kasha",
       "shelves": [
         { "id": "food", "caption": "shop.caption.food", "mandatory": true,
@@ -26,7 +26,7 @@
       "week": 2,
       "situation": "wash",
       "situationShelf": "soap",
-      "announcement": ["announce.wash.1", "announce.wash.2", "announce.common.3"],
+      "announcement": ["announce.wash.1", "announce.prices.wash", "announce.common.3"],
       "announceItem": "mylo",
       "shelves": [
         { "id": "food", "caption": "shop.caption.food", "mandatory": true,
