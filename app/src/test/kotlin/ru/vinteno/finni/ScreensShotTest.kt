@@ -60,7 +60,7 @@ import androidx.compose.ui.test.performTextInput
 import ru.vinteno.finni.ui.screens.EventScreen
 import ru.vinteno.finni.ui.screens.GoalScreen
 import ru.vinteno.finni.ui.screens.HomeScreen
-import ru.vinteno.finni.ui.screens.IntroScreen
+import ru.vinteno.finni.ui.screens.StoryScreen
 import ru.vinteno.finni.ui.screens.PiggyScreen
 import ru.vinteno.finni.ui.screens.PlanScreen
 import ru.vinteno.finni.ui.screens.ShopScreen
@@ -108,7 +108,7 @@ class ScreensShotTest {
         compose.onRoot().captureRoboImage("build/shots/$name.png")
     }
 
-    @Test fun intro() = shot("01_intro", GameState()) { IntroScreen() }
+    @Test fun intro() = shot("01_intro", GameState()) { StoryScreen(it, autoPlay = false) }
     @Test fun look() = shot("02_look", game.seeIntro(GameState())) { LookScreen(it) }
     @Test fun name() = shot("02_name", game.chooseLook(game.seeIntro(GameState()), Fur.GINGER, Accessory.SCARF)) { NameScreen(it) }
     @Test fun goal() = shot("03_goal", base()) { GoalScreen() }
@@ -370,16 +370,25 @@ class ScreensShotTest {
 
     // ---------- Вступление, создание Финни, окна нехватки (I43, I44) ----------
 
-    private fun card(n: Int) = { repeat(n) { compose.onNodeWithText("Дальше").performClick() } }
+    // Предыстория: сцена в комнате, реплика над головой, монеты внизу. Кадры без часов, с нужной реплики.
+    private fun story(start: Int): @Composable (GameState) -> Unit = { StoryScreen(it, autoPlay = false, start = start) }
+    @Test fun sStory0() = screen("01_story_hello_360x600", GameState(), content = story(0))
+    @Test fun sStoryParcel() = screen("01_story_parcel_360x600", GameState(), content = story(3))
+    @Test fun sStoryCoins() = screen("01_story_coins_360x600", GameState(), content = story(5))
+    @Test fun sStoryKira() = screen("01_story_kira_360x600", GameState(), content = story(9))
+    @Test fun sStoryLast() = screen("01_story_last_360x600", GameState(), content = story(12))
+    @Config(qualifiers = "w360dp-h760dp-xxhdpi") @Test fun sStory800() = screen("01_story_coins_360x800", GameState(), content = story(6))
+    @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun sStory915() = screen("01_story_kira_412x915", GameState(), content = story(9))
+    @Test fun sStoryBig() = screen("01_story_coins_360x600_x2", GameState(), 2f, content = story(5))
 
-    // Вступление: три карточки; пол и предмет не прыгают между ними — плашка держит место под самую длинную строку.
-    @Test fun sIntroNeed600() = screen("01_intro_need_360x600", GameState()) { IntroScreen() }
-    @Test fun sIntroWant600() = screen("01_intro_want_360x600", GameState(), act = card(1)) { IntroScreen() }
-    @Test fun sIntroSave600() = screen("01_intro_save_360x600", GameState(), act = card(2)) { IntroScreen() }
-    @Config(qualifiers = "w360dp-h760dp-xxhdpi") @Test fun sIntro800() = screen("01_intro_360x800", GameState(), act = card(1)) { IntroScreen() }
-    @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun sIntro915() = screen("01_intro_412x915", GameState(), act = card(2)) { IntroScreen() }
-    @Test fun sIntroNeedBig() = screen("01_intro_need_360x600_x2", GameState(), 2f) { IntroScreen() }
-    @Test fun sIntroWantBig() = screen("01_intro_want_360x600_x2", GameState(), 2f, act = card(1)) { IntroScreen() }
+    /** Кнопка «Дальше» на последней реплике заканчивает историю: дальше экран внешности. */
+    @Test fun storyEnds() {
+        val store = onboarding(GameState()) { StoryScreen(GameState(), autoPlay = false, start = 12) }
+        compose.onNodeWithText("Сначала выбери мне цвет.").assertExists()
+        compose.onNodeWithText("Дальше").performClick()
+        compose.waitForIdle()
+        assertTrue(store.state.value.profile.introSeen)
+    }
 
     // Внешность и имя: два экрана подряд (решение 25.09). Питомец крупно, реплика сверху, лоток снизу.
     private fun fresh() = game.seeIntro(GameState()).let { it.copy(profile = it.profile.copy(animationOn = false)) }

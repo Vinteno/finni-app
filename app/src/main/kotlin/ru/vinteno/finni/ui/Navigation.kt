@@ -35,7 +35,7 @@ import ru.vinteno.finni.ui.screens.EventScreen
 import ru.vinteno.finni.ui.screens.GoalScreen
 import ru.vinteno.finni.ui.screens.HomeScreen
 import ru.vinteno.finni.ui.screens.HomeTarget
-import ru.vinteno.finni.ui.screens.IntroScreen
+import ru.vinteno.finni.ui.screens.StoryScreen
 import ru.vinteno.finni.ui.screens.PiggyScreen
 import ru.vinteno.finni.ui.screens.PlanScreen
 import ru.vinteno.finni.ui.screens.ShopScreen
@@ -119,7 +119,7 @@ fun FinniNavHost(state: GameState) {
         ) { sc ->
             Box(Modifier.fillMaxSize().background(FinniColors.BgSand)) {
                 when (sc) {
-                    Screen.INTRO -> IntroScreen()
+                    Screen.INTRO -> StoryScreen(state)
                     Screen.LOOK -> LookScreen(state)
                     Screen.NAME -> NameScreen(state)
                     Screen.GOAL -> GoalScreen()
