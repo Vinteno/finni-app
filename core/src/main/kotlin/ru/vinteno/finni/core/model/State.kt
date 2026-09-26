@@ -21,6 +21,8 @@ data class Profile(
     val accessory: Accessory = Accessory.SCARF,
     val scale: String = "junior",
     val introSeen: Boolean = false,
+    /** Внешность выбрана, дальше экран имени. У старых сохранений `false`, их ведёт `created`. */
+    val lookChosen: Boolean = false,
     val created: Boolean = false,
     val soundOn: Boolean = true,
     /** Флаг закладывается с первого дня, даже без тумблера — animation-howto.md §9. */

@@ -1,5 +1,9 @@
 package ru.vinteno.finni
 
+import ru.vinteno.finni.ui.screens.NameScreen
+import ru.vinteno.finni.ui.screens.LookScreen
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -53,7 +57,6 @@ import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
-import ru.vinteno.finni.ui.screens.CreatePetScreen
 import ru.vinteno.finni.ui.screens.EventScreen
 import ru.vinteno.finni.ui.screens.GoalScreen
 import ru.vinteno.finni.ui.screens.HomeScreen
@@ -106,7 +109,8 @@ class ScreensShotTest {
     }
 
     @Test fun intro() = shot("01_intro", GameState()) { IntroScreen() }
-    @Test fun create() = shot("02_create", game.seeIntro(GameState())) { CreatePetScreen() }
+    @Test fun look() = shot("02_look", game.seeIntro(GameState())) { LookScreen(it) }
+    @Test fun name() = shot("02_name", game.chooseLook(game.seeIntro(GameState()), Fur.GINGER, Accessory.SCARF)) { NameScreen(it) }
     @Test fun goal() = shot("03_goal", base()) { GoalScreen() }
     @Test fun homeParcel() = shot("04_home_parcel", week1()) { HomeScreen(it) {} }
     @Test fun homeAnnounce() = shot("05_home_announce", game.openParcel(week1())) { HomeScreen(it) {} }
@@ -377,78 +381,68 @@ class ScreensShotTest {
     @Test fun sIntroNeedBig() = screen("01_intro_need_360x600_x2", GameState(), 2f) { IntroScreen() }
     @Test fun sIntroWantBig() = screen("01_intro_want_360x600_x2", GameState(), 2f, act = card(1)) { IntroScreen() }
 
-    // Создание Финни: по умолчанию, готовое имя, открыт ввод, введено своё, своё на табличке, пустой ввод.
+    // Внешность и имя: два экрана подряд (решение 25.09). Питомец крупно, реплика сверху, лоток снизу.
     private fun fresh() = game.seeIntro(GameState()).let { it.copy(profile = it.profile.copy(animationOn = false)) }
-    private fun own() { compose.onNodeWithText("Своё").performClick() }
-    private fun typeKuzya() { own(); compose.onNode(hasSetTextAction()).performTextInput("Кузя 2") }
-    @Test fun sCreate600() = screen("02_create_360x600", fresh()) { CreatePetScreen() }
-    @Test fun sCreateNamed600() = screen("02_create_named_360x600", fresh(), act = { compose.onNodeWithText("Ириска").performClick() }) { CreatePetScreen() }
-    @Test fun sCreateTyping600() = screen("02_create_typing_360x600", fresh(), act = ::own) { CreatePetScreen() }
-    @Test fun sCreateTyped600() = screen("02_create_typed_360x600", fresh(), act = ::typeKuzya) { CreatePetScreen() }
-    @Test fun sCreateOwn600() = screen("02_create_own_360x600", fresh(), act = { typeKuzya(); compose.onNode(hasSetTextAction()).performImeAction() }) { CreatePetScreen() }
-    @Test fun sCreateEmpty600() = screen("02_create_empty_360x600", fresh(), act = {
-        compose.onNodeWithText("Ириска").performClick()
-        own()
-        compose.onNode(hasSetTextAction()).performImeAction()
-    }) { CreatePetScreen() }
-    @Config(qualifiers = "w360dp-h760dp-xxhdpi") @Test fun sCreate800() = screen("02_create_360x800", fresh(), act = { compose.onNodeWithText("Бублик").performClick() }) { CreatePetScreen() }
-    @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun sCreate915() = screen("02_create_412x915", fresh(), act = ::typeKuzya) { CreatePetScreen() }
-    @Test fun sCreateBig() = screen("02_create_360x600_x2", fresh(), 2f) { CreatePetScreen() }
-    @Test fun sCreateTypingBig() = screen("02_create_typing_360x600_x2", fresh(), 2f, act = ::typeKuzya) { CreatePetScreen() }
+    private fun looked() = game.chooseLook(fresh(), Fur.BLUE, Accessory.CAP)
+    private fun brownBow() { listOf("Бурый", "Бант").forEach { compose.onNodeWithContentDescription(it).performClick() } }
+    private fun typeKuzya() { compose.onNode(hasSetTextAction()).performTextInput("Кузя 2") }
+    @Test fun sLook600() = screen("02_look_360x600", fresh()) { LookScreen(it) }
+    @Test fun sLookPicked600() = screen("02_look_picked_360x600", fresh(), act = ::brownBow) { LookScreen(it) }
+    @Config(qualifiers = "w360dp-h760dp-xxhdpi") @Test fun sLook800() = screen("02_look_360x800", fresh(), act = ::brownBow) { LookScreen(it) }
+    @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun sLook915() = screen("02_look_412x915", fresh()) { LookScreen(it) }
+    @Test fun sLookBig() = screen("02_look_360x600_x2", fresh(), 2f) { LookScreen(it) }
+    @Test fun sName600() = screen("02_name_360x600", looked()) { NameScreen(it) }
+    @Test fun sNameTyped600() = screen("02_name_typed_360x600", looked(), act = ::typeKuzya) { NameScreen(it) }
+    @Test fun sNamePicked600() = screen("02_name_picked_360x600", looked(), act = { compose.onNodeWithText("Ириска").performClick() }) { NameScreen(it) }
+    @Config(qualifiers = "w360dp-h760dp-xxhdpi") @Test fun sName800() = screen("02_name_360x800", looked(), act = ::typeKuzya) { NameScreen(it) }
+    @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun sName915() = screen("02_name_412x915", looked()) { NameScreen(it) }
+    @Test fun sNameBig() = screen("02_name_360x600_x2", looked(), 2f, act = ::typeKuzya) { NameScreen(it) }
 
-    // Открыта клавиатура: над ней на телефоне 360 × 640 остаётся около 300 dp. Финни 96 dp и поле — над ней,
-    // лоток — под ней; на ×2,0 заголовок уходит вверх, поле и Финни видны.
-    // «Своё» нажато ещё без клавиатуры, поэтому здесь — действием, а не касанием: на 300 dp кнопка уже под краем.
-    private fun typeUnderKeyboard() {
-        compose.onNodeWithText("Своё").performSemanticsAction(SemanticsActions.OnClick)
-        compose.onNode(hasSetTextAction()).performTextInput("Кузя")
-    }
-    @Config(qualifiers = "w360dp-h300dp-xxhdpi") @Test fun sCreateKeyboard() = screen("02_create_keyboard_360x300", fresh(), act = ::typeUnderKeyboard) { CreatePetScreen() }
-    @Config(qualifiers = "w360dp-h300dp-xxhdpi") @Test fun sCreateKeyboardBig() = screen("02_create_keyboard_360x300_x2", fresh(), 2f, act = ::typeUnderKeyboard) { CreatePetScreen() }
+    // Открыта клавиатура: над ней на телефоне 360 × 640 остаётся около 300 dp. Питомец 96 dp и поле над ней,
+    // лоток под ней; на ×2,0 реплика уходит вверх, поле и питомец видны.
+    @Config(qualifiers = "w360dp-h300dp-xxhdpi") @Test fun sNameKeyboard() = screen("02_name_keyboard_360x300", looked(), act = ::typeKuzya) { NameScreen(it) }
+    @Config(qualifiers = "w360dp-h300dp-xxhdpi") @Test fun sNameKeyboardBig() = screen("02_name_keyboard_360x300_x2", looked(), 2f, act = ::typeKuzya) { NameScreen(it) }
 
-    /** По умолчанию имя с таблички — «Финни». */
-    @Test fun createDefaultName() {
+    private fun onboarding(state: GameState, content: @Composable () -> Unit): GameStore {
         val store = GameStore(RuntimeEnvironment.getApplication())
-        store.replace(fresh())
+        store.replace(state)
         val model = AppModel(game, store)
-        compose.setContent { CompositionLocalProvider(LocalApp provides model) { CreatePetScreen() } }
-        compose.onNodeWithText("Финни").assertExists()
-        compose.onNodeWithText("Готово").performClick()
+        compose.setContent { CompositionLocalProvider(LocalApp provides model) { content() } }
+        return store
+    }
+
+    /** Мех и аксессуар сохраняются ходом «Дальше»; реплика после выбора меха меняется. */
+    @Test fun lookSaves() {
+        val store = onboarding(fresh()) { LookScreen(fresh()) }
+        compose.onNodeWithText("Выбери мне цвет.").assertExists()
+        brownBow()
+        compose.onNodeWithText("Что мне надеть?").assertExists()
+        compose.onNodeWithText("Дальше").performClick()
         compose.waitForIdle()
-        assertEquals("Финни", store.state.value.profile.petName)
+        val p = store.state.value.profile
+        assertTrue(p.lookChosen)
+        assertEquals(Fur.BROWN, p.fur)
+        assertEquals(Accessory.BOW, p.accessory)
     }
 
-    /** Своё имя — одно слово из букв и дефиса: пробел и цифра не входят; после «Готово» на клавиатуре — на табличке. */
-    @Test fun createOwnName() {
-        val store = GameStore(RuntimeEnvironment.getApplication())
-        store.replace(fresh())
-        val model = AppModel(game, store)
-        compose.setContent { CompositionLocalProvider(LocalApp provides model) { CreatePetScreen() } }
+    /** «Готово» только с именем. Имя: одно слово из букв и дефиса, пробел и цифра не входят. */
+    @Test fun nameNeedsText() {
+        val store = onboarding(looked()) { NameScreen(looked()) }
+        compose.onNodeWithText("Готово").assertIsNotEnabled()
         typeKuzya()
-        compose.onNode(hasSetTextAction()).performImeAction()
-        compose.waitForIdle()
-        // Поле снова табличка, на ней своё имя; «Своё» выбрано.
-        assertEquals(0, compose.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().size)
-        compose.onNodeWithText("Кузя").assertExists()
-        compose.onNodeWithText("Готово").performClick()
+        compose.onNodeWithText("Готово").assertIsEnabled().performClick()
         compose.waitForIdle()
         assertEquals("Кузя", store.state.value.profile.petName)
+        assertTrue(store.state.value.profile.created)
     }
 
-    @Test fun createEmptyOwnKeepsName() {
-        val store = GameStore(RuntimeEnvironment.getApplication())
-        store.replace(fresh())
-        val model = AppModel(game, store)
-        compose.setContent { CompositionLocalProvider(LocalApp provides model) { CreatePetScreen() } }
-        compose.onNodeWithText("Ушастик").performClick()
-        own()
-        compose.onNode(hasSetTextAction()).performImeAction()
+    /** Готовое имя ставится в поле, его можно отправить сразу. */
+    @Test fun namePicksReady() {
+        val store = onboarding(looked()) { NameScreen(looked()) }
+        compose.onNodeWithText("Ириска").performClick()
+        compose.onNodeWithText("Готово").assertIsEnabled().performClick()
         compose.waitForIdle()
-        // Табличка вернула прежнее имя: оно и на кнопке, и на табличке.
-        assertEquals(2, compose.onAllNodesWithText("Ушастик").fetchSemanticsNodes().size)
-        compose.onNodeWithText("Готово").performClick()
-        compose.waitForIdle()
-        assertEquals("Ушастик", store.state.value.profile.petName)
+        assertEquals("Ириска", store.state.value.profile.petName)
     }
 
     // Окна нехватки: «Хочу», копилка, мало монет. Зоны — только кнопок окна: экран под ним закрыт.

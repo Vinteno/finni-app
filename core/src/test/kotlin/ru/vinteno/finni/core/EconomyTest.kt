@@ -55,6 +55,29 @@ class EconomyTest {
         return game.leavePiggy(s)
     }
 
+    @Test fun `внешность и имя двумя ходами, внешность сохраняется сразу`() {
+        var s = game.seeIntro(GameState())
+        s = game.chooseLook(s, Fur.BROWN, Accessory.BOW)
+        assertTrue(s.profile.lookChosen)
+        assertFalse(s.profile.created)
+        assertEquals(Fur.BROWN, s.profile.fur)
+        assertEquals(Accessory.BOW, s.profile.accessory)
+        s = game.namePet(s, " Кнопка ")
+        assertTrue(s.profile.created)
+        assertEquals("Кнопка", s.profile.petName)
+    }
+
+    @Test fun `имя только после внешности, назад к внешности выбор не теряет`() {
+        val s0 = game.seeIntro(GameState())
+        assertThrows { game.namePet(s0, "Кнопка") }
+        val s1 = game.backToLook(game.chooseLook(s0, Fur.BLUE, Accessory.CAP))
+        assertFalse(s1.profile.lookChosen)
+        assertEquals(Fur.BLUE, s1.profile.fur)
+        assertEquals(Accessory.CAP, s1.profile.accessory)
+        val named = game.createPet(s0, "Ириска", Fur.GINGER, Accessory.SCARF)
+        assertThrows { game.chooseLook(named, Fur.BLUE, Accessory.CAP) }
+    }
+
     @Test fun `E01 посылка приходит при пустом кошельке`() {
         val s = game.openParcel(newGame())
         assertEquals(30, s.progress.wallet)
