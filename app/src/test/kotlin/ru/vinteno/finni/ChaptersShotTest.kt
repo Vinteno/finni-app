@@ -199,4 +199,18 @@ class ChaptersShotTest {
         quiet(s)
     }) { SummaryScreen(it, {}, {}) }
     @Test fun afterSummary() = shot("39_home_after_summary", quiet(game.finishWeek(game.leavePiggy(game.deposit(bought(5))), SummaryChoice.KEEP_PLAN))) { HomeScreen(it) {} }
+
+    // ---------- Другие размеры: 360 × 800 и 412 × 915 (final-plan §10, п. 3) ----------
+    @Config(qualifiers = "w360dp-h760dp-xxhdpi") @Test fun situation800() = shot("70_situation_360x800", planned(4)) { SituationScreen(it, {}, {}) }
+    @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun situation915() = shot("71_situation_412x915", planned(4)) { SituationScreen(it, {}, {}) }
+    @Config(qualifiers = "w360dp-h760dp-xxhdpi") @Test fun sort800() = shot("72_sort_360x800", quiet(game.leavePiggy(game.deposit(bought(7))))) { SortScreen(it, {}, {}) }
+    @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun sort915() = shot("73_sort_412x915", quiet(game.leavePiggy(game.deposit(bought(7))))) { SortScreen(it, {}, {}) }
+    @Config(qualifiers = "w360dp-h760dp-xxhdpi") @Test fun snow800() = shot("74_snow_360x800", eventOf(4, true)) { EventScreen(it) {} }
+    @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun home915() = shot("75_housewarming_412x915", eventOf(8, true)) { EventScreen(it) {} }
+    @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun end915() = shot("76_end_412x915", quiet(game.playEvent(demo.playWeek(demo.weekStart(8))))) { EndScreen(it) }
+    @Config(qualifiers = "w360dp-h760dp-xxhdpi") @Test fun adult800() = shot("77_adult_360x800", bought(6)) { AdultScreen(it) {} }
+    @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun diary915() = shot("78_diary_412x915", bought(6)) { DiaryScreen(it) {} }
+    @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun goal915() = shot("79_goal_ch3_412x915", game.seeTransition(transition(4))) { GoalScreen() }
+    @Config(qualifiers = "w360dp-h760dp-xxhdpi") @Test fun f4800() = shot("80_plan_f4_360x800", planned(3, confirm = false)) { PlanScreen(it, {}, {}) }
+    @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun shop915() = shot("81_shop_ch3_412x915", quiet(game.chooseSituation(planned(6), 1))) { ShopScreen(it) {} }
 }
