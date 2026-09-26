@@ -18,7 +18,7 @@ import ru.vinteno.finni.core.model.Plan
 import ru.vinteno.finni.core.model.SummaryChoice
 import ru.vinteno.finni.core.model.WeekState
 
-/** Шаг недели на нижней кнопке дома — screen-map.md §3. */
+/** Шаг недели на записке дома — screen-map.md §3, I45. */
 enum class Step { PARCEL, ANNOUNCE, PLAN, SHOP, CARE, SAVE, SUMMARY, NEXT_WEEK, EVENT, NONE }
 
 /**
@@ -170,13 +170,18 @@ class Game(val content: Content) {
         return s.copy(week = w.copy(plan = plan))
     }
 
+    /**
+     * Подтвердить можно, только когда разложен весь кошелёк: перебор и недобор блокируют одинаково
+     * (сценарий, шаг 3, правило 2; I45). Иначе остаток прошлой недели лежал бы в кошельке, а
+     * потратить его было бы нельзя ни из одного направления.
+     */
     fun canConfirmPlan(s: GameState): Boolean {
         val w = s.requireWeek()
-        return !w.planConfirmed && w.announcementSeen && w.plan.total <= s.progress.wallet
+        return !w.planConfirmed && w.announcementSeen && w.plan.total == s.progress.wallet
     }
 
     fun confirmPlan(s: GameState): GameState {
-        rule(canConfirmPlan(s)) { "Подтверждение недоступно: разложено больше, чем в кошельке, или план уже подтверждён" }
+        rule(canConfirmPlan(s)) { "Подтверждение недоступно: разложен не весь кошелёк или план уже подтверждён" }
         val w = s.requireWeek()
         return s.copy(week = w.copy(planConfirmed = true))
     }
@@ -279,16 +284,25 @@ class Game(val content: Content) {
     }
 
     /**
-     * Шаг закрывается выходом с экрана, а не тратой. F1 засчитывается и при пустой корзине (I7, I8).
+     * Выход из магазина только отмечает, что ребёнок в нём был. Шаг «В магазин» он не закрывает, и
+     * награды F1 за него нет: награда — после «Купить» (сценарий, шаг 4, «Что меняется»; I45).
+     * Шаг закрывает покупка или переход дальше — в копилку ([shopDone]).
      * Задание выбора F5 живёт на экране копилки, а не в магазине (QA-M3).
      */
     fun leaveShop(s: GameState): GameState {
         val w = s.requireWeek()
         rule(w.planConfirmed) { "До подтверждения плана магазин закрыт" }
         rule(s.phase == Phase.WEEK) { "После итога недели магазин закрыт" }
-        var next = s.copy(week = w.copy(shopVisited = true))
-        if (weekTaskTemplate(next) == TaskTemplate.SHOP) next = completeTask(next)
-        return next
+        return s.copy(week = w.copy(shopVisited = true))
+    }
+
+    /**
+     * Шаг «В магазин» пройден: в магазине что-то куплено, или ребёнок побывал в нём и пошёл дальше — в
+     * копилку. Просто зашёл и вышел — шаг остаётся (I45). К итогу раньше этого не пускает календарь.
+     */
+    fun shopDone(s: GameState): Boolean {
+        val w = s.requireWeek()
+        return w.purchases.isNotEmpty() || (w.shopVisited && w.piggyVisited)
     }
 
     // ---------- Задания ----------
@@ -431,7 +445,15 @@ class Game(val content: Content) {
         )
     }
 
-    fun leavePiggy(s: GameState): GameState = s.copy(week = s.requireWeek().copy(piggyVisited = true))
+    /**
+     * Выход из копилки закрывает шаг «Отложить» и считается переходом дальше после магазина. До плана
+     * и после итога копилку только смотрят — тогда выход шагов не закрывает.
+     */
+    fun leavePiggy(s: GameState): GameState {
+        val w = s.requireWeek()
+        if (!w.planConfirmed || s.phase != Phase.WEEK) return s
+        return s.copy(week = w.copy(piggyVisited = true))
+    }
 
     // ---------- Забота дома: денег не трогает ----------
 
@@ -481,6 +503,7 @@ class Game(val content: Content) {
         val w = s.requireWeek()
         rule(s.phase == Phase.WEEK) { "Итог этой недели уже пройден" }
         rule(w.planConfirmed) { "Итог идёт после подтверждённого плана" }
+        rule(shopDone(s)) { "Итог — в конце недели: сначала магазин" }
         // Еда куплена, миска не тронута — Финни ест сам при переходе к итогу.
         val fed = w.fed || bought(s, Impact.FED)
         val p = s.progress
@@ -508,13 +531,13 @@ class Game(val content: Content) {
         return startWeek(s, s.requireWeek().number + 1)
     }
 
-    // ---------- Нижняя кнопка ----------
+    // ---------- Записка ----------
 
     /**
-     * Текущий шаг недели. Порядок свободный, кроме одного — до подтверждения плана тратить нельзя.
-     * Шаг закрывается выходом с экрана, а не тратой (I7): зашёл в магазин и вышел — шаг пройден.
-     * При «Копилке» 0 шага «Отложить» нет, кнопка ведёт сразу на итог. Исключение — неделя с
-     * заданием выбора: шаг «Копилка» стоит, пока задание не пройдено, даже при нуле (QA-M3).
+     * Текущий шаг недели на записке — первый несделанный по порядку: посылка → план → магазин →
+     * забота → копилка → итог → следующая неделя (I45). Магазин пройден по [shopDone]. При «Копилке» 0
+     * шага «Отложить» нет, записка зовёт сразу к итогу. Исключение — неделя с заданием выбора: шаг
+     * «Копилка» стоит, пока задание не пройдено, даже при нуле (QA-M3).
      */
     fun nextStep(s: GameState): Step {
         when (s.phase) {
@@ -529,13 +552,17 @@ class Game(val content: Content) {
             w.parcel == null -> Step.PARCEL
             !w.announcementSeen -> Step.ANNOUNCE
             !w.planConfirmed -> Step.PLAN
-            !w.shopVisited -> Step.SHOP
+            !shopDone(s) -> Step.SHOP
             canFeed(s) || canWash(s) -> Step.CARE
             choicePending(s) -> Step.SAVE
             canDeposit(s) && !w.piggyVisited -> Step.SAVE
             else -> Step.SUMMARY
         }
     }
+
+    /** Итог открывается, когда неделя может кончиться: план подтверждён и шаг магазина пройден (I45). */
+    fun summaryOpen(s: GameState): Boolean =
+        s.phase == Phase.WEEK && s.week?.let { it.planConfirmed } == true && shopDone(s)
 
     // ---------- Событие ----------
 

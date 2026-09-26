@@ -140,14 +140,15 @@ class ChildMonkeyTest {
                     hasBackButton() && rnd.nextInt(6) == 0 -> {
                         val t = texts()
                         val fromShop = "Что возьмёшь на неделю?" in t
-                        val fromPiggy = t.any { it.startsWith("Подарок стоит") }
+                        val fromPiggy = t.any { it.startsWith("Накопил") && " из " in it }
                         compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
                         compose.mainClock.advanceTimeBy(500); compose.waitForIdle()
                         val w = store.state.value.week
-                        if (fromShop && w != null && !w.shopVisited) note("Системное «назад» из магазина не закрывает шаг",
-                            "после жеста «назад» shopVisited=false, задание F1 не засчитано, плашки нет; ${log.takeLast(6)}")
+                        // Витрина до плана ничего не отмечает — это не находка.
+                        if (fromShop && w != null && w.planConfirmed && !w.shopVisited) note("Системное «назад» из магазина не отмечает заход",
+                            "после жеста «назад» shopVisited=false; ${log.takeLast(6)}")
                         if (fromPiggy && w != null && !w.piggyVisited) note("Системное «назад» из копилки не закрывает шаг",
-                            "после жеста «назад» piggyVisited=false: нижняя кнопка снова зовёт «Отложить»; ${log.takeLast(6)}")
+                            "после жеста «назад» piggyVisited=false: записка снова зовёт «Отложить»; ${log.takeLast(6)}")
                         "назад"
                     }
                     else -> {

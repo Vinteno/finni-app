@@ -38,6 +38,7 @@ import ru.vinteno.finni.core.engine.Direction
 import ru.vinteno.finni.core.engine.requireWeek
 import ru.vinteno.finni.core.model.EventOutcome
 import ru.vinteno.finni.core.model.GameState
+import ru.vinteno.finni.core.model.Phase
 import ru.vinteno.finni.core.model.Plan
 import ru.vinteno.finni.core.model.SummaryChoice
 import ru.vinteno.finni.ui.app
@@ -102,6 +103,8 @@ private val CELL_GAP = 6.dp
  * излишек остаётся в копилке (QA-M2). При нуле в плане кнопки нет, её место пустое: пол не прыгает.
  * Цель не покупается кнопкой: «Подарок готов» ничего не списывает (I4).
  * На неделе 2 после взноса здесь же открывается задание F5 (QA-M3).
+ * До плана и после итога копилку только смотрят: кнопки «Отложить» нет, место её занято — до плана
+ * строкой «Сначала разложи монеты.», после итога пустое. После взноса и после F5 на её месте — «Домой» (I45).
  */
 @Composable
 fun PiggyScreen(s: GameState, onBack: () -> Unit) {
@@ -142,7 +145,7 @@ fun PiggyScreen(s: GameState, onBack: () -> Unit) {
                         SecondaryButton(a.t("f5.keep"), onClick = {})
                     }
                     when {
-                        ballPlate != null -> MainButton(a.t("common.ok"), onClick = { ballPlate = null })
+                        ballPlate != null -> MainButton(a.t("common.home"), onClick = ::leave)
                         // В копилке меньше цены мячика: «Понятно» засчитывает задание с наградой (I19).
                         noBall -> MainButton(a.t("common.ok"), onClick = { a.act(g::acknowledgeNoBall) })
                         else -> Column(verticalArrangement = Arrangement.spacedBy(FinniDimens.CardGap)) {
@@ -152,20 +155,31 @@ fun PiggyScreen(s: GameState, onBack: () -> Unit) {
                     }
                 }
             } else {
-                val save = s.week!!.plan.save
+                val w = s.week!!
+                val save = w.plan.save
                 val can = g.canDeposit(s)
-                MainButton(
-                    a.f("piggy.deposit", "n" to save),
-                    onClick = {
-                        // `доволен` одинаков для любой суммы взноса — разная реакция была бы оценкой.
-                        if (can && a.act(g::deposit)) {
-                            a.react(Reaction.HAPPY)
-                            // Монеты летят из кошелька в копилку; клетки заполняются по мере прилёта.
-                            a.flights.launch("wallet", "piggy", save, CoinTarget.SAVINGS, a.animationOn)
-                        }
-                    },
-                    modifier = if (can) Modifier else Modifier.alpha(0f).clearAndSetSemantics {},
-                )
+                Box(contentAlignment = Alignment.Center) {
+                    // Место кнопки занято всегда: пол не прыгает.
+                    MainButton(a.f("piggy.deposit", "n" to save), onClick = {}, modifier = Modifier.alpha(0f).clearAndSetSemantics {})
+                    when {
+                        can -> MainButton(
+                            a.f("piggy.deposit", "n" to save),
+                            onClick = {
+                                // `доволен` одинаков для любой суммы взноса — разная реакция была бы оценкой.
+                                if (a.act(g::deposit)) {
+                                    a.react(Reaction.HAPPY)
+                                    // Монеты летят из кошелька в копилку; клетки заполняются по мере прилёта.
+                                    a.flights.launch("wallet", "piggy", save, CoinTarget.SAVINGS, a.animationOn)
+                                }
+                            },
+                        )
+                        // До плана — только посмотреть: почему откладывать нельзя.
+                        !w.planConfirmed -> Txt(a.t("home.say.planFirst"), FinniText.Subtitle)
+                        // После итога — только посмотреть, место пустое.
+                        s.phase != Phase.WEEK -> {}
+                        else -> MainButton(a.t("common.home"), onClick = ::leave)
+                    }
+                }
             }
         },
     ) { viewport ->

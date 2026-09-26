@@ -2,10 +2,14 @@ package ru.vinteno.finni.ui.components
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
@@ -21,13 +25,17 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextAlign
+import ru.vinteno.finni.core.engine.Direction
 import ru.vinteno.finni.ui.art.Art
 import ru.vinteno.finni.ui.theme.FinniColors
+import ru.vinteno.finni.ui.theme.FinniText
 
 /*
- * Банка плана, полка-витрина и корзина магазина. Картинки для них закажем художнику; пока их нет,
+ * Банка плана, полка-витрина, корзина магазина и календарь на стене дома. Картинки для них закажем художнику; пока их нет,
  * они рисуются кодом по макету. Правило то же, что у вещей комнаты: есть PNG в art/app —
  * рисуется картинка, нет — рисунок кодом. Место и размер задаёт раскладка, от варианта они не
  * зависят. Цвета дерева и стекла — цвета мира, как у заглушек в Pictures.kt, а не интерфейса.
@@ -36,6 +44,7 @@ import ru.vinteno.finni.ui.theme.FinniColors
 private const val JAR_PNG = "prop_jar"
 private const val SHELF_PNG = "prop_shelf"
 private const val BASKET_PNG = "prop_basket"
+private const val CALENDAR_PNG = "prop_calendar"
 
 private val Wood = Color(0xFFD9A86C)
 private val WoodEdge = Color(0xFFB98549)
@@ -174,4 +183,67 @@ fun Basket(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Un
         },
         content = content,
     )
+}
+
+/** Промежуток между тремя банками комнаты. */
+private val JAR_GAP = 3.dp
+
+/** Ширина трёх банок комнаты высотой [height]: стоят рядом, как один предмет. */
+fun roomJarsWidth(height: Dp): Dp = height * JAR_RATIO * 3 + JAR_GAP * 2
+
+/**
+ * Три банки плана в комнате — те же банки, что на экране плана, только маленькие: Нужное, Хочу,
+ * Копилка слева направо, крышка — цвет направления. В банках — [values], шаг рядов общий по [scaleMax].
+ */
+@Composable
+fun RoomJars(values: List<Int>, scaleMax: Int, height: Dp, modifier: Modifier = Modifier) {
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(JAR_GAP), verticalAlignment = Alignment.Bottom) {
+        listOf(Direction.NEED, Direction.WANT, null).forEachIndexed { i, d ->
+            val lidEdge = when (d) {
+                Direction.NEED -> FinniColors.NeedDeep
+                Direction.WANT -> FinniColors.WantDeep
+                null -> FinniColors.SaveDeep
+            }
+            Jar(values.getOrElse(i) { 0 }, scaleMax, directionStyle(d).bg, lidEdge, height)
+        }
+    }
+}
+
+/** Календарь: высота к ширине. */
+const val CALENDAR_RATIO = 1.18f
+
+/**
+ * Календарь — листок на стене, неделя обозначена цифрой [week]. Шапка листка тёплого дерева с двумя
+ * кольцами, ниже — крупная цифра. Есть `prop_calendar.png` — картинка, цифра поверх неё; нет — рисунок
+ * кодом. Место задаёт раскладка комнаты.
+ */
+@Composable
+fun Calendar(week: Int, width: Dp, modifier: Modifier = Modifier) {
+    Art.init(LocalContext.current)
+    val png = !Art.missing(CALENDAR_PNG)
+    val height = width * CALENDAR_RATIO
+    Box(modifier.size(width, height)) {
+        Canvas(Modifier.matchParentSize()) {
+            if (png) {
+                val img = Art.image(CALENDAR_PNG) ?: return@Canvas
+                drawFitted(img, size)
+                return@Canvas
+            }
+            val r = CornerRadius(6.dp.toPx())
+            val head = size.height * 0.26f
+            drawRoundRect(FinniColors.Ink.copy(alpha = 0.10f), Offset(0f, 3.dp.toPx()), size, r)
+            drawRoundRect(Color(0xFFFFFBF2), size = size, cornerRadius = r)
+            drawRoundRect(Wood, size = Size(size.width, head), cornerRadius = r)
+            drawRect(Wood, Offset(0f, head / 2), Size(size.width, head / 2))
+            drawRoundRect(FinniColors.StrokeStrong, size = size, cornerRadius = r, style = Stroke(1.5.dp.toPx()))
+            // Кольца, на которых листок висит.
+            listOf(0.3f, 0.7f).forEach { x ->
+                drawLine(WoodEdge, Offset(size.width * x, -2.dp.toPx()), Offset(size.width * x, head * 0.55f), 3.dp.toPx(), StrokeCap.Round)
+            }
+        }
+        // Цифра — часть картинки: диктор называет календарь по подписи предмета, «Неделя 1».
+        Box(Modifier.matchParentSize().padding(top = height * 0.26f).clearAndSetSemantics {}, contentAlignment = Alignment.Center) {
+            Txt(week.toString(), FinniText.Title.copy(textAlign = TextAlign.Center))
+        }
+    }
 }

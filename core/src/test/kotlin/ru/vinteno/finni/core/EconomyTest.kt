@@ -35,13 +35,20 @@ class EconomyTest {
         return game.chooseGoal(s, goal)
     }
 
-    /** Посылка, объявление, план — до подтверждения. */
+    /**
+     * Посылка, объявление, план — и подтверждение. Без [plan] черновик дополняется до кошелька в «Хочу»:
+     * недобор блокирует подтверждение (I45), а остаток ребёнок раскладывает сам — на неделе 2 это 10 / 19 / 10.
+     */
     private fun toPlan(s0: GameState, plan: Plan? = null): GameState {
         var s = game.openParcel(s0)
         s = game.seeAnnouncement(s)
-        if (plan != null) s = game.setPlan(s, plan)
+        val p = plan ?: s.week!!.plan.let { it.copy(want = it.want + s.progress.wallet - it.total) }
+        s = game.setPlan(s, p)
         return game.confirmPlan(s)
     }
+
+    /** Зашёл в магазин, ничего не купил и пошёл дальше — в копилку: шаг магазина пройден (I45). */
+    private fun skipShop(s: GameState) = game.leavePiggy(game.leaveShop(s))
 
     private fun inShop(s: GameState, vararg cart: String) =
         game.leaveShop(game.buy(s, cart.toList(), agreedWant = true, agreedSavings = true))
@@ -86,8 +93,8 @@ class EconomyTest {
 
     @Test fun `E02 посылка не приходит при кошельке от 30`() {
         // Ничего не купить и ничего не отложить: неделя кончается с 30.
-        var s = toPlan(newGame(), Plan(0, 0, 0))
-        s = game.leaveShop(s)
+        var s = toPlan(newGame(), Plan(0, 30, 0))
+        s = skipShop(s)
         s = game.finishWeek(s, SummaryChoice.KEEP_PLAN)
         assertEquals(30, s.progress.wallet)
         s = game.openParcel(game.nextWeek(s))
@@ -142,19 +149,28 @@ class EconomyTest {
 
     @Test fun `Оставить план оставляет план этой недели`() {
         var s = toPlan(newGame(), Plan(14, 6, 10))
-        s = game.leaveShop(s)
+        // Итог открывается после магазина: зашёл и пошёл дальше в копилку (I45).
+        s = game.leavePiggy(game.leaveShop(s))
         assertEquals(Plan(14, 6, 10), game.finishWeek(s, SummaryChoice.KEEP_PLAN).nextPlan)
     }
 
-    @Test fun `E05 награда падает в копилку, кошелёк не меняется`() {
-        val s0 = toPlan(newGame())
-        val s = game.leaveShop(s0)
-        assertEquals(30, s.progress.wallet)
+    @Test fun `E05 награда падает в копилку после покупки, кошелёк — только на цену`() {
+        val s = game.buy(toPlan(newGame()), listOf("kasha", "mylo"))
+        assertEquals(22, s.progress.wallet)
         assertEquals(10, s.progress.savings)
     }
 
-    @Test fun `E06 повтор задания не даёт ничего`() {
+    @Test fun `награда F1 — только после покупки, выход из магазина без покупки её не даёт`() {
         var s = game.leaveShop(toPlan(newGame()))
+        assertEquals(0, s.progress.savings)
+        assertFalse(s.week!!.taskDone)
+        s = game.buy(game.leaveShop(s), listOf("krupa"))
+        assertEquals(10, s.progress.savings)
+        assertTrue(s.week!!.taskDone)
+    }
+
+    @Test fun `E06 повтор задания не даёт ничего`() {
+        var s = game.buy(toPlan(newGame()), listOf("krupa"))
         val once = s.progress
         s = game.leaveShop(s)
         s = game.buy(s, listOf("mylo"))
@@ -169,6 +185,22 @@ class EconomyTest {
         assertFalse(game.canConfirmPlan(s))
         assertThrows { game.confirmPlan(s) }
         assertThrows { game.quote(s, listOf("kasha")) } // до подтверждения тратить нельзя
+    }
+
+    @Test fun `недобор блокирует подтверждение так же, как перебор`() {
+        var s = game.seeAnnouncement(game.openParcel(game.nextWeek(game.finishWeek(canonicalWeek1(), SummaryChoice.KEEP_PLAN))))
+        assertEquals(39, s.progress.wallet)
+        assertEquals(Plan(10, 10, 10), s.week!!.plan)          // план по умолчанию прежний
+        assertFalse(game.canConfirmPlan(s))                     // «Осталось разложить 9 монет.»
+        assertThrows { game.confirmPlan(s) }
+        s = game.setPlan(s, Plan(10, 19, 10))
+        assertTrue(game.canConfirmPlan(s))
+        s = game.confirmPlan(s)
+        val q = game.quote(s, listOf("kacheli"))                // качели — на остаток, без копилки
+        assertFalse(q.asksWant || q.asksSavings)
+        s = game.buy(s, listOf("kacheli"))
+        assertEquals(20, s.progress.savings)
+        assertTrue("kacheli" in s.progress.inventory)
     }
 
     @Test fun `E08 ноль в Нужном и в Копилке разрешён`() {
@@ -191,23 +223,21 @@ class EconomyTest {
     }
 
     @Test fun `E10 нехватка в направлении не гасит покупку, а спрашивает`() {
-        // «Хочу» пусто, «Нужное» 5: каша и мыло стоят 8 — добор 3 из копилки.
-        var s = toPlan(newGame(), Plan(5, 0, 10))
-        s = game.leaveShop(s) // F1: +10 в копилку
+        // «Хочу» пусто, «Нужное» 5: каша и мыло стоят 8 — добор 3 из копилки, где лежит взнос 25.
+        var s = game.deposit(toPlan(newGame(), Plan(5, 0, 25)))
         val q = game.quote(s, listOf("kasha", "mylo"))
         assertFalse(q.asksWant)
         assertTrue(q.asksSavings)
         assertEquals(3, q.fromSavings)
-        assertEquals(7, q.savingsAfter) // «Останется 7 из 40» — до выбора
+        assertEquals(22, q.savingsAfter) // «Останется 22 из 40» — до выбора
         assertThrows { game.buy(s, listOf("kasha", "mylo")) } // без подтверждения нельзя
         s = game.buy(s, listOf("kasha", "mylo"), agreedSavings = true)
-        assertEquals(7, s.progress.savings)
-        assertEquals(25, s.progress.wallet)
+        assertEquals(22 + 10, s.progress.savings) // и награда F1 — после покупки
+        assertEquals(0, s.progress.wallet)
     }
 
     @Test fun `берём сколько есть в Хочу, остаток — из копилки`() {
-        var s = toPlan(newGame(), Plan(4, 2, 10))
-        s = game.leaveShop(s)
+        val s = toPlan(newGame(), Plan(4, 2, 24))
         val q = game.quote(s, listOf("kasha", "mylo")) // 8 при «Нужном» 4
         assertEquals(4, q.needShortage)
         assertEquals(2, q.needFromWant)
@@ -216,7 +246,7 @@ class EconomyTest {
 
     @Test fun `E11 уже купленная вещь не списывается`() {
         var s = game.finishWeek(canonicalWeek1(), SummaryChoice.KEEP_PLAN)
-        s = toPlan(game.nextWeek(s), Plan(10, 15, 10))
+        s = toPlan(game.nextWeek(s), Plan(10, 19, 10))
         s = game.buy(s, listOf("kacheli"))
         val w = s.progress.wallet
         val q = game.quote(s, listOf("kacheli"))
@@ -248,7 +278,12 @@ class EconomyTest {
             w!!.parcel == null -> game.openParcel(s)
             !w.announcementSeen -> game.seeAnnouncement(s)
             !w.planConfirmed -> {
-                val p = Plan(rnd.nextInt(0, 25), rnd.nextInt(0, 25), rnd.nextInt(0, 25))
+                // Чаще — весь кошелёк по направлениям, иногда — недобор или перебор.
+                val wallet = s.progress.wallet
+                val need = rnd.nextInt(0, wallet + 1)
+                val save = rnd.nextInt(0, wallet - need + 1)
+                val p = if (rnd.nextInt(4) > 0) Plan(need, wallet - need - save, save)
+                else Plan(rnd.nextInt(0, 25), rnd.nextInt(0, 25), rnd.nextInt(0, 25))
                 val s2 = game.setPlan(s, p)
                 if (game.canConfirmPlan(s2)) game.confirmPlan(s2) else s2
             }
@@ -280,7 +315,7 @@ class EconomyTest {
         var s = game.finishWeek(canonicalWeek1(), SummaryChoice.KEEP_PLAN)
         s = toPlan(game.nextWeek(s))
         s = game.deposit(game.leaveShop(s))
-        s = game.chooseBall(s, take = false) // F5 — на копилке после взноса (QA-M3)
+        s = game.leavePiggy(game.chooseBall(s, take = false)) // F5 — на копилке после взноса (QA-M3)
         assertEquals(40, s.progress.savings)
         assertTrue(game.goalReached(s)) // «Накопил 40. Подарок готов.» — ничего не списано
         s = game.finishWeek(s, SummaryChoice.KEEP_PLAN)
@@ -292,13 +327,13 @@ class EconomyTest {
     }
 
     @Test fun `E16 при закрытой цели взнос исполняется, как запланирован, излишек в копилке`() {
-        // Дешёвая цель 30: взнос 22 и награда 10 закрывают её на первой неделе.
+        // Дешёвая цель 30: взнос 22 и награда 10 за покупку закрывают её на первой неделе.
         var s = toPlan(newGame("podarok_myach"), Plan(8, 0, 22))
-        s = game.leaveShop(s)
+        s = game.buy(s, listOf("krupa", "mylo"))
         s = game.deposit(s)
         assertEquals(32, s.progress.savings)
         s = game.finishWeek(s, SummaryChoice.TAKE_ACTUAL)
-        s = toPlan(game.nextWeek(s), Plan(8, 0, 10))
+        s = toPlan(game.nextWeek(s), Plan(8, 14, 10))            // 2 + 30 = 32 в кошельке
         assertTrue(game.goalReached(s))
         assertTrue(game.canDeposit(s))                       // QA-M2: взнос по плану предлагается
         val wallet = s.progress.wallet
@@ -309,8 +344,8 @@ class EconomyTest {
     }
 
     @Test fun `E17 счётчики только растут`() {
-        var s = toPlan(newGame(), Plan(0, 0, 0))
-        s = game.leaveShop(s)
+        var s = toPlan(newGame(), Plan(0, 30, 0))
+        s = skipShop(s)
         s = game.finishWeek(s, SummaryChoice.KEEP_PLAN)
         assertEquals(0, s.progress.marksCare)
         assertEquals(1, s.progress.marksPlan)
@@ -329,9 +364,9 @@ class EconomyTest {
 
     @Test fun `событие играется всегда — исход Б ничего не списывает`() {
         var s = toPlan(newGame("podarok_samokat"))
-        s = game.leaveShop(s)
+        s = skipShop(s)
         s = game.finishWeek(s, SummaryChoice.KEEP_PLAN)
-        s = toPlan(game.nextWeek(s))
+        s = skipShop(toPlan(game.nextWeek(s)))
         s = game.finishWeek(s, SummaryChoice.KEEP_PLAN)
         assertEquals(Phase.EVENT, s.phase)
         val before = s.progress.savings
@@ -346,7 +381,7 @@ class EconomyTest {
         // Выбор — на копилке после взноса недели 2 (QA-M3): в копилке 20 + взнос.
         fun week2(goal: String, save: Int): GameState {
             val s = game.finishWeek(canonicalWeek1(goal), SummaryChoice.KEEP_PLAN)
-            return game.deposit(toPlan(game.nextWeek(s), Plan(10, 10, save)))
+            return game.deposit(toPlan(game.nextWeek(s), Plan(10, 29 - save, save))) // в кошельке 39
         }
         val cheap10 = game.ballOffer(week2("podarok_myach", 10))
         assertTrue(cheap10.available)
@@ -369,9 +404,9 @@ class EconomyTest {
     }
 
     @Test fun `F5 — при копилке меньше 15 выбор не предлагается`() {
-        var s = toPlan(newGame(), Plan(10, 10, 0))
-        s = game.finishWeek(game.leaveShop(s), SummaryChoice.KEEP_PLAN) // в копилке только награда 10
-        s = toPlan(game.nextWeek(s), Plan(10, 10, 0))
+        var s = toPlan(newGame(), Plan(10, 20, 0))
+        s = game.finishWeek(skipShop(s), SummaryChoice.KEEP_PLAN) // без покупки нет и награды: копилка 0
+        s = toPlan(game.nextWeek(s), Plan(10, 20, 0))
         assertTrue(game.choiceOpen(s))                  // при нуле в плане задание открыто сразу
         assertFalse(game.ballOffer(s).available)
     }
@@ -389,19 +424,19 @@ class EconomyTest {
     }
 
     @Test fun `QA-M3 взнос 5 открывает мячик тому, кто откладывал`() {
-        var s = toPlan(newGame(), Plan(10, 10, 0))
-        s = game.finishWeek(game.leaveShop(s), SummaryChoice.KEEP_PLAN) // награда 10
-        s = game.deposit(toPlan(game.nextWeek(s), Plan(10, 10, 5)))      // 10 + 5 = 15
+        var s = toPlan(newGame(), Plan(10, 20, 0))
+        s = game.finishWeek(game.buy(s, listOf("kasha", "mylo")), SummaryChoice.KEEP_PLAN) // награда 10, в кошельке 22
+        s = game.deposit(toPlan(game.nextWeek(s), Plan(10, 37, 5)))      // 52 в кошельке; 10 + 5 = 15
         assertTrue(game.ballOffer(s).available)
     }
 
     @Test fun `QA-M3 шаг Копилка на неделе 2 стоит, пока задание не пройдено, даже при нуле`() {
-        var s = toPlan(newGame(), Plan(10, 10, 0))
-        s = game.finishWeek(game.leaveShop(s), SummaryChoice.KEEP_PLAN)
-        s = toPlan(game.nextWeek(s), Plan(10, 10, 0))
+        var s = toPlan(newGame(), Plan(10, 20, 0))
+        s = game.finishWeek(skipShop(s), SummaryChoice.KEEP_PLAN)
+        s = toPlan(game.nextWeek(s), Plan(10, 20, 0))
         s = game.leaveShop(s)
-        assertEquals(Step.SAVE, game.nextStep(s))
-        s = game.leavePiggy(s)                          // вышел, не ответив, — шаг остаётся
+        assertEquals(Step.SHOP, game.nextStep(s))       // зашёл и вышел без покупки — шаг остаётся
+        s = game.leavePiggy(s)                          // пошёл в копилку — магазин пройден, вышел, не ответив
         assertEquals(Step.SAVE, game.nextStep(s))
         s = game.acknowledgeNoBall(s)
         assertEquals(Step.SUMMARY, game.nextStep(s))
@@ -410,20 +445,20 @@ class EconomyTest {
 
     @Test fun `неделя 2 с перенесённым остатком — качели помещаются`() {
         var s = game.finishWeek(canonicalWeek1(), SummaryChoice.KEEP_PLAN)
-        s = toPlan(game.nextWeek(s), Plan(10, 15, 10)) // 35 из 39
+        s = toPlan(game.nextWeek(s), Plan(10, 19, 10)) // весь кошелёк 39
         val q = game.quote(s, listOf("kacheli"))
         assertFalse(q.asksWant || q.asksSavings)
         s = game.buy(s, listOf("kacheli"))
         assertTrue(s.chapter.wantBought)
     }
 
-    @Test fun `нижняя кнопка ведёт по шагам недели`() {
+    @Test fun `записка ведёт по шагам недели`() {
         var s = newGame()
         val steps = mutableListOf(game.nextStep(s))
         s = game.openParcel(s); steps += game.nextStep(s)
         s = game.seeAnnouncement(s); steps += game.nextStep(s)
         s = game.confirmPlan(s); steps += game.nextStep(s)
-        s = game.leaveShop(game.buy(s, listOf("kasha", "mylo"))); steps += game.nextStep(s)
+        s = game.buy(s, listOf("kasha", "mylo")); steps += game.nextStep(s) // покупка закрывает магазин и без выхода
         s = game.feed(s); steps += game.nextStep(s)
         s = game.wash(s); steps += game.nextStep(s)
         s = game.leavePiggy(s); steps += game.nextStep(s) // вышел, не отложив — шаг закрыт
@@ -436,8 +471,38 @@ class EconomyTest {
 
     @Test fun `при Копилке 0 шага Отложить нет`() {
         var s = toPlan(newGame(), Plan(10, 20, 0))
-        s = game.leaveShop(s)
+        s = game.buy(s, listOf("krupa"))
+        s = game.feed(s)
         assertEquals(Step.SUMMARY, game.nextStep(s))
+    }
+
+    @Test fun `шаг магазина — вход без покупки не закрывает, переход в копилку закрывает`() {
+        var s = toPlan(newGame())
+        assertEquals(Step.SHOP, game.nextStep(s))
+        s = game.leaveShop(s)
+        assertEquals(Step.SHOP, game.nextStep(s))
+        assertFalse(game.summaryOpen(s))                // «Итог — в конце недели.»
+        assertThrows { game.finishWeek(s, SummaryChoice.KEEP_PLAN) }
+        s = game.leavePiggy(s)
+        assertEquals(Step.SUMMARY, game.nextStep(s))    // вышел из копилки, не отложив: шаг «Отложить» закрыт
+        assertTrue(game.summaryOpen(s))
+    }
+
+    @Test fun `копилка до плана — только посмотреть, шагов не закрывает`() {
+        var s = game.seeAnnouncement(game.openParcel(newGame()))
+        s = game.leavePiggy(s)
+        assertFalse(s.week!!.piggyVisited)
+        s = game.leaveShop(game.confirmPlan(s))
+        assertEquals(Step.SHOP, game.nextStep(s))
+    }
+
+    @Test fun `ничего не покупал всю неделю — итог доступен, неделя кончается`() {
+        var s = toPlan(newGame())
+        s = game.leavePiggy(game.deposit(game.leaveShop(s)))
+        assertTrue(game.summaryOpen(s))
+        s = game.finishWeek(s, SummaryChoice.KEEP_PLAN)
+        assertEquals(Phase.AFTER_SUMMARY, s.phase)
+        assertEquals(Step.NEXT_WEEK, game.nextStep(s))
     }
 
     @Test fun `подписи экрана цели — хватит с запасом, ровно, не хватит при взносе 10`() {
@@ -467,11 +532,11 @@ class EconomyTest {
 
     @Test fun `QA-B1 после итога и после события деньги не тратятся`() {
         var s = toPlan(newGame(), Plan(10, 10, 10))
-        s = game.finishWeek(game.leaveShop(s), SummaryChoice.KEEP_PLAN) // взнос не сделан, еда не куплена
+        s = game.finishWeek(skipShop(s), SummaryChoice.KEEP_PLAN) // взнос не сделан, еда не куплена
         assertFalse(game.canDeposit(s))
         assertThrows { game.buy(s, listOf("kasha")) }
         assertThrows { game.deposit(s) }
-        s = game.finishWeek(game.leaveShop(toPlan(game.nextWeek(s))), SummaryChoice.KEEP_PLAN)
+        s = game.finishWeek(skipShop(toPlan(game.nextWeek(s))), SummaryChoice.KEEP_PLAN)
         s = game.playEvent(s)
         assertThrows { game.buy(s, listOf("kacheli")) }
         assertThrows { game.chooseBall(s, true) }
@@ -480,7 +545,7 @@ class EconomyTest {
 
     @Test fun `QA-B6 объяснение не повторяет предмет, купленный дважды`() {
         val ex = ru.vinteno.finni.core.engine.Explain(game)
-        assertEquals("Мы купили крупу и мыло.", ex.did(listOf("krupa", "mylo", "krupa")))
+        assertEquals("Мы купили крупу и мыло", ex.did(listOf("krupa", "mylo", "krupa")))
     }
 
     @Test fun `QA-M1 полка закрыта до конца недели после покупки`() {

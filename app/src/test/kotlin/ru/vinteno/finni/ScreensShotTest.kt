@@ -88,10 +88,11 @@ class ScreensShotTest {
     }
 
     private fun week1(): GameState = game.chooseGoal(base(), "podarok_kniga")
+    /** Посылка и объявление; без [p] черновик дополняется до кошелька в «Хочу» — недобор не подтвердить (I45). */
     private fun planned(s: GameState, p: Plan? = null): GameState {
-        var x = game.seeAnnouncement(game.openParcel(s))
-        if (p != null) x = game.setPlan(x, p)
-        return x
+        val x = game.seeAnnouncement(game.openParcel(s))
+        val plan = p ?: x.week!!.plan.let { it.copy(want = it.want + x.progress.wallet - it.total) }
+        return game.setPlan(x, plan)
     }
 
     private fun shot(name: String, state: GameState, scale: Float = 1f, content: @Composable (GameState) -> Unit) {
@@ -130,7 +131,7 @@ class ScreensShotTest {
     // Исход «не хватило» — строк больше: на телефоне 360 × 640 всё в один ряд и без прокрутки.
     @Test fun eventPhone() = shot("13c_event_b_640", run {
         var s = game.deposit(game.leaveShop(week2()))
-        s = game.chooseBall(s, true)
+        s = game.leavePiggy(game.chooseBall(s, true))
         game.finishWeek(s, SummaryChoice.KEEP_PLAN)
     }) { EventScreen(it) {} }
     @Test fun homeBig() = shot("09b_home_x2", game.leaveShop(game.buy(game.confirmPlan(planned(week1())), listOf("kasha", "mylo"))), 2f) { HomeScreen(it) {} }
@@ -158,12 +159,12 @@ class ScreensShotTest {
     @Test fun piggyF5() = shot("12_piggy_f5", game.deposit(game.leaveShop(week2()))) { PiggyScreen(it) {} }
     @Test fun event() = shot("13_event", run {
         var s = game.deposit(game.leaveShop(week2()))
-        s = game.chooseBall(s, false)
+        s = game.leavePiggy(game.chooseBall(s, false))
         game.finishWeek(s, SummaryChoice.KEEP_PLAN)
     }) { EventScreen(it) {} }
     @Test fun eventB() = shot("13b_event_b", run {
         var s = game.deposit(game.leaveShop(week2()))
-        s = game.chooseBall(s, true)
+        s = game.leavePiggy(game.chooseBall(s, true))
         game.finishWeek(s, SummaryChoice.KEEP_PLAN)
     }) { EventScreen(it) {} }
 
@@ -178,7 +179,7 @@ class ScreensShotTest {
     }
 
     @Test fun dialogSavings() {
-        val s = game.leaveShop(game.confirmPlan(planned(week1(), Plan(4, 0, 10))))
+        val s = savingsShop()
         shot("15_dialog_savings", s) { ShopScreen(it) {} }
         listOf("Каша", "Мыло").forEach { compose.onNodeWithContentDescription(it).performClick() }
         compose.onNodeWithText("Купить").performClick()
@@ -202,7 +203,7 @@ class ScreensShotTest {
             }
         }
         compose.mainClock.advanceTimeBy(500)
-        compose.onNodeWithText("Открой посылку").performClick()
+        compose.onNodeWithContentDescription("Посылка").performClick()
         compose.mainClock.advanceTimeBy(16)
         assertEquals(6, model.flights.flights.size)
         assertEquals(6, model.flights.walletPending)
@@ -230,7 +231,7 @@ class ScreensShotTest {
             }
         }
         compose.mainClock.advanceTimeBy(500)
-        compose.onNodeWithText("Покорми").performClick()
+        compose.onNodeWithContentDescription("Миска").performClick()
         // Прыжки к миске: в игре уже сыт, на экране еда ещё лежит.
         compose.mainClock.advanceTimeBy(500)
         assertEquals(true, store.state.value.week!!.fed)
@@ -244,7 +245,7 @@ class ScreensShotTest {
 
     @Test fun feedNoAnimation() {
         shot("17d_feed_no_anim", game.leaveShop(game.buy(game.confirmPlan(planned(week1())), listOf("krupa", "mylo")))) { HomeScreen(it) {} }
-        compose.onNodeWithText("Покорми").performClick()
+        compose.onNodeWithContentDescription("Миска").performClick()
         compose.waitForIdle()
         compose.onRoot().captureRoboImage("build/shots/17d_feed_no_anim.png")
     }
@@ -266,13 +267,13 @@ class ScreensShotTest {
 
     private fun outcomeA(): GameState {
         var s = game.deposit(game.leaveShop(week2()))
-        s = game.chooseBall(s, false)
+        s = game.leavePiggy(game.chooseBall(s, false))
         return game.finishWeek(s, SummaryChoice.KEEP_PLAN)
     }
 
     private fun outcomeB(): GameState {
         var s = game.deposit(game.leaveShop(week2()))
-        s = game.chooseBall(s, true)
+        s = game.leavePiggy(game.chooseBall(s, true))
         return game.finishWeek(s, SummaryChoice.KEEP_PLAN)
     }
 
@@ -384,7 +385,7 @@ class ScreensShotTest {
     /** Кнопка «Дальше» на последней реплике заканчивает историю: дальше экран внешности. */
     @Test fun storyEnds() {
         val store = onboarding(GameState()) { StoryScreen(GameState(), autoPlay = false, start = 12) }
-        compose.onNodeWithText("Сначала выбери мне цвет.").assertExists()
+        compose.onNodeWithText("Сначала выбери мне цвет").assertExists()
         compose.onNodeWithText("Дальше").performClick()
         compose.waitForIdle()
         assertTrue(store.state.value.profile.introSeen)
@@ -423,7 +424,7 @@ class ScreensShotTest {
     /** Мех и аксессуар сохраняются ходом «Дальше»; реплика после выбора меха меняется. */
     @Test fun lookSaves() {
         val store = onboarding(fresh()) { LookScreen(fresh()) }
-        compose.onNodeWithText("Выбери мне цвет.").assertExists()
+        compose.onNodeWithText("Выбери мне цвет").assertExists()
         brownBow()
         compose.onNodeWithText("Что мне надеть?").assertExists()
         compose.onNodeWithText("Дальше").performClick()
@@ -455,7 +456,8 @@ class ScreensShotTest {
     }
 
     // Окна нехватки: «Хочу», копилка, мало монет. Зоны — только кнопок окна: экран под ним закрыт.
-    private fun savingsShop() = game.leaveShop(game.confirmPlan(planned(week1(), Plan(4, 0, 10))))
+    // «Хочу» пусто, «Нужное» 4, в копилке взнос 26: добор 4 из копилки. Весь кошелёк разложен — иначе план не подтвердить (I45).
+    private fun savingsShop() = game.leaveShop(game.deposit(game.confirmPlan(planned(week1(), Plan(4, 0, 26)))))
     // Нехватка в «Нужном» при деньгах в «Хочу»: каша и мыло стоят 8, в «Нужном» 5.
     private fun wantShop() = game.confirmPlan(planned(week1(), Plan(5, 15, 10)))
     private fun fewSavingsShop() = savingsShop().let { it.copy(progress = it.progress.copy(savings = 2)) }
