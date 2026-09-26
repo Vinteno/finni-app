@@ -64,6 +64,6 @@ class TextLintTest {
             1 to "монета", 2 to "монеты", 4 to "монеты", 5 to "монет", 11 to "монет", 12 to "монет",
             21 to "монета", 22 to "монеты", 25 to "монет", 30 to "монет", 31 to "монета", 39 to "монет",
         ))
-        assertTrue(texts.format("parcel.amount", "n" to 39) == "Теперь у тебя 39 монет.")
+        assertTrue(texts.format("parcel.amount", "n" to 39) == "Теперь у тебя 39 монет")
     }
 }
