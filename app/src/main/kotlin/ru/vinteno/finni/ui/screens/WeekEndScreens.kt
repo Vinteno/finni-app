@@ -31,6 +31,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -45,10 +47,10 @@ import ru.vinteno.finni.core.model.SummaryChoice
 import ru.vinteno.finni.ui.app
 import ru.vinteno.finni.ui.components.ChoiceButton
 import ru.vinteno.finni.ui.components.Coin
-import ru.vinteno.finni.ui.components.CoinRoll
 import ru.vinteno.finni.ui.components.EqualColumn
 import ru.vinteno.finni.ui.components.FitColumn
 import ru.vinteno.finni.ui.components.Icon
+import ru.vinteno.finni.ui.components.Jar
 import ru.vinteno.finni.ui.components.KiraFigure
 import ru.vinteno.finni.ui.components.MainButton
 import ru.vinteno.finni.ui.components.Picture
@@ -269,8 +271,6 @@ fun SummaryScreen(s: GameState, onBack: () -> Unit, onDone: () -> Unit) {
     val a = app()
     val g = a.game
     val sum = g.summary(s)
-    val actual = sum.fact.total
-    val scale = maxOf(sum.planned, actual, sum.reward, 1)
 
     fun choose(c: SummaryChoice) {
         if (a.act { g.finishWeek(it, c) }) onDone()
@@ -300,9 +300,9 @@ fun SummaryScreen(s: GameState, onBack: () -> Unit, onDone: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Txt(a.t("summary.title"), FinniText.Subtitle)
-                FactRow(a.t("summary.planned"), sum.planned, scale)
-                FactRow(a.t("summary.actual"), actual, scale)
-                FactRow(a.t("summary.reward"), sum.reward, scale)
+                // План против факта — по направлениям, банками, как на экране плана (правка 27.09, I77): суммы
+                // «Задумали 30 — Вышло 18» не говорили, в какой банке разница.
+                PlanFactGrid(s.requireWeek().plan, sum.fact, sum.reward)
                 Box(Modifier.height(2.dp))
                 // Объяснение — откуда разница, словами (§10.11).
                 SoftExplain(a.explain.summaryLines(s)) { PetIcon(s) }
@@ -336,16 +336,66 @@ private fun ChoiceFace(name: String, p: Plan) {
 
 private val ChoiceText = FinniText.Body.copy(fontWeight = FontWeight.Bold)
 
+/**
+ * Сетка итога: столбцы — Нужное, Хочу, Копилка (иконки, как на плане и в кнопках ниже), строки — «Задумали»
+ * и «Вышло» маленькими банками с числом, под копилкой — «За задание». Слов не больше, чем было: подписи
+ * столбцов — иконки. Все банки одного масштаба; ни одна клетка не выделена цветом оценки (гайд, инвариант 7).
+ * Крупный шрифт — подпись строки над её банками.
+ */
 @Composable
-private fun FactRow(label: String, value: Int, scale: Int) {
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Txt(label, ChoiceText, Modifier.weight(1f))
-            Txt(value.toString(), FinniText.Subtitle)
+private fun PlanFactGrid(plan: Plan, fact: Plan, reward: Int) {
+    val a = app()
+    val dirs = listOf<Direction?>(Direction.NEED, Direction.WANT, null)
+    val scale = maxOf(plan.need, plan.want, plan.save, fact.need, fact.want, fact.save, 1)
+    val labels = listOf(a.t("summary.planned"), a.t("summary.actual"), a.t("summary.reward"))
+    val labelW = labels.maxOf { textWidth(it, ChoiceText) } + 8.dp
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val stacked = labelW > maxWidth * 0.36f
+        val lead = if (stacked) 0.dp else labelW
+        @Composable
+        fun line(label: String, cells: @Composable (Direction?) -> Unit) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                if (stacked) Txt(label, ChoiceText)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    if (!stacked) Txt(label, ChoiceText, Modifier.width(lead))
+                    dirs.forEach { d -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { cells(d) } }
+                }
+            }
         }
-        CoinRoll(value, scale)
+        @Composable
+        fun jar(d: Direction?, v: Int) {
+            val st = directionStyle(d)
+            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Jar(v, scale, st.bg, st.color, GRID_JAR)
+                Txt(v.toString(), FinniText.Subtitle)
+            }
+        }
+        fun Plan.of(d: Direction?) = when (d) { Direction.NEED -> need; Direction.WANT -> want; null -> save }
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Шапка столбцов: иконка направления, для диктора — его название.
+            Row(Modifier.fillMaxWidth()) {
+                Box(Modifier.width(lead))
+                dirs.forEach { d ->
+                    val st = directionStyle(d)
+                    Box(Modifier.weight(1f).semantics { contentDescription = a.t(st.labelKey) }, contentAlignment = Alignment.Center) {
+                        Icon(st.icon, st.color, 24.dp)
+                    }
+                }
+            }
+            line(labels[0]) { d -> jar(d, plan.of(d)) }
+            line(labels[1]) { d -> jar(d, fact.of(d)) }
+            // Награда за задание приходит в копилку — число под копилкой, с монетой.
+            line(labels[2]) { d ->
+                if (d == null) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Coin(20.dp)
+                    Txt(reward.toString(), FinniText.Subtitle)
+                }
+            }
+        }
     }
 }
+
+private val GRID_JAR = 40.dp
 
 /**
  * Событие главы — сценарии, шаг 9: день рождения Киры, первый снег, новоселье. Играется всегда (I6).
