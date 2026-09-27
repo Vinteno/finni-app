@@ -148,29 +148,35 @@ fun CoinRow(value: Int, scaleMax: Int, modifier: Modifier = Modifier) {
  * клетки по одной с задержкой 60 мс. Число рядом не анимируется.
  */
 @Composable
-fun ProgressCells(filled: Int, total: Int, modifier: Modifier = Modifier, cell: Dp = 24.dp) {
+fun ProgressCells(filled: Int, total: Int, modifier: Modifier = Modifier, cell: Dp = 24.dp, perRow: Int = total) {
     val animate = ru.vinteno.finni.ui.app().animationOn
     val shown = remember { mutableIntStateOf(filled) }
     val from = shown.intValue
     LaunchedEffect(filled) { shown.intValue = filled }
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        repeat(total) { i ->
-            val on = i < filled
-            val grow = remember(i) { Animatable(1f) }
-            LaunchedEffect(on) {
-                if (on && i >= from && animate) {
-                    grow.snapTo(0.8f)
-                    kotlinx.coroutines.delay(((i - from) * 60).toLong())
-                    grow.animateTo(1f, tween(200, easing = LinearOutSlowInEasing))
+    // Длинная цель (12 клеток в главе 3) — двумя рядами: иначе клетки мельчают или плашка не встаёт рядом с запиской.
+    val row = perRow.coerceIn(1, maxOf(1, total))
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        (0 until total step row).forEach { start ->
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                (start until minOf(total, start + row)).forEach { i ->
+                    val on = i < filled
+                    val grow = remember(i) { Animatable(1f) }
+                    LaunchedEffect(on) {
+                        if (on && i >= from && animate) {
+                            grow.snapTo(0.8f)
+                            kotlinx.coroutines.delay(((i - from) * 60).toLong())
+                            grow.animateTo(1f, tween(200, easing = LinearOutSlowInEasing))
+                        }
+                    }
+                    val shape = RoundedCornerShape(minOf(FinniDimens.RadiusSmall, cell / 4))
+                    Box(
+                        Modifier.size(cell)
+                            .graphicsLayer { scaleX = grow.value; scaleY = grow.value }
+                            .background(if (on) FinniColors.Coin else FinniColors.Surface, shape)
+                            .border(FinniDimens.Outline, if (on) FinniColors.CoinEdge else FinniColors.StrokeStrong, shape),
+                    )
                 }
             }
-            val shape = RoundedCornerShape(minOf(FinniDimens.RadiusSmall, cell / 4))
-            Box(
-                Modifier.size(cell)
-                    .graphicsLayer { scaleX = grow.value; scaleY = grow.value }
-                    .background(if (on) FinniColors.Coin else FinniColors.Surface, shape)
-                    .border(FinniDimens.Outline, if (on) FinniColors.CoinEdge else FinniColors.StrokeStrong, shape),
-            )
         }
     }
 }

@@ -30,6 +30,16 @@ private data class Flex(val min: Dp, val max: Dp, val order: Int) : ParentDataMo
  */
 fun Modifier.flex(min: Dp, max: Dp = Dp.Infinity, order: Int = 0): Modifier = then(Flex(min, maxOf(min, max), order))
 
+private object Optional : ParentDataModifier {
+    override fun Density.modifyParentData(parentData: Any?): Any = this@Optional
+}
+
+/**
+ * Неизменная часть [FitColumn], которую можно убрать: гибкие ужаты до минимумов, а места всё равно нет —
+ * она не показывается, и столбец не прокручивается из-за неё. Для строк, без которых экран понятен.
+ */
+fun Modifier.optional(): Modifier = then(Optional)
+
 /**
  * Столбец высотой не меньше [viewport]: неизменные дети меряются по своему размеру, гибкие ([flex])
  * получают остаток. Ширина детей — ширина столбца.
@@ -41,7 +51,14 @@ fun FitColumn(viewport: Dp, modifier: Modifier = Modifier, gap: Dp = 0.dp, conte
         val g = gap.roundToPx()
         val flex = ms.map { it.parentData as? Flex }
         val fixed = ms.mapIndexed { i, m -> if (flex[i] == null) m.measure(Constraints(maxWidth = w)) else null }
-        val room = viewport.roundToPx() - fixed.sumOf { it?.height ?: 0 } - g * (ms.size - 1).coerceAtLeast(0)
+        // Места нет и на минимумах — сначала уходят необязательные строки.
+        val need = fixed.sumOf { it?.height ?: 0 } + flex.sumOf { it?.min?.roundToPx() ?: 0 } + g * (ms.size - 1).coerceAtLeast(0)
+        val dropped = mutableSetOf<Int>()
+        var excess = need - viewport.roundToPx()
+        ms.indices.filter { ms[it].parentData === Optional }.forEach { i ->
+            if (excess > 0) { dropped += i; excess -= fixed[i]?.height ?: 0 }
+        }
+        val room = viewport.roundToPx() - fixed.filterIndexed { i, _ -> i !in dropped }.sumOf { it?.height ?: 0 } - g * (ms.size - 1).coerceAtLeast(0)
         val minPx = flex.map { it?.min?.roundToPx() ?: 0 }
         val size = IntArray(ms.size) { i ->
             val f = flex[i] ?: return@IntArray 0
@@ -68,11 +85,12 @@ fun FitColumn(viewport: Dp, modifier: Modifier = Modifier, gap: Dp = 0.dp, conte
             grow.forEachIndexed { k, i -> size[i] += -over / grow.size + if (k < -over % grow.size) 1 else 0 }
         }
         val placed = ms.mapIndexed { i, m -> fixed[i] ?: m.measure(Constraints(maxWidth = w, minHeight = size[i], maxHeight = size[i])) }
-        val total = placed.sumOf { it.height } + g * (ms.size - 1).coerceAtLeast(0)
+        val shown = placed.filterIndexed { i, _ -> i !in dropped }
+        val total = shown.sumOf { it.height } + g * (shown.size - 1).coerceAtLeast(0)
         val h = maxOf(total, viewport.roundToPx()).coerceIn(c.minHeight, c.maxHeight)
         layout(w, h) {
             var y = 0
-            placed.forEach { it.place(0, y); y += it.height + g }
+            shown.forEach { it.place(0, y); y += it.height + g }
         }
     }
 }

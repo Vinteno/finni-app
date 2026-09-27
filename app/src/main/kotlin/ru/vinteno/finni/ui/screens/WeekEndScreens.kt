@@ -241,7 +241,9 @@ private fun PiggyRoom(s: GameState, goal: ru.vinteno.finni.core.content.Goal, sa
                     ProgressCells(minOf(arrived, goal.price) / COINS_PER_CELL, cells, Modifier.anchor(a.flights, "piggy"), cell = cell)
                 }
                 Txt(
-                    if (reached) a.explain.chapterText(s, "piggy.ready", "n" to saved, "goal" to goal.price)
+                    // Больше цены — «Накопили 30 из 20» читается как ошибка счёта: цена уже не нужна (правка 27.09).
+                    if (saved > goal.price) a.explain.chapterText(s, "piggy.over", "n" to saved)
+                    else if (reached) a.explain.chapterText(s, "piggy.ready", "n" to saved, "goal" to goal.price)
                     else a.f("piggy.saved", "n" to saved, "goal" to goal.price),
                     FinniText.Subtitle,
                 )
@@ -442,6 +444,12 @@ private fun Heroes(s: GameState, goalId: String, given: Boolean, width: Dp, heig
 private const val SNOW_WINDOW_K = 0.42f
 private const val LYING_K = 0.46f
 
+/** Поза лёжа на своей рамке: середина туловища (без ушей) по ширине, левый край туловища и пустая полоса под ним. */
+private const val LYING_BODY_CX = 0.41f
+private const val LYING_BODY_LEFT = 0.01f
+private const val LYING_BODY_W = 0.8f
+private const val LYING_FOOT = 0.1f
+
 /**
  * Первый снег — сценарий главы 2, шаг 9. На стене окно со снегом, целым окном на замену (без падающего
  * снега). Исход А: Финни свернулся на пледе или лежанке, у печки — рядом с ней. Исход Б: Финни свернулся
@@ -461,15 +469,24 @@ private fun SnowScene(s: GameState, goalId: String, given: Boolean, width: Dp, h
         val name = s.profile.petName
         if (given) {
             val gw = if (goalId == "pechka") lw * 0.8f else lw * 1.25f
+            val gh = gw * thingRatio(goalId)
             val onTop = goalId != "pechka"
-            // Вещь — на полу слева; на пледе и лежанке Финни лежит сверху, у печки — справа от неё.
-            Box(Modifier.align(Alignment.BottomStart).padding(start = 4.dp)) {
+            // Вещь — на полу левее середины, чтобы справа наверху оставалось окно; не у самого края (правка 27.09:
+            // лежанка резалась краем, а Финни лежал на её бортике, а не внутри).
+            val pair = if (onTop) gw else gw + 8.dp + lw * LYING_BODY_W
+            val itemX = ((width - pair) * 0.3f).coerceAtLeast(4.dp)
+            Box(Modifier.align(Alignment.BottomStart).offset(x = itemX)) {
                 Appear("event:$goalId") { Thing(goalId, gw, description = g.content.goal(goalId).name) }
             }
-            val gh = gw * thingRatio(goalId)
-            val x = if (onTop) 4.dp + (gw - lw) / 2 else 4.dp + gw + 8.dp
-            val lift = if (onTop) gh * 0.45f else 0.dp
-            Box(Modifier.align(Alignment.BottomStart).offset(x = x, y = -lift)) {
+            // Середина туловища — над серединой вещи; низ туловища — на подушке лежанки или на пледе. У печки —
+            // справа от неё, на полу.
+            val x = if (onTop) itemX + gw / 2 - lw * LYING_BODY_CX else itemX + gw + 8.dp - lw * LYING_BODY_LEFT
+            val seat = when (goalId) {
+                "lezhanka" -> gh * 0.3f
+                "plaid" -> gh * 0.42f
+                else -> 0.dp
+            }
+            Box(Modifier.align(Alignment.BottomStart).offset(x = x, y = -(seat - lh * LYING_FOOT))) {
                 FinniLying(s.profile.fur, s.profile.accessory, wear, Modifier.width(lw).height(lh), description = name)
             }
         } else {

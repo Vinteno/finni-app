@@ -211,7 +211,11 @@ private fun GoalTab(s: GameState) {
             val cell = ((maxWidth - 4.dp * (cells - 1)) / cells).coerceIn(16.dp, 32.dp)
             ProgressCells(minOf(s.progress.savings, goal.price) / 5, cells, cell = cell)
         }
-        Txt(a.f("diary.saved", "n" to s.progress.savings, "goal" to goal.price), FinniText.Subtitle)
+        Txt(
+            if (s.progress.savings > goal.price) a.explain.chapterText(s, "piggy.over", "n" to s.progress.savings)
+            else a.f("diary.saved", "n" to s.progress.savings, "goal" to goal.price),
+            FinniText.Subtitle,
+        )
     }
 }
 

@@ -71,6 +71,7 @@ import ru.vinteno.finni.ui.components.Txt
 import ru.vinteno.finni.ui.components.bigFont
 import ru.vinteno.finni.ui.components.directionStyle
 import ru.vinteno.finni.ui.components.flex
+import ru.vinteno.finni.ui.components.optional
 import ru.vinteno.finni.ui.components.scrollHint
 import ru.vinteno.finni.ui.components.softPlate
 import ru.vinteno.finni.ui.components.textHeight
@@ -106,6 +107,8 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
     var agreedWant by remember { mutableStateOf(false) }
     // Объяснение после покупки — здесь же, на месте корзины (I45); дома оно больше не показывается.
     var explained by remember { mutableStateOf<List<String>?>(null) }
+    // Что купили только что: на месте полок — эти вещи на одной полке и строка «Купили …» заголовком.
+    var bought by remember { mutableStateOf<Bought?>(null) }
     // Объяснение F3 — с «Понятно», после него покупки продолжаются.
     var dupPlate by remember { mutableStateOf<List<String>?>(null) }
     val showcase = !w.planConfirmed
@@ -145,8 +148,10 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
             return
         }
         if (a.act { g.buy(it, cart, agreedWant = withWant, agreedSavings = withSavings, pay = pay) }) {
-            explained = if (pay != null) a.explain.afterPay(a.state.value, pay == PayChoice.EXACT)
-            else a.explain.afterShop(a.state.value, q.items.map { it.id })
+            val shopLines = a.explain.afterShop(a.state.value, q.items.map { it.id })
+            // Заголовок — что купили; в плашке внизу — остальное объяснение (для F2 — все три строки оплаты).
+            explained = if (pay != null) a.explain.afterPay(a.state.value, pay == PayChoice.EXACT) else shopLines.drop(1)
+            bought = Bought(shopLines.first(), pieces(q.items, a::t))
             tiers.clear(); wantPicked = false
             // `доволен` одинаков для любого набора — инвариант 8.
             a.react(Reaction.HAPPY)
@@ -217,7 +222,7 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
                             Column(
                                 Modifier.fillMaxWidth().softPlate(FinniDimens.RadiusCard - 6.dp).padding(horizontal = 14.dp, vertical = 10.dp),
                                 verticalArrangement = Arrangement.spacedBy(4.dp),
-                            ) { after.forEachIndexed { i, l -> Txt(l, if (i == 0) FinniText.Button else FinniText.Body) } }
+                            ) { after.forEach { l -> Txt(l, FinniText.Button) } }
                             MainButton(a.t("common.home"), onClick = ::leave)
                         }
                         showcase -> Box(
@@ -249,12 +254,19 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
                 val slotW = (width - SLOT_GAP * 2) / 3
                 val unitMax = minOf(slotW - 8.dp, UNIT_MAX)
                 val tagH = tagHeight(slotW)
+                val done = bought
+                if (explained != null && done != null) {
+                    BoughtView(done, viewport)
+                    return@BoxWithConstraints
+                }
                 FitColumn(viewport) {
                     Box(Modifier.height(4.dp))
                     // Заголовок — одной строкой, как в макете: двухстрочный на 360 × 600 выталкивал вторую полку.
-                    Txt(a.t(if (dupId != null) "f3.title" else "shop.title"), FinniText.Subtitle)
-                    Box(Modifier.height(4.dp))
-                    Txt(a.f("shop.hint", "n" to g.needLeft(s).coerceAtLeast(0)), HintText)
+                    // На 360 × 600 в главах 2–3 (три полки и вещь ситуации в корзине) места нет — вопрос уходит,
+                    // остаётся строка с суммой «Нужного»: без неё не понять, хватит ли.
+                    Txt(a.t(if (dupId != null) "f3.title" else "shop.title"), FinniText.Subtitle, Modifier.optional().padding(bottom = 4.dp))
+                    // Пока открыто объяснение F3, строка суммы не нужна: экран не больше 25 слов.
+                    if (dupPlate == null) Txt(a.f("shop.hint", "n" to g.needLeft(s).coerceAtLeast(0)), HintText)
                     rows.forEach { row ->
                         val signH = row.caption?.let { signHeight(it, width) } ?: 0.dp
                         val wantItem = if (row.want) g.content.item(wantId) else null
@@ -328,8 +340,8 @@ private fun layer(key: String): String? = when (key) {
     else -> null
 }
 
-/** Единица вещей на полке: ширина миски. Миска не уже 56 dp; шире 96 — не нужно. */
-private val UNIT_MIN = 56.dp
+/** Единица вещей на полке: ширина миски. Миска не уже 40 dp (иначе 360 × 600 в главе 2 прокручивается); шире 96 — не нужно. */
+private val UNIT_MIN = 40.dp
 private val UNIT_MAX = 96.dp
 private val SLOT_GAP = 8.dp
 private val SHELF_TOP = 4.dp
@@ -553,6 +565,52 @@ private fun CartBasket(
 }
 
 private val THUMB = 26.dp
+
+/** Покупка этого захода в магазин: строка «Купили …» и вещи картинками — ключ картинки и название. */
+private data class Bought(val title: String, val pieces: List<Pair<String, String>>)
+
+/**
+ * Вещи покупки картинками, как в корзине: надбавка-слой лежит на своей вещи («куртка с рисунком» —
+ * одна картинка), каша с ягодами — одна миска.
+ */
+private fun pieces(items: List<ru.vinteno.finni.core.content.Item>, t: (String) -> String): List<Pair<String, String>> {
+    return items.filter { it.addonOf == null || items.none { b -> b.id == it.addonOf } }.map { base ->
+        val addons = if (base.addonOf == null) items.filter { it.addonOf == base.id } else emptyList()
+        val key = (listOf(base.id) + addons.map { it.id }).joinToString("_").let { k ->
+            if (base.addonOf != null && base.id in LAYER_ADDONS) "${base.addonOf}_${base.id}" else k
+        }
+        key to (if (addons.isEmpty()) base.name else t("shop.tier.$key"))
+    }
+}
+
+/**
+ * Магазин после «Купить» (правка 27.09): вопрос «Что возьмёшь?» и полки с оставшимся товаром уходят —
+ * ребёнок уже ответил. Наверху — что купили, словами, под ним эти вещи крупно на одной полке. Объяснение и
+ * «Домой» — внизу, на месте корзины.
+ */
+@Composable
+private fun BoughtView(b: Bought, viewport: Dp) {
+    BoxWithConstraints(Modifier.fillMaxWidth().height(viewport)) {
+        val width = maxWidth
+        val n = b.pieces.size.coerceAtLeast(1)
+        val size = minOf((width - SLOT_GAP * (n - 1)) / n - 8.dp, BOUGHT_MAX, (maxHeight - 96.dp).coerceAtLeast(UNIT_MIN))
+        Column(Modifier.fillMaxSize()) {
+            Box(Modifier.height(4.dp))
+            Txt(b.title, FinniText.Subtitle)
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(SLOT_GAP), verticalAlignment = Alignment.Bottom) {
+                        b.pieces.forEach { (key, name) -> Picture(key, size, description = name) }
+                    }
+                    ShelfPlank(Modifier.fillMaxWidth().offsetWide())
+                }
+            }
+        }
+    }
+}
+
+/** Купленная вещь не крупнее этого: четыре вещи в ряд на 360 dp, одна — не на весь экран. */
+private val BOUGHT_MAX = 120.dp
 
 /** Надбавки, нарисованные слоем на канве своей вещи: без вещи они не читаются. */
 val LAYER_ADDONS = setOf("risunok", "bint", "nakleyki", "abazhur", "glazur", "vyshivka")

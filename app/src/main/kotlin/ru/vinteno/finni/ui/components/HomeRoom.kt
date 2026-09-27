@@ -282,11 +282,11 @@ val NOTE_GAP = 4.dp
 
 /** Высота полосы над предметом, где стоит значок шага, вместе с зазором до предмета. */
 val MARK_BAND = 28.dp
-private val MARK_W = 30.dp
-private val MARK_H = 22.dp
+private val MARK_W = 36.dp
+private val MARK_H = 26.dp
 
 /**
- * Значок текущего шага над предметом: маленькая мягкая плашка со стрелкой вниз. Неподвижный — ни
+ * Значок текущего шага над предметом: синяя плашка цвета главной кнопки с белой стрелкой вниз. Неподвижный — ни
  * мигания, ни пульсации, ни покачивания (инвариант 4). Не нажимается и диктором не читается: шаг
  * читает записка. Стоит серединой на [centerX] от левого края родителя, верхом на [top].
  */
@@ -294,7 +294,7 @@ private val MARK_H = 22.dp
 fun StepMark(centerX: Dp, top: Dp, modifier: Modifier = Modifier) {
     Canvas(
         modifier.offset(x = centerX - MARK_W / 2, y = top).size(MARK_W, MARK_H)
-            .softPlate(FinniDimens.RadiusSmall).clearAndSetSemantics { testTag = "mark" },
+            .background(FinniColors.Action, RoundedCornerShape(FinniDimens.RadiusSmall)).clearAndSetSemantics { testTag = "mark" },
     ) {
         val w = size.width
         val h = size.height
@@ -306,7 +306,8 @@ fun StepMark(centerX: Dp, top: Dp, modifier: Modifier = Modifier) {
             moveTo(w * 0.5f, h * 0.78f)
             lineTo(w * 0.5f, h * 0.2f)
         }
-        drawPath(arrow, FinniColors.Ink, style = Stroke(2.4.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+        // Белая стрелка на синем — цвет главной кнопки: светлая плашка на светлой стене терялась (правка 27.09).
+        drawPath(arrow, FinniColors.Surface, style = Stroke(3.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
     }
 }
 

@@ -110,6 +110,19 @@ class ChaptersTest {
         assertTrue("lezhanka" in s.progress.inventory) // мебель главы 2 остаётся в комнате
     }
 
+    @Test fun `перенесённый план подгоняется под кошелёк при посылке — лишнее снимается с «Хочу» (I71)`() {
+        // Кошелёк 31 не меньше дохода 30: посылка не придёт, а с прошлой недели перенесён план 10 / 38 / 10.
+        val start = demo.weekStart(7).let { it.copy(progress = it.progress.copy(wallet = 31), week = it.week!!.copy(plan = Plan(10, 38, 10))) }
+        val opened = game.openParcel(start)
+        assertEquals(Plan(10, 11, 10), opened.week!!.plan)
+        // Лишнего больше «Хочу» — дальше из копилки, потом из «Нужного».
+        val poor = demo.weekStart(7).let { it.copy(progress = it.progress.copy(wallet = 31), week = it.week!!.copy(plan = Plan(20, 5, 20))) }
+        assertEquals(Plan(20, 0, 11), game.openParcel(poor).week!!.plan)
+        // Меньше кошелька — не трогается: разложить остаток — действие ребёнка.
+        val small = demo.weekStart(7).let { it.copy(progress = it.progress.copy(wallet = 31), week = it.week!!.copy(plan = Plan(10, 10, 10))) }
+        assertEquals(Plan(10, 10, 10), game.openParcel(small).week!!.plan)
+    }
+
     @Test fun `глава 3 всегда четыре недели, даже при всех отметках`() {
         var s = demo.weekStart(5)
         repeat(3) {

@@ -605,8 +605,13 @@ fun GoalScreen() {
                 // строка напоминает, зачем выбирать подарок.
                 Txt(a.explain.chapterText(st, "goal.why"), FinniText.Body)
                 Box(Modifier.height(FinniDimens.CardGap + 4.dp))
-                if (big) {
-                    // Крупный шрифт: карточки столбиком, картинка слева, название и цена справа.
+                // Столбиком — на крупном шрифте и на высоком экране: три карточки в ряд там оставляли
+                // пол-экрана пустым (правка 27.09). Картинка растёт с высотой, от 72 до 112 dp.
+                // Над карточками: отступ, заголовок, строка «зачем», промежуток — с запасом на две строки заголовка.
+                val header = FinniDimens.TitleTop + 120.dp
+                val listPic = ((viewport - header - FinniDimens.CardGap * 2) / 3 - 24.dp).coerceIn(GOAL_LIST_PIC, GOAL_LIST_MAX)
+                if (big || listPic > GOAL_LIST_PIC + 16.dp) {
+                    // Карточки столбиком, картинка слева, название и цена справа.
                     Column(verticalArrangement = Arrangement.spacedBy(FinniDimens.CardGap)) {
                         goals.forEachIndexed { i, goal ->
                             SoftCard(picked == goal.id, { picked = goal.id }, Modifier.fillMaxWidth()) {
@@ -615,7 +620,7 @@ fun GoalScreen() {
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                                 ) {
-                                    GoalPicture(goal.id, goal.name, GOAL_LIST_PIC)
+                                    GoalPicture(goal.id, goal.name, if (big) GOAL_LIST_PIC else listPic)
                                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                         Txt(names[i], GoalName)
                                         GoalPrice(goal.price)
@@ -665,6 +670,7 @@ private val GOAL_PAD = 8.dp
 private val GOAL_TAG = 40.dp
 private val GOAL_PIC_MIN = 56.dp
 private val GOAL_LIST_PIC = 72.dp
+private val GOAL_LIST_MAX = 112.dp
 private val GoalName = FinniText.Body.copy(fontWeight = FontWeight.Bold)
 
 /** «для Киры» не разрывается: на узкой карточке «Киры» одна на строке читалась бы отдельно. */

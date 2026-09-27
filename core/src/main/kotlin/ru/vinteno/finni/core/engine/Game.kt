@@ -235,10 +235,26 @@ class Game(val content: Content) {
         rule(w.parcel == null) { "Посылка этой недели уже открыта" }
         val income = ch(s).income
         val arrives = s.progress.wallet < income
+        val wallet = s.progress.wallet + if (arrives) income else 0
         return s.copy(
-            progress = if (arrives) s.progress.copy(wallet = s.progress.wallet + income) else s.progress,
-            week = w.copy(parcel = if (arrives) ParcelResult.ARRIVED else ParcelResult.NOT_ARRIVED),
+            progress = s.progress.copy(wallet = wallet),
+            week = w.copy(parcel = if (arrives) ParcelResult.ARRIVED else ParcelResult.NOT_ARRIVED, plan = fit(w.plan, wallet)),
         )
+    }
+
+    /**
+     * Черновик плана, перенесённый с прошлой недели («Оставить план»), не открывается перебором: посылка не
+     * пришла или пришла меньше, чем было, — лишнее снимается с «Хочу», потом с «Копилки», потом с «Нужного»
+     * (I71). Иначе неделя начиналась с «Убери 27 монет» и двадцати семи нажатий «−». Ввод ребёнка по-прежнему
+     * не исправляется (E07): подгоняется только черновик до первого касания.
+     */
+    private fun fit(p: Plan, wallet: Int): Plan {
+        var over = p.total - wallet
+        if (over <= 0) return p
+        val want = p.want - minOf(p.want, over).also { over -= it }
+        val save = p.save - minOf(p.save, over).also { over -= it }
+        val need = p.need - minOf(p.need, over)
+        return Plan(need, want, save)
     }
 
     fun seeAnnouncement(s: GameState): GameState {

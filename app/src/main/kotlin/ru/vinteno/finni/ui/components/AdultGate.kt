@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.runtime.Composable
@@ -45,7 +46,7 @@ const val ADULT_HOLD_MS = 3000
  * открывает раздел своим двойным касанием — взрослому с диктором удержание недоступно.
  */
 @Composable
-fun AdultGate(label: String, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+fun AdultGate(label: String, onOpen: () -> Unit, modifier: Modifier = Modifier, compact: Boolean = false) {
     val progress = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
     Row(
@@ -71,7 +72,8 @@ fun AdultGate(label: String, onOpen: () -> Unit, modifier: Modifier = Modifier) 
                 }
             }
             .softPlate(FinniDimens.RadiusSmall + 4.dp)
-            .padding(start = 6.dp, end = 10.dp),
+            .padding(start = 6.dp, end = if (compact) 6.dp else 10.dp)
+            .then(if (compact) Modifier.sizeIn(minWidth = FinniDimens.MinTouch - 12.dp) else Modifier),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -83,6 +85,7 @@ fun AdultGate(label: String, onOpen: () -> Unit, modifier: Modifier = Modifier) 
             }
             Icon(Icons.Outlined.Lock, FinniColors.InkMute, 16.dp)
         }
-        Txt(label, PlateText.copy(color = FinniColors.InkMute))
+        // Узко (крупный шрифт в шапке) — только замок с кольцом; слово читает диктор.
+        if (!compact) Txt(label, PlateText.copy(color = FinniColors.InkMute))
     }
 }

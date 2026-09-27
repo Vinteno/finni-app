@@ -178,6 +178,9 @@ private val GOAL_PIC = 28.dp
 private val PRICE_COIN = 14.dp
 private val CELL = 10.dp
 private val CELL_MIN = 7.dp
+private const val CELLS_ROW_MAX = 8
+
+private fun cellsPerRow(n: Int) = if (n > CELLS_ROW_MAX) (n + 1) / 2 else n
 
 /** Предметы комнаты, у каждого шага недели — свой (I45). */
 private enum class Prop { PARCEL, JARS, DOOR, BOWL, SOAP, PIGGY, CALENDAR }
@@ -431,7 +434,12 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
         val needsY = if (stacked) pad + purseH + 4.dp.roundToPx() else pad
         // «Взрослым» — под кошельком справа (I49, F6). На крупном шрифте потребности уходят строкой ниже, а
         // слева от кошелька место пустое — плашка встаёт туда и лишней строки шапке не добавляет.
-        val gate = subcompose(Slot.GATE) { AdultGate(a.t("home.adult"), onOpen = { open(HomeTarget.ADULT) }) }.map { it.measure(loose) }
+        val fullGate = subcompose(Slot.GATE) { AdultGate(a.t("home.adult"), onOpen = { open(HomeTarget.ADULT) }) }.map { it.measure(loose) }
+        // Под кошельком плашка наезжала на подписи потребностей (шрифт ×1,3 на 360 dp): тогда — только замок.
+        val tight = !stacked && pad + needsW + pad > width - pad - fullGate.maxOf { it.width }
+        val gate = if (!tight) fullGate else subcompose(Slot.GATE_COMPACT) {
+            AdultGate(a.t("home.adult"), onOpen = { open(HomeTarget.ADULT) }, compact = true)
+        }.map { it.measure(loose) }
         val gateW = gate.maxOf { it.width }
         val gateH = gate.maxOf { it.height }
         val gap4 = 4.dp.roundToPx()
@@ -447,7 +455,10 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
         val headerH = maxOf(needsY + needsH, pad + purseH, gateY + gateH)
 
         val floor = height.toDp() - STRIP - DEPTH_BOWL
-        val plan = planRoom(width.toDp(), leftTop, rightTop, floor, texts, tm, this)
+        // Не помещается — листок записки сначала становится ниже своей картинки (до 0,7): при шрифте ×1,3 на
+        // 360 dp квадратный листок под «Следующая неделя» прокручивал комнату на 35 dp (правка 27.09).
+        val plan = sequenceOf(1f, 0.85f, 0.7f).map { k -> planRoom(width.toDp(), leftTop, rightTop, floor, texts, tm, this, k) }
+            .firstOrNull { it.lack <= 0.dp } ?: planRoom(width.toDp(), leftTop, rightTop, floor, texts, tm, this, 0.7f)
         // Не помещается и при самом маленьком Финни (крупный шрифт) — комната выше экрана, и полоса
         // под шапкой прокручивается; в конце прокрутки пол — внизу, как без неё.
         val extra = plan.lack.roundToPx()
@@ -567,7 +578,7 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
     }
 }
 
-private enum class Slot { PURSE, NEEDS, GATE, BACK, STAGE, HINT, DARK, PLATE }
+private enum class Slot { PURSE, NEEDS, GATE, GATE_COMPACT, BACK, STAGE, HINT, DARK, PLATE }
 
 private val HEADER_PAD = 12.dp
 
@@ -579,6 +590,12 @@ private val HEADER_PAD = 12.dp
 private data class RoomTexts(val steps: List<String>, val sign: String, val saved: String?, val price: Int?) {
     /** Клетки по 5 монет до цены цели. */
     val cells: Int? get() = price?.let { (it + 4) / 5 }
+
+    /** Клеток в ряду: больше [CELLS_ROW_MAX] — двумя рядами (цель главы 3 — 12 клеток). */
+    val perRow: Int? get() = cells?.let(::cellsPerRow)
+
+    /** Рядов клеток. */
+    val cellRows: Int get() = cells?.let { c -> (c + perRow!! - 1) / perRow!! } ?: 0
 }
 
 /** Где что стоит, в dp от верха комнаты и левого края экрана, при полу [fl] без прокрутки. */
@@ -627,7 +644,7 @@ private data class RoomPlan(
  * значок над миской; окно — между дверью и Финни. Места мало — сначала уменьшается записка, потом
  * пропадает окно.
  */
-private fun planRoom(width: Dp, leftTop: Dp, rightTop: Dp, floor: Dp, t: RoomTexts, tm: TextMeasurer, d: Density): RoomPlan {
+private fun planRoom(width: Dp, leftTop: Dp, rightTop: Dp, floor: Dp, t: RoomTexts, tm: TextMeasurer, d: Density, noteK: Float = 1f): RoomPlan {
     fun textH(text: String, style: TextStyle, maxW: Dp): Dp = with(d) {
         tm.measure(typo(text), style, constraints = Constraints(maxWidth = maxW.roundToPx().coerceAtLeast(1)), density = d).size.height.toDp()
     }
@@ -636,7 +653,7 @@ private fun planRoom(width: Dp, leftTop: Dp, rightTop: Dp, floor: Dp, t: RoomTex
     fun noteH(nw: Dp, step: String): Dp {
         val inner = nw * (1f - 2 * TEXT_SIDE)
         val body = textH(step, NoteStep, inner)
-        return maxOf(nw * noteRatio, body / (1f - TEXT_TOP - TEXT_BOTTOM))
+        return maxOf(nw * noteRatio * noteK, body / (1f - TEXT_TOP - TEXT_BOTTOM))
     }
     val signH = textH(t.sign, PlateText, width) + 4.dp
     // Самое длинное слово шагов помещается на листке целиком: при крупном шрифте листок шире.
@@ -657,14 +674,15 @@ private fun planRoom(width: Dp, leftTop: Dp, rightTop: Dp, floor: Dp, t: RoomTex
     val pic = if (t.price != null) goalCol + 8.dp else 0.dp
     val plateFrame = 20.dp + pic + 2.dp
     val besideNote = width - SIDE - (SIDE + 4.dp + reserveW + 8.dp)
-    // Клетки мельчают, чтобы плашка встала рядом с запиской: у целей глав 2 и 3 их до 12, а не 6–9.
-    val cell = t.cells?.let { n -> ((besideNote - plateFrame - 4.dp * (n - 1)) / n).coerceIn(CELL_MIN, CELL) } ?: CELL
-    val cellsW = t.cells?.let { cell * it + 4.dp * (it - 1) } ?: 0.dp
+    // Клетки мельчают, чтобы плашка встала рядом с запиской; 12 клеток цели главы 3 — двумя рядами по 6.
+    val cell = t.perRow?.let { n -> ((besideNote - plateFrame - 4.dp * (n - 1)) / n).coerceIn(CELL_MIN, CELL) } ?: CELL
+    val cellsW = t.perRow?.let { cell * it + 4.dp * (it - 1) } ?: 0.dp
     val plateMinW = t.saved?.let { plateFrame + maxOf(cellsW, wordW(it)) } ?: 0.dp
-    val below = plateMinW > besideNote
+    // Полдп запаса: на равенстве ширин округление не должно уводить плашку под записку.
+    val below = plateMinW > besideNote + 0.5.dp
     val plateMaxW = if (below) width - SIDE * 2 else besideNote
     val plateH = t.saved?.let { saved ->
-        val cells = if (t.cells != null) cell + 4.dp else 0.dp
+        val cells = if (t.cells != null) (cell + 4.dp) * t.cellRows else 0.dp
         maxOf(FinniDimens.MinTouch, 12.dp + maxOf(priceSize?.let { GOAL_PIC + it.second } ?: 0.dp, cells + textH(saved, PlateText, plateMaxW - plateFrame)))
     } ?: 0.dp
     val plateTop = if (below) maxOf(rightTop, leftTop + 8.dp + noteReserve) + 8.dp else rightTop + 8.dp
@@ -845,7 +863,7 @@ private fun Room(
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         // Колонка с клетками уступает: цена цели справа меряется первой и не рвётся по цифрам.
                         Column(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            goal?.let { gl -> ProgressCells(minOf(s.progress.savings, gl.price) / 5, (gl.price + 4) / 5, cell = p.cell) }
+                            goal?.let { gl -> ProgressCells(minOf(s.progress.savings, gl.price) / 5, (gl.price + 4) / 5, cell = p.cell, perRow = cellsPerRow((gl.price + 4) / 5)) }
                             Txt(saved, PlateText)
                         }
                         goal?.let { gl ->
