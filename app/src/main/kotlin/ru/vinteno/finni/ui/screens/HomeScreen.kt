@@ -402,6 +402,13 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
     val platePicture = when {
         parcelNote -> "posylka"
         step == Step.ANNOUNCE -> g.weekContent(s).announceItem
+        // Переход главы: рядом со строкой причины — то, что делал ребёнок (миска или копилка). Без картинки
+        // «Мы ели две недели» над «Похолодало» читалось как причина холода, а не как его дело (правка 27.09).
+        transitionUp -> when (s.transition?.reason) {
+            ru.vinteno.finni.core.model.Reason.CARE -> "kasha"
+            ru.vinteno.finni.core.model.Reason.SAVE -> "kopilka"
+            else -> null
+        }
         bonusUp -> "kopilka"
         else -> null
     }
@@ -806,16 +813,17 @@ private fun Room(
         // В главе 2 — окно с инеем целиком на замену обычного (final-plan §3, п. 1).
         val window = if (s.progress.chapter == 2) "okno_inej" else "okno"
         if (p.windowW > 0.dp) Thing(window, p.windowW, Modifier.offset(x = p.windowX, y = p.windowTop))
-        // Гирлянда — на стене над окном, огоньки статичные (сценарий главы 3, §10).
-        if ("girlyanda" in s.progress.inventory) {
-            val gw = if (p.windowW > 0.dp) p.windowW * 1.3f else 96.dp * (p.finniH / FINNI_REF)
-            val gx = if (p.windowW > 0.dp) p.windowX - (gw - p.windowW) / 2 else SIDE + p.doorW + 4.dp
-            val gy = (if (p.windowW > 0.dp) p.windowTop else floor - p.doorH) - gw * thingRatio("girlyanda") * 0.7f
-            Appear("girlyanda", Modifier.offset(x = gx, y = gy)) { Thing("girlyanda", gw, description = g.content.item("girlyanda").name) }
-        }
-
         // Полка справа, над календарём и миской. На ней банки плана, мыло, пока оно куплено, и копилка.
         Thing("polka", p.shelfW, Modifier.offset(x = p.shelfLeft, y = p.shelfTop))
+        // Гирлянда висит по краю полки, под вещами на ней: над окном в главе 3 места нет — полка прямо над
+        // ним, и гирлянда наезжала на кронштейн (правка 27.09). Огоньки статичные (сценарий главы 3, §10).
+        if ("girlyanda" in s.progress.inventory) {
+            val gw = p.shelfW * 0.8f
+            Appear("girlyanda", Modifier.offset(x = p.shelfLeft + (p.shelfW - gw) / 2, y = p.shelfTop + p.shelfH * 0.22f)) {
+                Thing("girlyanda", gw, description = g.content.item("girlyanda").name)
+            }
+        }
+
         Box(Modifier.standOn(p.jarsX, p.board)) {
             Box(
                 Modifier.align(Alignment.BottomStart).size(p.jarsZone, FinniDimens.MinTouch)
@@ -916,24 +924,43 @@ private fun Room(
             }
         }
 
-        // Задний ряд у стены — вещи глав 2 и 3 (санки, коробки переезда, коробка, лампа, цели глав 2 и 3):
-        // стоят на линии пола, мельче вещей на полу и за ними; касания не ловят.
-        BackRow(s, p, floor)
-
-        // Качели и мячик — купленные вещи остаются навсегда. Стоят между дверью и Финни: мячик — на месте
-        // посылки (посылки в это время уже нет), качели — у стены, за посылкой и мячиком. После новоселья
-        // с целью главы 3 вещи сложены в неё.
+        // Вещи глав 2 и 3 — у каждой своё место, ничто не заходит на Финни, миску и друг на друга (правка
+        // 27.09: задний ряд во всю ширину сваливал коробки, санки, лежанку и лампу в кучу за Финни).
+        //  • место у стены между дверью и Финни — качели (главы 1–2), коробки переезда (глава 3 до новоселья:
+        //    прежние вещи в них), цель главы 3 с вещами после новоселья;
+        //  • лампа — на подоконнике;
+        //  • полоса пола у края экрана слева — санки и мячик (глава 2), коробка (глава 3);
+        //  • у стены между Финни и миской — лежанка, плед или печка.
         val slotL = SIDE + p.doorW + 4.dp
         val slotR = p.finniX - 4.dp
-        val packed = packedAway(s)
-        if ("kacheli" in s.progress.inventory && !packed) {
+        val inv = s.progress.inventory
+        val chapter3 = s.progress.chapter >= 3
+        val wallThing = when {
+            packedAway(s) -> STORAGE.first { it in inv }.let { "${it}_full" }
+            chapter3 -> "korobki_pereezd"
+            "kacheli" in inv -> "kacheli"
+            else -> null
+        }
+        wallThing?.let { id ->
             val sw = minOf(slotR - slotL, 84.dp * (p.finniH / FINNI_REF))
+            val base = id.removeSuffix("_full")
+            val name = g.content.items[base]?.name ?: g.content.goals[base]?.name
             Box(Modifier.standOn(slotL + (slotR - slotL - sw) / 2, floor + DEPTH_SWING)) {
-                Appear("kacheli", Modifier.align(Alignment.BottomStart)) {
-                    Thing("kacheli", sw, description = g.content.item("kacheli").name)
+                Appear("wall:$id", Modifier.align(Alignment.BottomStart)) { Thing(id, sw, description = name) }
+            }
+            // Купленная коробка — перед коробками переезда, слева: вещи складывают в неё.
+            if (id == "korobki_pereezd" && "korobka" in inv) {
+                val kw = sw * 0.5f
+                val kid = if ("nakleyki" in inv) "korobka_nakleyki" else "korobka"
+                Box(Modifier.standOn(slotL + (slotR - slotL - sw) / 2 - kw * 0.15f, floor + DEPTH_PARCEL)) {
+                    Appear("wall:$kid", Modifier.align(Alignment.BottomStart)) {
+                        Thing(kid, kw, box = "korobka", description = g.content.item("korobka").name)
+                    }
                 }
             }
         }
+        LampOnSill(s, p)
+        FloorItems(s, p, floor)
 
         // Миска на полу справа стоит всё время; в ней то, что куплено: крупа, каша или каша с ягодами.
         Box(Modifier.standOn(p.bowlX, floor + DEPTH_BOWL)) {
@@ -959,7 +986,8 @@ private fun Room(
                 }
             }
         }
-        if ("myachik" in s.progress.inventory && !packed && !(w != null && w.parcel == null)) {
+        // Мячик — на месте посылки, когда её нет; в главе 3 он в коробках переезда, потом в цели.
+        if ("myachik" in inv && !chapter3 && !(w != null && w.parcel == null)) {
             val x = (slotL + slotR) / 2 - FinniDimens.MinTouch / 2
             Box(Modifier.standOn(x, floor + DEPTH_BOWL)) {
                 Box(
@@ -1009,58 +1037,92 @@ private val STORAGE = listOf("polka_veshchey", "korzina", "sunduk")
 /** Вещи сложены в цель главы 3: она куплена на новоселье (сценарий главы 3, §7). */
 private fun packedAway(s: GameState): Boolean = STORAGE.any { it in s.progress.inventory }
 
+/** Лампа с абажуром — слоем на лампе: рамка основы. */
+private fun lampId(s: GameState) = if ("abazhur" in s.progress.inventory) "lampa_abazhur" else "lampa"
+
 /**
- * Задний ряд у стены: что стоит и в каком порядке слева направо, с шириной при Финни обычного роста.
- * Санки — у двери; коробки переезда — пока вещи не сложены; дальше коробка, лампа, мебель главы 2,
- * цель главы 3 с вещами.
+ * Лампа стоит на подоконнике, на левой половине: правую закрывает Финни. Окна нет (узкий экран) — лампа
+ * встаёт на полосу пола справа, рядом с лежанкой.
  */
-private fun backRow(s: GameState): List<Pair<String, Dp>> {
-    val inv = s.progress.inventory
-    val packed = packedAway(s)
-    return buildList {
-        if ("sanki" in inv && !packed) add("sanki" to 62.dp)
-        // Мячик стоит на месте посылки; пока посылка у двери (главы 2 и 3), он лежит у стены.
-        if ("myachik" in inv && !packed && s.week?.parcel == null && s.week != null) add("myachik" to 30.dp)
-        if (s.progress.chapter == 3 && !packed) add("korobki_pereezd" to 70.dp)
-        if ("korobka" in inv && !packed) add((if ("nakleyki" in inv) "korobka_nakleyki" else "korobka") to 38.dp)
-        if ("lampa" in inv) add((if ("abazhur" in inv) "lampa_abazhur" else "lampa") to 34.dp)
-        listOf("plaid" to 66.dp, "lezhanka" to 62.dp, "pechka" to 40.dp).forEach { (id, w) -> if (id in inv) add(id to w) }
-        STORAGE.forEach { if (it in inv) add("${it}_full" to 58.dp) }
+@Composable
+private fun LampOnSill(s: GameState, p: RoomPlan) {
+    if ("lampa" !in s.progress.inventory || p.windowW <= 0.dp) return
+    val lw = p.windowW * 0.3f
+    val sill = p.windowTop + p.windowW * thingRatio("okno") * SILL
+    Box(Modifier.standOn(p.windowX + p.windowW * 0.12f, sill)) {
+        Appear("lamp", Modifier.align(Alignment.BottomStart)) {
+            Thing(lampId(s), lw, box = "lampa", description = app().game.content.item("lampa").name)
+        }
     }
 }
 
-/** Рамка картинки вещи заднего ряда: у вещи с надбавкой — рамка основы. */
+/** Где на картинке окна верх подоконника: доля высоты от верха рамки. */
+private const val SILL = 0.93f
+
+/** Вещи на полосе пола: высота вещи с коэффициентом 1. */
+private val FLOOR_ITEM = 34.dp
+
+
+/**
+ * Полоса пола под комнатой — ближе к ребёнку, чем стена. Вещи на ней стоят низом у края экрана и не выше
+ * полосы: не заходят ни на Финни, ни на посылку, ни на миску. Слева — от края до Финни, справа — от Финни
+ * до края. Касания не ловят: до двери и миски над ними достаёт палец.
+ */
+@Composable
+private fun FloorItems(s: GameState, p: RoomPlan, floor: Dp) {
+    val inv = s.progress.inventory
+    val ch3 = s.progress.chapter >= 3
+    val packed = packedAway(s)
+    val left = buildList {
+        if (!ch3 && "sanki" in inv) add("sanki" to 1.0f)
+        // Пока у двери посылка, мячик лежит здесь, а не на её месте.
+        if (!ch3 && "myachik" in inv && s.week != null && s.week!!.parcel == null) add("myachik" to 0.8f)
+    }
+    // Лежанка и плед — под Финни, у стены: он стоит у своей лежанки, плед — как коврик. Печка высокая — у края
+    // полосы пола справа. Места между Финни и миской на 360–411 dp нет: там лежанка вставала за миску.
+    val bed = listOf("lezhanka", "plaid").firstOrNull { it in inv }
+    bed?.let { id ->
+        val bw = p.finniW * (if (id == "plaid") 1.6f else 1.45f)
+        Box(Modifier.standOn(p.finniX + p.finniW / 2 - bw / 2, floor + DEPTH_FINNI + 2.dp)) {
+            Appear("bed:$id", Modifier.align(Alignment.BottomStart)) {
+                Thing(id, bw, description = app().game.content.items[id]?.name)
+            }
+        }
+    }
+    val right = buildList {
+        if ("pechka" in inv) add("pechka" to 1.25f)
+        if ("lampa" in inv && p.windowW <= 0.dp) add(lampId(s) to 1.2f)
+    }
+    val maxH = STRIP - 6.dp
+    val bottom = floor + DEPTH_BOWL + STRIP - 2.dp
+    @Composable
+    fun group(items: List<Pair<String, Float>>, from: Dp, to: Dp) {
+        if (items.isEmpty()) return
+        val gap = 10.dp
+        val ws = items.map { (id, k) -> minOf(FLOOR_ITEM * k, maxH) / thingRatio(rowBox(id)) }
+        val natural = ws.fold(0.dp) { acc, w -> acc + w } + gap * (items.size - 1)
+        val k = minOf(1f, (to - from) / natural).coerceAtLeast(0.5f)
+        // Группа — серединой в своём промежутке.
+        var x = from + ((to - from) - natural * k).coerceAtLeast(0.dp) / 2
+        items.forEachIndexed { i, (id, _) ->
+            val w = ws[i] * k
+            Box(Modifier.standOn(x, bottom)) {
+                Appear("floor:$id", Modifier.align(Alignment.BottomStart)) {
+                    Thing(id, w, box = rowBox(id), description = app().game.content.items[id.substringBefore("_")]?.name)
+                }
+            }
+            x += w + gap * k
+        }
+    }
+    group(left, SIDE, p.finniX - 8.dp)
+    group(right, p.finniX + p.finniW + 8.dp, p.bowlX + BOWL)
+}
+
+/** Рамка картинки вещи: у вещи с надбавкой-слоем — рамка основы. */
 private fun rowBox(id: String) = when (id) {
     "korobka_nakleyki" -> "korobka"
     "lampa_abazhur" -> "lampa"
     else -> id
-}
-
-/**
- * Задний ряд: от двери до правого края, вещи ровно по местам с одинаковыми промежутками; не помещаются —
- * все уменьшаются вместе, но не мельче 0,6. Появляются по правилу появления §7.1, одинаково для базы и
- * надбавки.
- */
-@Composable
-private fun BackRow(s: GameState, p: RoomPlan, floor: Dp) {
-    val items = backRow(s)
-    if (items.isEmpty()) return
-    val u = p.finniH / FINNI_REF
-    val left = SIDE + p.doorW + 2.dp
-    val avail = (p.bowlX + BOWL - left).coerceAtLeast(1.dp)
-    val natural = items.fold(0.dp) { acc, it -> acc + it.second * u }
-    val k = minOf(1f, (avail / natural)).coerceAtLeast(0.6f)
-    val gap = ((avail - natural * k) / (items.size + 1)).coerceAtLeast(0.dp)
-    var x = left + gap
-    items.forEach { (id, w) ->
-        val iw = w * u * k
-        Box(Modifier.standOn(x, floor + 2.dp)) {
-            Appear("row:$id", Modifier.align(Alignment.BottomStart)) {
-                Thing(id, iw, box = rowBox(id), description = app().game.content.items[id.substringBefore("_")]?.name)
-            }
-        }
-        x += iw + gap
-    }
 }
 
 /** Три потребности: миска, мыло, тепло. «Тепло» закрыто всегда, кроме главы 2 до покупки куртки (I9). */

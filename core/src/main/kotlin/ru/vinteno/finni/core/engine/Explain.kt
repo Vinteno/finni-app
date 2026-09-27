@@ -20,7 +20,9 @@ class Explain(private val game: Game) {
             0 -> texts["explain.didNothing"]
             1 -> texts.format("explain.did", "what" to nouns[0])
             2 -> texts.format("explain.did", "what" to "${nouns[0]} и ${nouns[1]}")
-            else -> texts.format("explain.didList", "what" to nouns.dropLast(1).joinToString(", ") + " и " + nouns.last())
+            3 -> texts.format("explain.didList", "what" to nouns.dropLast(1).joinToString(", ") + " и " + nouns.last())
+            // Четыре вещи списком — шесть слов (инвариант 10); вещи видны картинками рядом со строкой.
+            else -> texts.format("explain.didMany", "n" to nouns.size, "things" to texts.plural("thing", nouns.size))
         }
     }
 

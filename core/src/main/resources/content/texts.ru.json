@@ -19,6 +19,11 @@
       "монеты",
       "монет"
     ],
+    "thing": [
+      "вещь",
+      "вещи",
+      "вещей"
+    ],
     "coin_gen": [
       "монеты",
       "монеты",
@@ -137,6 +142,7 @@
     "event.b.4": "Кира всё равно рада",
     "shortfall.none.2": "В копилке {s}",
     "explain.didList": "Купили {what}",
+    "explain.didMany": "Купили {n} {things}",
     "summary.spillSavings": "Из копилки {n} {coins}",
     "event.next": "Дальше",
     "step.parcel": "Открой посылку",

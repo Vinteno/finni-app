@@ -226,7 +226,8 @@ class JourneyTest {
         val want = setOf("Качели", "Санки", "Гирлянда")
         listOf("Каша", "Крупа", "Мыло").firstOrNull { clickable(it) }?.let { tap(it) }
         if (clickable("Мыло")) tap("Мыло")
-        if (week == 2) want.firstOrNull { clickable(it) }?.let { tap(it) }
+        // Хотелки глав: качели на неделе 2, санки на неделе 3, гирлянда на неделе 6 — чтобы увидеть их дома.
+        if (week in setOf(2, 3, 6)) want.firstOrNull { clickable(it) }?.let { tap(it) }
         look()
         if (clickable("Купить")) press("Купить") else back()
     }
