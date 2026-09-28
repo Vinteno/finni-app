@@ -368,12 +368,17 @@ private fun PlanFactGrid(plan: Plan, fact: Plan, reward: Int) {
         val stacked = labelW > maxWidth * 0.36f
         val lead = if (stacked) 0.dp else labelW
         @Composable
-        fun line(label: String, cells: @Composable (Direction?) -> Unit) {
+        fun line(label: String, inline: Boolean = false, cells: @Composable (Direction?) -> Unit) {
+            // Строка «За задание» — одна монета под копилкой: подпись и при крупном шрифте в той же строке, слева.
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                if (stacked) Txt(label, ChoiceText)
+                if (stacked && !inline) Txt(label, ChoiceText)
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     if (!stacked) Txt(label, ChoiceText, Modifier.width(lead))
-                    dirs.forEach { d -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { cells(d) } }
+                    if (stacked && inline) {
+                        // Подпись — на месте двух первых столбцов, ячейка — под копилкой, как в строках выше.
+                        Txt(label, ChoiceText, Modifier.weight(2f))
+                        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { cells(null) }
+                    } else dirs.forEach { d -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { cells(d) } }
                 }
             }
         }
@@ -402,7 +407,7 @@ private fun PlanFactGrid(plan: Plan, fact: Plan, reward: Int) {
             line(labels[0]) { d -> jar(d, plan.of(d)) }
             line(labels[1]) { d -> jar(d, fact.of(d)) }
             // Награда за задание приходит в копилку — число под копилкой, с монетой.
-            line(labels[2]) { d ->
+            line(labels[2], inline = true) { d ->
                 if (d == null) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     Coin(20.dp)
                     Txt(reward.toString(), FinniText.Subtitle)
