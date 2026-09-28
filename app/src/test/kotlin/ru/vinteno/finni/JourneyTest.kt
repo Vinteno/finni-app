@@ -30,6 +30,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import ru.vinteno.finni.core.content.Content
 import ru.vinteno.finni.core.engine.Game
+import ru.vinteno.finni.core.engine.Direction
 import ru.vinteno.finni.core.model.GameState
 import ru.vinteno.finni.core.model.Phase
 import ru.vinteno.finni.data.GameStore
@@ -153,7 +154,10 @@ class JourneyTest {
             // Окна нехватки и оплаты — берём, что предлагают.
             clickable("Взять из «Хочу»") -> press("Взять из «Хочу»")
             clickable("Взять из копилки") -> press("Взять из копилки")
-            clickableStarts("Отдать") -> pressStarts("Отдать")
+            // F2 (I83): платим из «Нужного» — верная ветка; ошибочная проверяется в ChaptersFlowTest.
+            clickable("Из «Нужного»") -> press("Из «Нужного»")
+            // F3 (I83): «Купить» со второй курткой — ошибочная ветка; ребёнок возвращает куртку.
+            clickable("Вернуть куртку") -> press("Вернуть куртку")
             clickable("Вернуться к полке") -> press("Вернуться к полке")
             // F5: на первой неделе с мячиком — оставить в копилке.
             clickable("Оставить в копилке") -> press("Оставить в копилке")
@@ -236,15 +240,16 @@ class JourneyTest {
         val targets = listOf("Нужное", "Хочу", "Копилка")
         if (clickable("Домой")) { press("Домой"); return }
         if (clickable("Понятно")) { press("Понятно"); return }
+        // Значка на карточке нет (I83): ребёнок кладёт трату в банку по тому, что это за вещь. Взнос — в копилку.
+        val jar = game.sortCards(s).associate { c ->
+            val name = if (c.id == Game.DEPOSIT) "Взнос" else game.content.item(c.id).name
+            name to when (c.direction) { Direction.NEED -> "Нужное"; Direction.WANT -> "Хочу"; else -> "Копилка" }
+        }
         repeat(12) {
             if (!has("Куда ушли монеты?") || clickable("Понятно") || clickable("Домой")) return
             val card = clickables().firstOrNull { l -> targets.none { l.startsWith(it) } && l != "Назад" && l != "Понятно" && l != "Домой" && !l.startsWith("Взрослым") } ?: return
             tap(card)
-            for (t in targets) {
-                if (!clickable(t)) continue
-                tap(t)
-                if (!has("Посмотри на значок")) break
-            }
+            tap(jar[card] ?: targets.first())
             look()
         }
     }

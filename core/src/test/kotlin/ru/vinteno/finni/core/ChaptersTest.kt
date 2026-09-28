@@ -352,6 +352,15 @@ class ChaptersTest {
         assertEquals(listOf("Мы заплатили из копилки", "В копилке стало ${savings - 5}", "«Нужное» можно отложить потом"), explain.afterPay(b, PayChoice.SAVINGS))
     }
 
+    @Test fun `F2 — из «Нужного» с переливом из «Хочу» — объяснение называет перелив, а не «как задумали»`() {
+        // «Нужное» 8: каша и мыло влезают, коробка — нет; 5 монет приходят из «Хочу» (найдено прогоном 28.09).
+        var s = plan(demo.weekStart(5), 8, 10)
+        s = game.chooseSituation(s, 0)
+        val a = game.buy(s, listOf("kasha", "mylo") + game.situationCart(s), agreedWant = true, pay = PayChoice.NEED)
+        assertTrue(game.overPlan(a))
+        assertEquals(listOf("Мы заплатили из «Нужного»", "Из «Хочу» 5 монет", "Коробка стоит 5"), explain.afterPay(a, PayChoice.NEED))
+    }
+
     @Test fun `F6 — траты карточками по направлениям, итог открыт после раскладки`() {
         var s = plan(demo.weekStart(7), 13, 10)
         s = game.chooseSituation(s, 1)

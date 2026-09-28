@@ -6,8 +6,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -285,9 +283,17 @@ fun SummaryScreen(s: GameState, onBack: () -> Unit, onDone: () -> Unit) {
             // направлений, без слов. Кнопки одного вида и одной высоты — ни одна не выделена (§10.10).
             // «Оставить план» оставляет план этой недели, а не план по умолчанию.
             val keep = s.requireWeek().plan
-            EqualColumn(FinniDimens.CardGap) {
-                ChoiceButton({ choose(SummaryChoice.KEEP_PLAN) }) { ChoiceFace(a.t("summary.keepPlan"), keep) }
-                ChoiceButton({ choose(SummaryChoice.TAKE_ACTUAL) }) { ChoiceFace(a.t("summary.takeActual"), sum.fact) }
+            val faces = listOf(a.t("summary.keepPlan") to keep, a.t("summary.takeActual") to sum.fact)
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                // Числа уходят под название у обеих кнопок сразу, если хоть у одной не встают в строку: кнопки
+                // одного вида, и ни одно число не обрезается (правка 28.09 — при ×1,3 у второй кнопки числа
+                // переносились в FlowRow и срезались по высоте первой).
+                val inner = maxWidth - 24.dp - FinniDimens.Outline * 2
+                val stacked = faces.any { (name, p) -> textWidth(name, ChoiceText) + FACE_GAP + numbersWidth(p) > inner }
+                EqualColumn(FinniDimens.CardGap) {
+                    ChoiceButton({ choose(SummaryChoice.KEEP_PLAN) }) { ChoiceFace(faces[0].first, keep, stacked) }
+                    ChoiceButton({ choose(SummaryChoice.TAKE_ACTUAL) }) { ChoiceFace(faces[1].first, sum.fact, stacked) }
+                }
             }
         },
     ) { viewport ->
@@ -311,28 +317,37 @@ fun SummaryScreen(s: GameState, onBack: () -> Unit, onDone: () -> Unit) {
     }
 }
 
-/** Название слева, три числа справа; не помещаются в строку — числа строкой ниже. */
-@OptIn(ExperimentalLayoutApi::class)
+/** Название слева, три числа справа; [stacked] — числа строкой под названием. */
 @Composable
-private fun ChoiceFace(name: String, p: Plan) {
-    FlowRow(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-        itemVerticalAlignment = Alignment.CenterVertically,
-    ) {
-        Txt(name, ChoiceText.copy(color = FinniColors.Action))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+private fun ChoiceFace(name: String, p: Plan, stacked: Boolean) {
+    val numbers: @Composable () -> Unit = {
+        Row(horizontalArrangement = Arrangement.spacedBy(NUM_GAP), verticalAlignment = Alignment.CenterVertically) {
             listOf(Direction.NEED to p.need, Direction.WANT to p.want, null to p.save).forEach { (d, n) ->
                 val st = directionStyle(d)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Icon(st.icon, st.color, 18.dp)
+                    Icon(st.icon, st.color, NUM_ICON)
                     Txt(n.toString(), ChoiceText)
                 }
             }
         }
     }
+    if (stacked) Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Txt(name, ChoiceText.copy(color = FinniColors.Action))
+        numbers()
+    } else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Txt(name, ChoiceText.copy(color = FinniColors.Action))
+        numbers()
+    }
 }
+
+/** Ширина трёх чисел с иконками — как их рисует [ChoiceFace]. */
+@Composable
+private fun numbersWidth(p: Plan): Dp =
+    listOf(p.need, p.want, p.save).fold(NUM_GAP * 2) { acc, n -> acc + NUM_ICON + 2.dp + textWidth(n.toString(), ChoiceText) }
+
+private val NUM_GAP = 10.dp
+private val NUM_ICON = 18.dp
+private val FACE_GAP = 8.dp
 
 private val ChoiceText = FinniText.Body.copy(fontWeight = FontWeight.Bold)
 
@@ -371,7 +386,9 @@ private fun PlanFactGrid(plan: Plan, fact: Plan, reward: Int) {
             }
         }
         fun Plan.of(d: Direction?) = when (d) { Direction.NEED -> need; Direction.WANT -> want; null -> save }
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // Интервал 6 и банки 36 dp (правка 28.09): четыре строки объяснения с длинным названием вещи на
+        // 360 × 600 прокручивали итог на 9 dp.
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             // Шапка столбцов: иконка направления, для диктора — его название.
             Row(Modifier.fillMaxWidth()) {
                 Box(Modifier.width(lead))
@@ -395,7 +412,7 @@ private fun PlanFactGrid(plan: Plan, fact: Plan, reward: Int) {
     }
 }
 
-private val GRID_JAR = 40.dp
+private val GRID_JAR = 36.dp
 
 /**
  * Событие главы — сценарии, шаг 9: день рождения Киры, первый снег, новоселье. Играется всегда (I6).

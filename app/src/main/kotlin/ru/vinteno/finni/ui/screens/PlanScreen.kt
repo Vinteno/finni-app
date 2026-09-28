@@ -216,7 +216,9 @@ fun PlanScreen(s: GameState, onBack: () -> Unit, onConfirmed: () -> Unit) {
                     ShelfPlank(Modifier.fillMaxWidth())
                     Box(Modifier.height(4.dp))
                     Columns(colW) { i -> Number(a.t(directionStyle(dirs[i].first).labelKey), dirs[i].second) }
-                    Columns(colW) { i -> val (d, v, copy) = dirs[i]; counter(d, v, copy) }
+                    // После объяснения F4 «− +» не вернутся — их пустой ряд не держим: на 360 × 600 из-за него
+                    // экран прокручивался на 2 dp (правка 28.09).
+                    if (taskLines == null) Columns(colW) { i -> val (d, v, copy) = dirs[i]; counter(d, v, copy) }
                 }
                 Box(Modifier.height(6.dp + TAIL))
                 EnoughLine(s, if (big) width - 40.dp else width - colW / 2)

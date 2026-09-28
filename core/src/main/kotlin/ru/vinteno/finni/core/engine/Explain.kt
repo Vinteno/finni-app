@@ -182,7 +182,7 @@ class Explain(private val game: Game) {
     fun afterReturn(): List<String> = listOf(texts["f3.returned"], texts["f3.back"])
 
     /**
-     * F2 «Чем заплатить» (I83): из «Нужного» — как задумали; из копилки — копилка уменьшилась, а монеты
+     * F2 «Чем заплатить» (I83): из «Нужного» — как задумали или откуда пришли недостающие; из копилки — копилка уменьшилась, а монеты
      * «Нужного» остались и уйдут в план следующей недели.
      */
     fun afterPay(s: GameState, pay: PayChoice): List<String> =
@@ -192,7 +192,13 @@ class Explain(private val game: Game) {
             texts["f2.fix"],
         ) else listOf(
             texts["f2.did.need"],
-            texts["f2.asPlanned"],
+            // «Как и задумали» — только правда: понадобились монеты из «Хочу» или копилки — строка о них,
+            // теми же словами, что на итоге (правка 28.09: при переливе строка говорила неправду).
+            when {
+                !game.overPlan(s) -> texts["f2.asPlanned"]
+                s.requireWeek().needFromWant > 0 -> texts.format("summary.spillWant", "n" to s.requireWeek().needFromWant)
+                else -> texts.format("summary.spillSavings", "n" to s.requireWeek().fromSavings)
+            },
             texts.format("f2.meaning", "n" to (game.weekTask(s)?.itemId?.let { game.content.item(it).price } ?: 0)),
         )
 
