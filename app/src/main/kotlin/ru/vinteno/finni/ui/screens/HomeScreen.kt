@@ -392,7 +392,7 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
     // Плашки посылки и объявления: выезжают снизу, закрываются «Понятно».
     val plateLines: List<String>? = when {
         parcelNote -> parcelLines(s)
-        step == Step.ANNOUNCE -> g.weekContent(s).announcement.map { a.f(it, "name" to s.profile.petName) }
+        step == Step.ANNOUNCE -> a.explain.announcement(s)
         transitionUp -> a.explain.transitionLines(s)
         bonusUp -> listOf(a.f("bonus.plate", "n" to w!!.bonus))
         else -> null
@@ -1137,16 +1137,7 @@ private fun Needs(fed: Boolean, clean: Boolean, warm: Boolean) {
 }
 
 @Composable
-private fun parcelLines(s: GameState): List<String> {
-    val a = app()
-    val w = s.week ?: return emptyList()
-    return if (w.parcel == ParcelResult.ARRIVED) {
-        listOf(
-            a.t(if (w.number == 1) "parcel.note.first" else "parcel.note.again"),
-            a.f("parcel.amount", "n" to s.progress.wallet),
-        )
-    } else listOf(a.t("parcel.none.1"), a.t("parcel.none.2"))
-}
+private fun parcelLines(s: GameState): List<String> = app().explain.parcelLines(s)
 
 /**
  * Плашка записки бабушки или объявления ситуации. Одна главная кнопка. Первая строка —

@@ -2,7 +2,7 @@
   "_source": "internal/design/scenario-chapter-2.md, версия 2.0; тексты — в стиле I48 п. 1; задания — I49 B4.",
   "chapter": 2,
   "background": "room_cold",
-  "income": 30,
+  "income": 25,
   "eventName": "snow",
   "goalIds": ["plaid", "lezhanka", "pechka"],
   "chapterWantId": "sanki",
@@ -39,7 +39,7 @@
     },
     {
       "week": 3,
-      "_week": "«Снег всё не идёт» — только при недоборе отметок. Куртка на полке, пока не куплена.",
+      "_week": "«Снег всё не идёт» — запасная, как в главе 1 (I82). Куртка на полке, пока не куплена.",
       "spare": true,
       "situation": "food",
       "situationShelf": "food",

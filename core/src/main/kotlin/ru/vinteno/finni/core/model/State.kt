@@ -15,7 +15,7 @@ enum class Accessory { SCARF, CAP, BOW }
 
 /**
  * Профиль. Сложность выбирает взрослый (I42, I49 A7): `junior` — «Проще», план недели открывается
- * 10 / 10 / 10 или тем, что выбрано на итоге; `senior` — «Сложнее», план каждой недели открывается
+ * 10 / 5 / 10 (I81) или тем, что выбрано на итоге; `senior` — «Сложнее», план каждой недели открывается
  * пустым. Числа одни и те же — потолок 100 держится для всех.
  */
 @Serializable
@@ -58,6 +58,10 @@ data class WeekRecord(
     /** Всё обязательное недели куплено. */
     val care: Boolean = false,
     val bonus: Int = 0,
+    /** Неделя прошла по плану — отметка плана (I82): без перелива из «Хочу» и добора из копилки. */
+    val onPlan: Boolean = false,
+    /** Задание сыграно ошибочной веткой: объяснение показано, награды нет (I83). */
+    val taskMissed: Boolean = false,
 )
 
 /** Прогресс: счётчики только растут — data-model §3. */
@@ -80,6 +84,11 @@ data class Progress(
     /** Сквозной номер недели, когда куплено носимое со сроком (бинт): снимается само через неделю. */
     val boughtAt: Map<String, Int> = emptyMap(),
     val history: List<WeekRecord> = emptyList(),
+    /**
+     * Стадия роста Финни, 1–4 (I82): растёт в конце главы, только когда набраны отметки — сквозные пороги
+     * 2, 4 и 8 каждого типа. Глава и обстановка меняются по сюжету, стадия — по решениям. Только растёт.
+     */
+    val stage: Int = 1,
 )
 
 @Serializable
@@ -90,6 +99,8 @@ data class ChapterState(
     val careWeeks: Int = 0,
     val saveWeeks: Int = 0,
     val planWeeks: Int = 0,
+    /** Бонус взрослого в этой главе: раз в главу, а не раз в неделю (I81). */
+    val bonus: Int = 0,
 )
 
 @Serializable
@@ -97,8 +108,11 @@ data class Plan(val need: Int, val want: Int, val save: Int) {
     val total: Int get() = need + want + save
 
     companion object {
-        /** План по умолчанию 10 / 10 / 10 [КОНЦЕПТ]. */
-        val DEFAULT = Plan(10, 10, 10)
+        /**
+         * План по умолчанию 10 / 5 / 10 — под доход 25 (I81). Было 10 / 10 / 10 [КОНЦЕПТ] под доход 30.
+         * «Нужное» 10 оставлено: каша, ягоды и мыло (11) по-прежнему не влезают в него на один.
+         */
+        val DEFAULT = Plan(10, 5, 10)
 
         /** Пустой план профиля «Сложнее» (I49, A7). */
         val EMPTY = Plan(0, 0, 0)
@@ -114,9 +128,19 @@ enum class BallChoice { TAKEN, KEPT }
 @Serializable
 enum class SummaryChoice { KEEP_PLAN, TAKE_ACTUAL }
 
-/** Как ребёнок заплатил в задании F2: ровно или с 10 и сдачей. В кошельке — чистая стоимость. */
+/**
+ * Чем ребёнок заплатил в задании F2 (I83): из «Нужного», как задумано, или из копилки — ошибочная ветка,
+ * копилка уменьшается. `EXACT` и `CHANGE` — прежняя версия задания («ровно» / «с 10 и сдачей»),
+ * остались для старых сохранений и считаются оплатой из «Нужного».
+ */
 @Serializable
-enum class PayChoice { EXACT, CHANGE }
+enum class PayChoice { EXACT, CHANGE, NEED, SAVINGS }
+
+/** Сколько и откуда заплачено за вторую куртку в задании F3 — чтобы её можно было вернуть (I83). */
+@Serializable
+data class DuplicatePaid(val need: Int, val want: Int, val needFromWant: Int, val savings: Int) {
+    val fromWallet: Int get() = need + want
+}
 
 /** Неделя живёт от посылки до итога — data-model §5. */
 @Serializable
@@ -143,6 +167,10 @@ data class WeekState(
     val taskId: String? = null,
     val taskDone: Boolean = false,
     val taskReward: Int = 0,
+    /** Задание сыграно ошибочной веткой: объяснение показано, награды нет (I83). */
+    val taskMissed: Boolean = false,
+    /** F3: вторая куртка куплена и ещё не возвращена — сколько за неё заплачено и откуда. */
+    val duplicatePaid: DuplicatePaid? = null,
     val ballChoice: BallChoice? = null,
     val payChoice: PayChoice? = null,
     /** Выбор на экране ситуации (недели глав 2 и 3): ступенька полки ситуации, лежит в корзине. */
@@ -150,7 +178,7 @@ data class WeekState(
     val fed: Boolean = false,
     val washed: Boolean = false,
     val summaryChoice: SummaryChoice? = null,
-    /** Бонус взрослого за эту неделю (I49, F12.3) и видел ли ребёнок плашку о нём. */
+    /** Бонус взрослого, добавленный на этой неделе (I49, F12.3; раз в главу — I81), и видел ли ребёнок плашку о нём. */
     val bonus: Int = 0,
     val bonusSeen: Boolean = false,
 )
@@ -180,13 +208,17 @@ enum class EventOutcome { GIFT_GIVEN, NOT_ENOUGH }
 @Serializable
 enum class Reason { CARE, SAVE, PLAN }
 
-/** Плашка перехода: строка причины считается при смене главы и хранится до «Понятно». */
+/**
+ * Плашка перехода: строка причины считается при смене главы и хранится до «Понятно». [grew] — Финни
+ * подрос: [reason] — что замкнуло порог; не подрос — [reason] — отметка, которой не хватило (I82).
+ * После последней главы та же запись остаётся для экрана конца игры.
+ */
 @Serializable
-data class Transition(val chapter: Int, val reason: Reason, val weeks: Int)
+data class Transition(val chapter: Int, val reason: Reason, val weeks: Int, val grew: Boolean = true, val stage: Int = 0)
 
 @Serializable
 data class GameState(
-    val version: Int = 2,
+    val version: Int = 3,
     val profile: Profile = Profile(),
     val progress: Progress = Progress(),
     val chapter: ChapterState = ChapterState(),

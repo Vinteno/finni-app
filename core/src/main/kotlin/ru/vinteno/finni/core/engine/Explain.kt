@@ -2,6 +2,7 @@ package ru.vinteno.finni.core.engine
 
 import ru.vinteno.finni.core.content.Impact
 import ru.vinteno.finni.core.model.GameState
+import ru.vinteno.finni.core.model.PayChoice
 import ru.vinteno.finni.core.model.Reason
 
 /**
@@ -58,6 +59,38 @@ class Explain(private val game: Game) {
         }
     }
 
+    /**
+     * Объявление недели. У запасной недели второй строкой — почему она идёт (I82; ТЗ 2.5.10): чего не хватает
+     * до новой стадии или что на цель пока не хватает. Факт и нужда питомца, без подсказки «купи».
+     */
+    fun announcement(s: GameState): List<String> {
+        val lines = game.weekContent(s).announcement.map { texts.format(it, "name" to name(s)) }
+        if (!game.spareWeek(s)) return lines
+        val mark = game.spareMark(s)
+        val why = if (mark != null) texts["spare.why." + mark.name.lowercase()]
+        else texts.format("spare.why.goal", "what" to game.content.goal(s.chapter.goalId!!).accusative)
+        return listOf(lines.first(), why) + lines.drop(1).take(1)
+    }
+
+    /**
+     * Записка о посылке: пришла — сколько теперь монет; запасная неделя — посылки сегодня нет, и сколько есть
+     * (I82); кошелёк полон — бабушка пришлёт потом.
+     */
+    fun parcelLines(s: GameState): List<String> {
+        val w = s.week ?: return emptyList()
+        return when {
+            w.parcel == ru.vinteno.finni.core.model.ParcelResult.ARRIVED -> listOf(
+                texts[if (w.number == 1) "parcel.note.first" else "parcel.note.again"],
+                texts.format("parcel.amount", "n" to s.progress.wallet),
+            )
+            game.spareWeek(s) -> listOf(texts["parcel.spare"], texts.format("parcel.amount", "n" to s.progress.wallet))
+            else -> listOf(texts["parcel.none.1"], texts["parcel.none.2"])
+        }
+    }
+
+    /** F5 без выбора: в копилке меньше цены мячика — что это значит и что дальше. */
+    fun noBall(): List<String> = listOf(texts["f5.notEnough"], texts["f5.fix"])
+
     /** Объяснение после выбора в F5 — одинаковой структуры и тона при обоих решениях. */
     fun afterBall(sAfter: GameState, took: Boolean): List<String> {
         val w = sAfter.requireWeek()
@@ -101,8 +134,11 @@ class Explain(private val game: Game) {
             first,
             sum.needFromWant.takeIf { it > 0 }?.let { texts.format("summary.spillWant", "n" to it) },
             sum.paidFromSavings.takeIf { it > 0 }?.let { texts.format("summary.spillSavings", "n" to it) },
+            // Неделя вышла за план — следующий шаг (I84, ТЗ 2.5.9): «Взять как вышло» ставит план по тратам.
+            if (game.overPlan(s)) texts["summary.fix"] else null,
             // Куда делась разница «Задумал» и «Вышло»: монеты не пропали, они в кошельке (решение Эмиля 24.09).
-            (sum.planned - sum.fact.total).takeIf { it > 0 }?.let { texts.format("summary.left", "n" to it) },
+            s.requireWeek().let { w -> w.plan.total - w.paidNeed - w.paidWant - w.deposit }.takeIf { it > 0 }
+                ?.let { texts.format("summary.left", "n" to it) },
             // «Не покупаю ничего»: нейтральный факт о еде виден на итоге в любую неделю — сценарий §11.
             if (!situationIsFood && !boughtFood) texts.format("summary.notFed", "name" to name(s)) else null,
         )
@@ -114,8 +150,8 @@ class Explain(private val game: Game) {
     }
 
     /**
-     * Объяснение после F4 — три строки, как всегда: сколько откладываем, сколько будет к событию, хватит ли.
-     * Числа считаются от выбранной цели и плана, одна структура при любой сумме.
+     * Объяснение после F4 — три строки: сколько откладываем, сколько будет к событию, хватит ли. Ошибочная
+     * ветка (I83) — четвёртой строкой способ исправить. Числа считаются от выбранной цели и плана.
      */
     fun afterPlanTask(s: GameState): List<String> {
         val w = s.requireWeek()
@@ -127,41 +163,55 @@ class Explain(private val game: Game) {
                 Enough.SHORT -> "enough.short"
             }
         ]
-        return listOf(
+        return listOfNotNull(
             texts.format("f4.did", "n" to w.plan.save),
             texts.format("f4.result.${s.progress.chapter}", "n" to atEvent.coerceAtMost(Game.CEILING)),
             third,
+            if (w.taskMissed) texts["f4.fix"] else null,
         )
     }
 
-    /** F3 «Куртка уже есть»: одинаково при любом выборе — убрал дубль или нажал «Купить». */
-    fun afterDuplicate(): List<String> = listOf(texts["f3.did"], texts["f3.result"], texts["f3.meaning"])
+    /**
+     * F3 «Куртка уже есть» (I83): одна структура — что сделали, что есть, что это значит. Убрали — вторая не
+     * нужна; купили — одна уже была, её можно вернуть; вернули — монеты снова у нас.
+     */
+    fun afterDuplicate(bought: Boolean): List<String> =
+        if (bought) listOf(texts["f3.bought"], texts["f3.had"], texts["f3.canReturn"])
+        else listOf(texts["f3.did"], texts["f3.result"], texts["f3.meaning"])
 
-    /** F2 «Чем заплатить»: оба способа верны, в кошельке — чистая стоимость, сдача — пояснение. */
-    fun afterPay(s: GameState, exact: Boolean): List<String> {
-        val price = game.weekTask(s)?.itemId?.let { game.content.item(it).price } ?: 0
-        val given = if (exact) price else changeCoin(price)
-        return listOf(
-            texts.format("f2.did", "n" to given),
-            if (exact) texts["f2.noChange"] else texts.format("f2.change", "n" to given - price),
-            texts.format("f2.meaning", "n" to price),
+    fun afterReturn(): List<String> = listOf(texts["f3.returned"], texts["f3.back"])
+
+    /**
+     * F2 «Чем заплатить» (I83): из «Нужного» — как задумали; из копилки — копилка уменьшилась, а монеты
+     * «Нужного» остались и уйдут в план следующей недели.
+     */
+    fun afterPay(s: GameState, pay: PayChoice): List<String> =
+        if (pay == PayChoice.SAVINGS) listOf(
+            texts["f2.did.savings"],
+            texts.format("f2.savingsNow", "n" to s.progress.savings),
+            texts["f2.fix"],
+        ) else listOf(
+            texts["f2.did.need"],
+            texts["f2.asPlanned"],
+            texts.format("f2.meaning", "n" to (game.weekTask(s)?.itemId?.let { game.content.item(it).price } ?: 0)),
         )
-    }
-
-    /** «Отдать 10 и взять сдачу»: ближайшая десятка сверху. */
-    fun changeCoin(price: Int): Int = (price / 10 + 1) * 10
 
     /**
      * F6 «Что задумал и что вышло»: что сделали, сколько ушло на нужное, и как это против плана.
      * Факт по категории вещей, а не по тому, как ребёнок разложил, — вывод не подсказывается раньше.
+     * Карточка легла не в ту банку (I83) — первая строка называет, куда она относится.
      */
-    fun afterSort(s: GameState): List<String> {
+    fun afterSort(s: GameState, placed: List<Direction?> = game.sortCards(s).map { it.direction }): List<String> {
         val cards = game.sortCards(s)
         if (cards.isEmpty()) return listOf(texts["f6.empty"])
         val need = cards.filter { it.direction == Direction.NEED }.sumOf { it.price }
         val plan = s.requireWeek().plan.need
+        val wrong = game.sortMistakes(s, placed).firstOrNull()
         return listOf(
-            texts["f6.did"],
+            if (wrong == null) texts["f6.did"] else texts.format(
+                "f6.fix." + (wrong.direction?.name ?: "SAVE"),
+                "what" to if (wrong.id == Game.DEPOSIT) texts["f6.deposit"] else game.content.item(wrong.id).name,
+            ),
             texts.format("f6.need", "n" to need),
             texts[
                 when {
@@ -180,17 +230,27 @@ class Explain(private val game: Game) {
     }
 
     /**
-     * Плашка перехода главы: строка причины — действие ребёнка, замкнувшее порог (сценарий главы 1, §9),
-     * потом две строки о смене обстановки. Строка считается, а не зашита.
+     * Плашка перехода главы: строки роста, потом две строки о смене обстановки. Строка считается, а не зашита.
      */
     fun transitionLines(s: GameState): List<String> {
         val t = s.transition ?: return emptyList()
+        return growthLines(s) + game.content.chapters[t.chapter]?.enterLines.orEmpty().map { texts[it] }
+    }
+
+    /**
+     * Рост на конце главы (I82; ТЗ 2.5.10). Подрос — действие ребёнка, замкнувшее порог (сценарий главы 1,
+     * §9), и «Я подрос». Не подрос — «Я ещё подрасту» и чего не хватило, теми же словами, что на запасной
+     * неделе. Факт о питомце, без оценки ребёнка.
+     */
+    fun growthLines(s: GameState): List<String> {
+        val t = s.transition ?: return emptyList()
+        if (!t.grew) return listOf(texts["growth.later"], texts["spare.why." + t.reason.name.lowercase()])
         val reason = when (t.reason) {
             Reason.CARE -> texts.format("reason.care", "weeks" to weeksWord(t.weeks))
             Reason.SAVE -> texts.format("reason.save", "weeks" to weeksWord(t.weeks))
-            Reason.PLAN -> texts["reason.plan"]
+            Reason.PLAN -> texts.format("reason.plan", "weeks" to weeksWord(t.weeks))
         }
-        return listOf(reason) + game.content.chapter(t.chapter).enterLines.map { texts[it] }
+        return listOf(reason, texts["growth.up"])
     }
 
     /** «две недели» словами: число в строке причины — недели, когда действие было (D6). */

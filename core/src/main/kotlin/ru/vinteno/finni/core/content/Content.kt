@@ -3,6 +3,7 @@ package ru.vinteno.finni.core.content
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import ru.vinteno.finni.core.model.Progress
 
 /**
  * Контент игры: предметы, цели, недели главы, задания, тексты.
@@ -82,8 +83,8 @@ data class WeekContent(
     val shelves: List<Shelf>,
     val taskId: String? = null,
     /**
-     * Запасная третья неделя главы (сценарий главы 1, §9а): играется при недоборе отметок, задание —
-     * по недостающему типу, награды нет. Ребёнку нигде не сообщается, что неделя дополнительная.
+     * Запасная неделя главы (сценарий главы 1, §9а; I82): играется один раз — при недоборе отметок или когда
+     * на цель не хватает. Задание — по недостающему типу, награды нет.
      */
     val spare: Boolean = false,
 )
@@ -120,22 +121,31 @@ data class TaskDef(
 data class ChapterContent(
     val chapter: Int,
     val background: String,
-    /** Фиксированный доход посылки; он же порог: при кошельке от него и выше посылка не приходит. */
+    /**
+     * Доход посылки — каждую неделю, одинаковый (I81). Не приходит, только если кошелёк с ним перевалил бы
+     * за 100 (инвариант 9): так бывает, лишь когда ребёнок неделями ничего не тратит и не откладывает.
+     */
     val income: Int,
     val eventName: String,
     val goalIds: List<String>,
     val chapterWantId: String,
     val weeks: List<WeekContent>,
-    /** Длина главы: главы 1 и 2 — от двух до трёх недель, глава 3 — всегда четыре (сценарий главы 1, §9). */
+    /**
+     * Длина главы: не меньше [minWeeks]; набраны отметки и хватает на цель — глава кончается. Не набраны или
+     * не хватает — одна запасная неделя, до [maxWeeks], и после неё глава кончается в любом случае (D1,
+     * I82). Бесконечного цикла нет; стадия роста без отметок не меняется ([Progress.stage]).
+     */
     val minWeeks: Int,
     val maxWeeks: Int,
-    /** Сколько отметок каждого типа нужно, чтобы глава кончилась после [minWeeks]: 2 и 4. У последней — нет. */
+    /** Сколько отметок каждого типа нужно к концу главы, чтобы Финни подрос: счётчики сквозные — 2, 4 и 8. */
     val marksToLeave: Int? = null,
+    /** Последняя глава: после её события — конец игры, а не плашка перехода. */
+    val final: Boolean = false,
     /** Две строки плашки перехода в эту главу — после строки причины. */
     val enterLines: List<String> = emptyList(),
 ) {
     fun week(n: Int): WeekContent = weeks.first { it.week == n }
-    val last: Boolean get() = marksToLeave == null
+    val last: Boolean get() = final || marksToLeave == null
 }
 
 @Serializable

@@ -2,12 +2,14 @@
   "_source": "internal/design/scenario-chapter-3.md, версия 1.4; тексты — в стиле I48 п. 1; задания — I49 B4.",
   "chapter": 3,
   "background": "room_home",
-  "income": 30,
+  "income": 25,
   "eventName": "housewarming",
   "goalIds": ["polka_veshchey", "korzina", "sunduk"],
   "chapterWantId": "girlyanda",
   "minWeeks": 4,
-  "maxWeeks": 4,
+  "maxWeeks": 5,
+  "marksToLeave": 8,
+  "final": true,
   "enterLines": ["transition.3.1", "transition.3.2"],
   "weeks": [
     {
@@ -58,6 +60,19 @@
         { "id": "food", "caption": "shop.caption.food", "mandatory": true, "tiers": [["krupa"], ["kasha"]] },
         { "id": "soap", "caption": null, "mandatory": true, "tiers": [["mylo"]] },
         { "id": "situation", "caption": "sit.caption.polotence", "mandatory": true, "onScreen": true, "tiers": [["polotence"], ["polotence", "vyshivka"]] }
+      ]
+    },
+    {
+      "week": 5,
+      "_week": "«Новоселье чуть позже» — запасная, как в главах 1 и 2 (I82): отметки третьей стадии считаются так же.",
+      "spare": true,
+      "situation": "food",
+      "situationShelf": "food",
+      "announcement": ["announce.spare3.1", "announce.food.1", "announce.price.kasha"],
+      "announceItem": "kasha",
+      "shelves": [
+        { "id": "food", "caption": "shop.caption.food", "mandatory": true, "tiers": [["krupa"], ["kasha"], ["kasha", "yagody"]] },
+        { "id": "soap", "caption": null, "mandatory": true, "tiers": [["mylo"]] }
       ]
     }
   ]

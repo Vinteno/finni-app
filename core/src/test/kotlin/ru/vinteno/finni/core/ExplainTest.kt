@@ -31,9 +31,9 @@ class ExplainTest {
         var s = game.buy(week1(), listOf("kasha", "yagody", "mylo"), agreedWant = true)
         assertEquals("Мы купили кашу и мыло", explain.did(listOf("kasha", "yagody", "mylo")))
         s = game.deposit(game.leaveShop(s))
-        // Последняя строка объясняет разницу 30 и 21 (решение Эмиля 24.09). Надбавка платится из «Хочу»,
+        // Последняя строка объясняет разницу 25 и 21 (решение Эмиля 24.09). Надбавка платится из «Хочу»,
         // поэтому строки перелива из «Хочу» в «Нужное» на каноническом пути больше нет.
-        assertEquals(listOf("Мы взяли кашу с ягодами", "У тебя 9 монет"), explain.summaryLines(s))
+        assertEquals(listOf("Мы взяли кашу с ягодами", "У тебя 4 монеты"), explain.summaryLines(s))
     }
 
     @Test fun `третья строка после магазина — есть ли всё нужное на неделю`() {
@@ -49,7 +49,7 @@ class ExplainTest {
     @Test fun `пустая корзина и ничего не купленное`() {
         val s = game.leaveShop(week1("Бублик"))
         assertEquals("Мы ничего не купили", explain.did(emptyList()))
-        assertEquals(listOf("Я неделю без еды", "У тебя 30 монет"), explain.summaryLines(s))
+        assertEquals(listOf("Я неделю без еды", "У тебя 25 монет"), explain.summaryLines(s))
     }
 
     @Test fun `любой набор корзины — фраза не длиннее 5 слов`() {
@@ -66,13 +66,13 @@ class ExplainTest {
     @Test fun `объяснение F5 одинаковой структуры при обоих решениях`() {
         var s = game.buy(week1(), listOf("kasha", "yagody", "mylo"), agreedWant = true)
         s = game.finishWeek(game.deposit(game.leaveShop(s)), SummaryChoice.KEEP_PLAN)
-        // В кошельке 39: остаток раскладывается сам, иначе план не подтвердить (I45).
-        s = game.deposit(game.confirmPlan(game.setPlan(game.seeAnnouncement(game.openParcel(game.nextWeek(s))), Plan(10, 19, 10))))
+        // В кошельке 29: остаток раскладывается сам, иначе план не подтвердить (I45).
+        s = game.deposit(game.confirmPlan(game.setPlan(game.seeAnnouncement(game.openParcel(game.nextWeek(s))), Plan(8, 0, 21))))
         val take = explain.afterBall(game.chooseBall(s, true), took = true)
         val keep = explain.afterBall(game.chooseBall(s, false), took = false)
         assertEquals(3, take.size); assertEquals(3, keep.size)
-        assertEquals(listOf("Мы взяли мячик", "В копилке 25 монет", "На подарок не хватит"), take)
-        assertEquals(listOf("Мы оставили монеты в копилке", "В копилке 40 монет", "На подарок хватит"), keep)
+        assertEquals(listOf("Мы взяли мячик", "В копилке 26 монет", "На подарок не хватит"), take)
+        assertEquals(listOf("Мы оставили монеты в копилке", "В копилке 41 монета", "На подарок хватит"), keep)
         (take + keep).forEach { assertTrue(it, words(it) <= 5) }
     }
 
@@ -84,17 +84,18 @@ class ExplainTest {
         assertEquals("На нужное: 10 монет", t.format("shop.hint", "n" to 10))
     }
 
-    @Test fun `F5 при копилке меньше 15 засчитывается с наградой`() {
+    @Test fun `F5 при копилке меньше 15 — без награды, объяснение и что дальше (I83)`() {
         var s = game.createPet(game.seeIntro(GameState()), "", Fur.GINGER, Accessory.CAP)
         s = game.chooseGoal(s, "podarok_myach")
-        s = game.setPlan(game.seeAnnouncement(game.openParcel(s)), Plan(10, 20, 0))
-        // Награда F1 — за покупку: крупа 3, в копилке 10, в кошельке 27 + 30.
+        s = game.setPlan(game.seeAnnouncement(game.openParcel(s)), Plan(10, 15, 0))
+        // Только крупа — F1 не пройдено: копилка 0, в кошельке 22 + 25.
         s = game.finishWeek(game.buy(game.confirmPlan(s), listOf("krupa")), SummaryChoice.KEEP_PLAN)
-        s = game.confirmPlan(game.setPlan(game.seeAnnouncement(game.openParcel(game.nextWeek(s))), Plan(10, 47, 0)))
+        s = game.confirmPlan(game.setPlan(game.seeAnnouncement(game.openParcel(game.nextWeek(s))), Plan(10, 37, 0)))
         assertTrue(!game.ballOffer(s).available)
         s = game.acknowledgeNoBall(s)
-        assertEquals(20, s.progress.savings)
-        assertEquals(10, s.week!!.taskReward)
+        assertEquals(0, s.progress.savings)
+        assertEquals(0, s.week!!.taskReward)
+        assertEquals(listOf("В копилке мало монет", "Копилка растёт от взносов"), explain.noBall())
     }
 
     @Test fun `QA-M7 остаток называет направление`() {
@@ -102,7 +103,7 @@ class ExplainTest {
         s = game.buy(s, listOf("kasha", "mylo"))
         assertEquals("В «Нужном» осталось 2", explain.afterShop(s, listOf("kasha", "mylo"))[1])
         s = game.setPlan(game.seeAnnouncement(game.openParcel(game.chooseGoal(
-            game.createPet(game.seeIntro(GameState()), "", Fur.GINGER, Accessory.CAP), "podarok_myach"))), Plan(5, 20, 5))
+            game.createPet(game.seeIntro(GameState()), "", Fur.GINGER, Accessory.CAP), "podarok_myach"))), Plan(5, 20, 0))
         s = game.buy(game.confirmPlan(s), listOf("kacheli"))
         assertEquals("В «Хочу» осталось 5", explain.afterShop(s, listOf("kacheli"))[1])
         assertEquals("В «Нужном» осталось 5", explain.afterShop(s, emptyList())[1])

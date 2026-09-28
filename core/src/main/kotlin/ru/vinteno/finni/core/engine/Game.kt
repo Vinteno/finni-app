@@ -13,6 +13,7 @@ import ru.vinteno.finni.core.content.WeekContent
 import ru.vinteno.finni.core.model.Accessory
 import ru.vinteno.finni.core.model.BallChoice
 import ru.vinteno.finni.core.model.ChapterState
+import ru.vinteno.finni.core.model.DuplicatePaid
 import ru.vinteno.finni.core.model.EventOutcome
 import ru.vinteno.finni.core.model.Fur
 import ru.vinteno.finni.core.model.GameState
@@ -160,12 +161,13 @@ class Game(val content: Content) {
     fun setAnimations(s: GameState, on: Boolean): GameState = s.copy(profile = s.profile.copy(animationOn = on, animationSet = true))
 
     /**
-     * Бонус взрослого (I49, F12.3): раз в игровую неделю +5 в копилку «за дело в жизни». Дом показывает
-     * плашку с источником и суммой (ТЗ 2.5.4). Копилка не поднимается выше 100 — инвариант 9.
+     * Бонус взрослого (I49, F12.3): +5 в копилку «за дело в жизни» — раз в главу (I81; было раз в неделю, и
+     * еженедельные +5 возвращали лишние деньги). Дом показывает плашку с источником и суммой (ТЗ 2.5.4).
+     * Копилка не поднимается выше 100 — инвариант 9.
      */
     fun canBonus(s: GameState): Boolean {
         val w = s.week ?: return false
-        if (s.phase != Phase.WEEK && s.phase != Phase.AFTER_SUMMARY || w.bonus != 0) return false
+        if (s.phase != Phase.WEEK && s.phase != Phase.AFTER_SUMMARY || s.chapter.bonus != 0) return false
         // Взнос и награда этой недели ещё придут в копилку — место под них держится.
         val pending = if (s.phase == Phase.WEEK) (if (w.deposited) 0 else w.plan.save) + pendingReward(s) else 0
         return s.progress.savings + pending + BONUS <= CEILING
@@ -176,6 +178,7 @@ class Game(val content: Content) {
         val w = s.requireWeek()
         return s.copy(
             progress = s.progress.copy(savings = s.progress.savings + BONUS),
+            chapter = s.chapter.copy(bonus = BONUS),
             week = w.copy(bonus = BONUS, bonusSeen = false),
         )
     }
@@ -213,14 +216,36 @@ class Game(val content: Content) {
 
     /**
      * Задание запасной недели — по недостающему типу отметок (§9а): не хватает двух — по тому, которого
-     * меньше; поровну — по порядку забота, накопления, план.
+     * меньше; поровну — по порядку забота, накопления, план. Отметки есть, а на цель не хватает — задание
+     * про накопления (I82).
      */
     private fun spareTask(s: GameState): String {
-        val goal = ch(s).marksToLeave ?: return SPARE_TASKS.getValue(Reason.CARE)
+        val missing = missingMarks(s)
+        if (missing.isEmpty()) return SPARE_TASKS.getValue(Reason.SAVE)
         val p = s.progress
-        val marks = listOf(Reason.CARE to p.marksCare, Reason.SAVE to p.marksSave, Reason.PLAN to p.marksPlan)
-        val missing = marks.filter { it.second < goal }.ifEmpty { marks }
-        return SPARE_TASKS.getValue(missing.minBy { it.second }.first)
+        val count = mapOf(Reason.CARE to p.marksCare, Reason.SAVE to p.marksSave, Reason.PLAN to p.marksPlan)
+        return SPARE_TASKS.getValue(missing.minBy { count.getValue(it) })
+    }
+
+    /** Каких отметок не хватает до конца главы — по порядку забота, накопления, план (I82). */
+    fun missingMarks(s: GameState): List<Reason> {
+        val goal = ch(s).marksToLeave ?: return emptyList()
+        val p = s.progress
+        return listOf(Reason.CARE to p.marksCare, Reason.SAVE to p.marksSave, Reason.PLAN to p.marksPlan)
+            .filter { it.second < goal }.map { it.first }
+    }
+
+    /** Идёт запасная неделя главы. */
+    fun spareWeek(s: GameState): Boolean = s.week != null && weekContent(s).spare
+
+    /**
+     * Почему идёт запасная неделя — строка на объявлении (ТЗ 2.5.10: причина задержки простыми словами):
+     * недостающая отметка, по которой выбрано задание недели; `null` — отметки есть, не хватает на цель.
+     */
+    fun spareMark(s: GameState): Reason? {
+        val taskId = s.week?.taskId ?: return null
+        val mark = SPARE_TASKS.entries.firstOrNull { it.value == taskId }?.key ?: return null
+        return mark.takeIf { it in missingMarks(s) }
     }
 
     fun weekContent(s: GameState): WeekContent = ch(s).week(s.requireWeek().number)
@@ -228,13 +253,18 @@ class Game(val content: Content) {
     /** Номер недели на календаре — сквозной за игру. */
     fun weekNumber(s: GameState): Int = s.progress.weekTotal.takeIf { it > 0 } ?: s.week?.number ?: 1
 
-    /** Посылка: +30, если в кошельке меньше 30; иначе не приходит, и это не ошибка — E01, E02. */
+    /**
+     * Посылка: доход главы каждую неделю, один и тот же (I81; ТЗ 2.5.4, инвариант 5). Не приходит, если
+     * кошелёк с ней перевалил бы за 100 (инвариант 9) — это не ошибка, E02, — и на запасной неделе: это
+     * «ещё день» до события, а не новая неделя дохода (сценарий §9а, I82). Исправить недобор можно тем, что
+     * осталось, — иначе промах приносил бы лишнюю посылку и был бы выгоден.
+     */
     fun openParcel(s: GameState): GameState {
         val w = s.requireWeek()
         rule(s.phase == Phase.WEEK) { "Посылка приходит в начале недели" }
         rule(w.parcel == null) { "Посылка этой недели уже открыта" }
         val income = ch(s).income
-        val arrives = s.progress.wallet < income
+        val arrives = !spareWeek(s) && s.progress.wallet + income <= CEILING
         val wallet = s.progress.wallet + if (arrives) income else 0
         return s.copy(
             progress = s.progress.copy(wallet = wallet),
@@ -295,12 +325,21 @@ class Game(val content: Content) {
             w.plan.save <= saveCap(s)
     }
 
-    /** Подтверждение плана. Задание F4 «Сколько отложить» живёт на плане и проходится здесь (A6). */
+    /**
+     * Подтверждение плана. Задание F4 «Сколько отложить» живёт на плане и проходится здесь (A6). Верная
+     * ветка — взнос не ноль и к событию на цель хватит (или уже хватает); иначе объяснение без награды (I83).
+     */
     fun confirmPlan(s: GameState): GameState {
         rule(canConfirmPlan(s)) { "Подтверждение недоступно: разложен не весь кошелёк или план уже подтверждён" }
         val w = s.requireWeek()
         val next = s.copy(week = w.copy(planConfirmed = true))
-        return if (weekTaskTemplate(next) == TaskTemplate.PLAN) completeTask(next) else next
+        return if (weekTaskTemplate(next) == TaskTemplate.PLAN) completeTask(next, ok = planTaskOk(s)) else next
+    }
+
+    /** F4 верно: что-то откладываем, и к событию на цель хватит при таком взносе — или уже хватает. */
+    fun planTaskOk(s: GameState): Boolean {
+        val w = s.requireWeek()
+        return w.plan.save > 0 && (goalReached(s) || enoughForGoal(s) != Enough.SHORT)
     }
 
     /** План этой недели — задание F4: заголовок «Сколько отложишь?», копилка — предмет задания. */
@@ -394,6 +433,14 @@ class Game(val content: Content) {
             .filterNot { it.isDurable && owns(s, it.id) }
             .filterNot { shelfOf(s, it.id) in closed }
             .distinctBy { it.id }
+        return checkout(s, items)
+    }
+
+    /**
+     * Расклад оплаты [items] по направлениям. [direct] — сколько платится прямо из копилки мимо направлений:
+     * коробка в задании F2, если ребёнок выбрал «Из копилки».
+     */
+    private fun checkout(s: GameState, items: List<Item>, direct: Int = 0): Checkout {
         val needCost = items.filter { direction(it) == Direction.NEED }.sumOf { it.price }
         val wantCost = items.filter { direction(it) == Direction.WANT }.sumOf { it.price }
 
@@ -404,11 +451,11 @@ class Game(val content: Content) {
         val needShortage = needCost - fromNeed
         val wantSurplus = wantLeft - fromWantOwn
         val needFromWant = minOf(needShortage, wantSurplus)
-        val fromSavings = (needShortage - needFromWant) + (wantCost - fromWantOwn)
+        val fromSavings = (needShortage - needFromWant) + (wantCost - fromWantOwn) + direct
 
         return Checkout(
             items = items,
-            total = needCost + wantCost,
+            total = needCost + wantCost + direct,
             fromNeed = fromNeed,
             fromWantOwn = fromWantOwn,
             needShortage = needShortage,
@@ -428,7 +475,9 @@ class Game(val content: Content) {
     /**
      * Покупка. Кнопка «Купить» не гаснет; перелив из «Хочу» и добор из копилки
      * проходят только с согласия ребёнка — флаги ставит интерфейс после окна. В задании F2 способ
-     * оплаты [pay] обязателен; оба способа равны, в кошельке — чистая стоимость.
+     * оплаты [pay] обязателен: из «Нужного», как задумано, или из копилки — ошибочная ветка, копилка
+     * уменьшается (I83). Окно «Чем заплатишь?» показывает это до выбора — оно и есть подтверждение снятия.
+     * Задание F1 пройдено, когда куплено всё нужное недели, а не любая покупка (I83).
      */
     fun buy(
         s: GameState,
@@ -437,14 +486,16 @@ class Game(val content: Content) {
         agreedSavings: Boolean = false,
         pay: PayChoice? = null,
     ): GameState {
-        val q = quote(s, cart)
+        val full = quote(s, cart)
+        val payTask = asksPay(s, full)
+        rule(!payTask || pay != null) { "Сначала выбирается, чем заплатить" }
+        val fromPiggy = if (payTask && pay == PayChoice.SAVINGS) full.items.first { it.id == weekTask(s)!!.itemId } else null
+        val q = if (fromPiggy == null) full else checkout(s, full.items - fromPiggy, direct = fromPiggy.price).copy(items = full.items)
         rule(q.items.isNotEmpty()) { "Корзина пуста" }
         rule(!q.asksWant || agreedWant) { "Перелив из «Хочу» без согласия запрещён" }
-        rule(!q.asksSavings || agreedSavings) { "Снятие из копилки без отдельного подтверждения запрещено" }
+        rule(q.fromSavings == (fromPiggy?.price ?: 0) || agreedSavings) { "Снятие из копилки без отдельного подтверждения запрещено" }
         rule(q.savingsAfter >= 0) { "В копилке не хватает на добор" }
         rule(q.fromWallet <= s.progress.wallet) { "В кошельке не хватает" }
-        val payTask = asksPay(s, q)
-        rule(!payTask || pay != null) { "Сначала выбирается, чем заплатить" }
 
         val w = s.requireWeek()
         val durables = q.items.filter { it.isDurable }.map { it.id }
@@ -468,9 +519,14 @@ class Game(val content: Content) {
                 payChoice = if (payTask) pay else w.payChoice,
             ),
         )
-        if (weekTaskTemplate(next) == TaskTemplate.SHOP || payTask) next = completeTask(next)
+        if (payTask) next = completeTask(next, ok = pay != PayChoice.SAVINGS)
+        else if (weekTaskTemplate(next) == TaskTemplate.SHOP && mandatoryBought(next)) next = completeTask(next)
         return next
     }
+
+    /** F2: сколько останется в копилке, если заплатить за предмет задания из неё, — видно до выбора. */
+    fun payFromSavingsAfter(s: GameState): Int =
+        s.progress.savings - (weekTask(s)?.itemId?.let { content.item(it).price } ?: 0)
 
     /**
      * Выход из магазина только отмечает, что ребёнок в нём был. Шаг «В магазин» он не закрывает, и
@@ -528,21 +584,25 @@ class Game(val content: Content) {
      */
     fun choiceOpen(s: GameState): Boolean = choicePending(s) && s.requireWeek().planConfirmed && !depositPending(s)
 
-    /** Награда падает в копилку, а не в кошелёк; повтор не даёт ничего — E05, E06. */
-    private fun completeTask(s: GameState): GameState {
+    /**
+     * Задание сыграно. Верная ветка ([ok]) — награда в копилку, а не в кошелёк; повтор не даёт ничего —
+     * E05, E06. Ошибочная — объяснение без награды (I83): задание не засчитывается пройденным, и запасная
+     * неделя может дать его снова.
+     */
+    private fun completeTask(s: GameState, ok: Boolean = true): GameState {
         val w = s.requireWeek()
         if (w.taskDone) return s
         val task = weekTask(s) ?: return s
         // Копилка полна до 100 — награда добирает только до потолка (инвариант 9; бывает, только если
         // откладывать почти всё все недели подряд).
-        val reward = minOf(taskReward(s, task), CEILING - s.progress.savings).coerceAtLeast(0)
+        val reward = if (ok) minOf(taskReward(s, task), CEILING - s.progress.savings).coerceAtLeast(0) else 0
         return s.copy(
             progress = s.progress.copy(
                 savings = s.progress.savings + reward,
                 rewardedTasks = if (reward > 0) s.progress.rewardedTasks + task.id else s.progress.rewardedTasks,
-                doneTasks = (s.progress.doneTasks + task.id).distinct(),
+                doneTasks = if (ok) (s.progress.doneTasks + task.id).distinct() else s.progress.doneTasks,
             ),
-            week = w.copy(taskDone = true, taskReward = reward),
+            week = w.copy(taskDone = true, taskReward = reward, taskMissed = !ok),
         )
     }
 
@@ -566,13 +626,14 @@ class Game(val content: Content) {
     }
 
     /**
-     * В копилке меньше цены мячика: выбор не предлагается, ребёнок видит «В копилке мало монет» и
-     * нажимает «Понятно». Задание засчитывается с наградой — отсутствие денег не отказ (I19).
+     * В копилке меньше цены мячика: выбора нет, ребёнок видит «В копилке мало монет» и нажимает «Понятно».
+     * Это последствие того, что до сих пор не откладывали: задание сыграно без награды (I83; было — с
+     * наградой, I19).
      */
     fun acknowledgeNoBall(s: GameState): GameState {
         rule(choiceOpen(s)) { "Задание выбора — на копилке после взноса" }
         rule(!ballOffer(s).available) { "Выбор доступен — его нужно сделать" }
-        return completeTask(s)
+        return completeTask(s, ok = false)
     }
 
     /** «Взять мячик» — только из копилки; «Оставить в копилке» — ничего не списывает. Реакция одна. */
@@ -595,17 +656,69 @@ class Game(val content: Content) {
     }
 
     /**
-     * F3 «Куртка уже есть»: в корзине магазина лежит вторая куртка. Ребёнок убирает её или нажимает
-     * «Купить» — дубль не списывается ни при каком выборе, награды нет, и это не комментируется.
+     * F3 «Куртка уже есть»: в корзине магазина лежит вторая куртка (I83). Убрать её — верная ветка, награда.
+     * «Купить» — ошибочная: куртка списывается, как любая покупка, с теми же окнами нехватки; объяснение и
+     * способ исправить — вернуть её в магазин ([returnDuplicate]) до конца недели.
      */
     fun duplicatePending(s: GameState): Boolean {
         val w = s.week ?: return false
         return s.phase == Phase.WEEK && w.planConfirmed && !w.taskDone && weekTaskTemplate(s) == TaskTemplate.DUPLICATE
     }
 
+    /** Вторая куртка убрана из корзины — верная ветка. */
     fun resolveDuplicate(s: GameState): GameState {
         rule(duplicatePending(s)) { "Задания «уже есть» сейчас нет" }
         return completeTask(s)
+    }
+
+    /** Сколько и откуда спишется за вторую куртку — для окон нехватки перед «Купить». */
+    fun quoteDuplicate(s: GameState): Checkout {
+        rule(duplicatePending(s)) { "Задания «уже есть» сейчас нет" }
+        return checkout(s, listOf(content.item(weekTask(s)!!.itemId!!)))
+    }
+
+    /** «Купить» со второй курткой в корзине — ошибочная ветка F3: куртка списывается. */
+    fun buyDuplicate(s: GameState, agreedWant: Boolean = false, agreedSavings: Boolean = false): GameState {
+        val q = quoteDuplicate(s)
+        rule(!q.asksWant || agreedWant) { "Перелив из «Хочу» без согласия запрещён" }
+        rule(!q.asksSavings || agreedSavings) { "Снятие из копилки без отдельного подтверждения запрещено" }
+        rule(q.savingsAfter >= 0) { "В копилке не хватает на добор" }
+        rule(q.fromWallet <= s.progress.wallet) { "В кошельке не хватает" }
+        val w = s.requireWeek()
+        val next = s.copy(
+            progress = s.progress.copy(wallet = s.progress.wallet - q.fromWallet, savings = q.savingsAfter),
+            week = w.copy(
+                paidNeed = w.paidNeed + q.fromNeed,
+                paidWant = w.paidWant + q.fromWantOwn + q.needFromWant,
+                needFromWant = w.needFromWant + q.needFromWant,
+                fromSavings = w.fromSavings + q.fromSavings,
+                purchases = w.purchases + q.items.map { it.id },
+                duplicatePaid = DuplicatePaid(q.fromNeed, q.fromWantOwn + q.needFromWant, q.needFromWant, q.fromSavings),
+            ),
+        )
+        return completeTask(next, ok = false)
+    }
+
+    /** Вторую куртку можно вернуть в магазин, пока идёт неделя. */
+    fun canReturnDuplicate(s: GameState): Boolean = s.phase == Phase.WEEK && s.week?.duplicatePaid != null
+
+    /** Вернуть вторую куртку: монеты возвращаются туда, откуда ушли. Награды за задание это не даёт. */
+    fun returnDuplicate(s: GameState): GameState {
+        rule(canReturnDuplicate(s)) { "Возвращать нечего" }
+        val w = s.requireWeek()
+        val paid = w.duplicatePaid!!
+        val id = content.task(w.taskId ?: weekTask(s)!!.id).itemId!!
+        return s.copy(
+            progress = s.progress.copy(wallet = s.progress.wallet + paid.fromWallet, savings = s.progress.savings + paid.savings),
+            week = w.copy(
+                paidNeed = w.paidNeed - paid.need,
+                paidWant = w.paidWant - paid.want,
+                needFromWant = w.needFromWant - paid.needFromWant,
+                fromSavings = w.fromSavings - paid.savings,
+                purchases = w.purchases.toMutableList().apply { remove(id) },
+                duplicatePaid = null,
+            ),
+        )
     }
 
     /** F6 «Что задумал и что вышло»: ждёт, когда ребёнок разложит траты, — перед итогом. */
@@ -621,11 +734,22 @@ class Game(val content: Content) {
         return bought + listOfNotNull(if (w.deposit > 0) SortCard(DEPOSIT, w.deposit, null) else null)
     }
 
-    fun finishSort(s: GameState): GameState {
+    /**
+     * Траты разложены (I83): [placed] — куда ребёнок положил каждую карточку, по порядку [sortCards].
+     * Не та банка принимается, как положена; объяснение называет, куда относится трата, награда — только
+     * когда всё разложено верно.
+     */
+    fun finishSort(s: GameState, placed: List<Direction?> = sortCards(s).map { it.direction }): GameState {
         rule(sortPending(s)) { "Раскладывать сейчас нечего" }
         rule(shopDone(s)) { "Траты раскладываются после магазина" }
-        return completeTask(s)
+        val cards = sortCards(s)
+        rule(placed.size == cards.size) { "Разложены не все траты" }
+        return completeTask(s, ok = sortMistakes(s, placed).isEmpty())
     }
+
+    /** Карточки, положенные не в свою банку. */
+    fun sortMistakes(s: GameState, placed: List<Direction?>): List<SortCard> =
+        sortCards(s).filterIndexed { i, c -> placed.getOrNull(i) != c.direction }
 
     // ---------- Копилка ----------
 
@@ -736,11 +860,51 @@ class Game(val content: Content) {
         }
     }
 
+    /**
+     * «Вышло» — сколько стоили нужные и желаемые вещи недели и сколько отложено (I84), а не из какой банки
+     * платили: иначе «Нужное» на итоге никогда не выходило больше задуманного, и перерасход был не виден.
+     * Откуда пришли недостающие монеты — строки под сеткой («Из «Хочу» 1 монета»). Мячик F5 — трата «Хочу».
+     */
+    fun actual(s: GameState): Plan {
+        val w = s.requireWeek()
+        val bought = w.purchases.map(content::item)
+        return Plan(
+            need = bought.filter { direction(it) == Direction.NEED }.sumOf { it.price },
+            want = bought.filter { direction(it) == Direction.WANT }.sumOf { it.price } + ballPaid(s),
+            save = w.deposit,
+        )
+    }
+
+    /** Мячик F5, взятый из копилки на этой неделе. */
+    private fun ballPaid(s: GameState): Int {
+        val w = s.requireWeek()
+        if (w.ballChoice != BallChoice.TAKEN) return 0
+        return weekTask(s)?.itemId?.let { content.item(it).price } ?: 0
+    }
+
+    /**
+     * Неделя прошла по плану — отметка плана (I82): покупки уложились в задуманное по направлениям — не
+     * понадобилось ни перелива из «Хочу», ни добора из копилки, — и неделя не пустая: куплено нужное или
+     * сделан взнос. Мячик F5 — отдельный выбор про копилку, он плану не мешает. Меньше задуманного — не
+     * расхождение: отказ от покупки ошибкой не считается (ТЗ, термины).
+     */
+    fun onPlan(s: GameState): Boolean {
+        val w = s.requireWeek()
+        val busy = w.purchases.any { direction(content.item(it)) == Direction.NEED } || w.deposit > 0
+        return !overPlan(s) && busy
+    }
+
+    /** Покупки вышли за задуманное: понадобился перелив из «Хочу» или добор из копилки (мячик F5 не в счёт). */
+    fun overPlan(s: GameState): Boolean {
+        val w = s.requireWeek()
+        return w.needFromWant > 0 || w.fromSavings - ballPaid(s) > 0
+    }
+
     fun summary(s: GameState): Summary {
         val w = s.requireWeek()
         return Summary(
             planned = w.plan.total,
-            fact = Plan(w.paidNeed, w.paidWant, w.deposit),
+            fact = actual(s),
             reward = w.taskReward,
             needFromWant = w.needFromWant,
             paidFromSavings = w.fromSavings,
@@ -750,8 +914,14 @@ class Game(val content: Content) {
 
     /**
      * Выход с итога одним из двух равноправных действий. Начисляет отметки недели:
-     * максимум по одной каждого типа, счётчики только растут (E17). Кончилась глава — событие; строка
-     * причины перехода считается здесь, пока видно, что замкнуло порог этой неделей.
+     * максимум по одной каждого типа, счётчики только растут (E17); отметка плана — только за неделю по
+     * плану (I82). Кончилась глава — событие; строка причины перехода считается здесь, пока видно, что
+     * замкнуло порог этой неделей.
+     *
+     * Конец главы (D1, I82): не раньше [ChapterContent.minWeeks]; набраны отметки всех трёх типов и
+     * хватает на цель — событие. Не набраны или не хватает — одна запасная неделя с заданием по тому, чего
+     * не хватило; после неё событие играется в любом случае. Финни подрастает на переходе, только если
+     * отметки набраны: глава и обстановка идут по сюжету, стадия роста — по решениям.
      */
     fun finishWeek(s: GameState, choice: SummaryChoice): GameState {
         val w = s.requireWeek()
@@ -763,6 +933,7 @@ class Game(val content: Content) {
         val fed = w.fed || bought(s, Impact.FED)
         val care = mandatoryBought(s)
         val saved = w.deposit > 0
+        val planned = onPlan(s)
         val p = s.progress
         val nextPlan = when (choice) {
             SummaryChoice.KEEP_PLAN -> w.plan
@@ -770,34 +941,54 @@ class Game(val content: Content) {
         }
         val marked = p.copy(
             marksCare = p.marksCare + if (care) 1 else 0,
-            marksPlan = p.marksPlan + 1,
+            marksPlan = p.marksPlan + if (planned) 1 else 0,
             marksSave = p.marksSave + if (saved) 1 else 0,
             history = p.history + WeekRecord(
                 chapter = p.chapter, week = w.number, number = weekNumber(s), plan = w.plan,
                 fact = summary(s).fact, reward = w.taskReward, purchases = w.purchases,
-                taskId = weekTask(s)?.id, taskDone = w.taskDone, care = care, bonus = w.bonus,
+                taskId = weekTask(s)?.id, taskDone = w.taskDone && !w.taskMissed, care = care, bonus = w.bonus,
+                onPlan = planned, taskMissed = w.taskMissed,
             ),
         )
         val chapter = s.chapter.copy(
             careWeeks = s.chapter.careWeeks + if (care) 1 else 0,
             saveWeeks = s.chapter.saveWeeks + if (saved) 1 else 0,
-            planWeeks = s.chapter.planWeeks + 1,
+            planWeeks = s.chapter.planWeeks + if (planned) 1 else 0,
         )
         val c = ch(s)
         val goal = c.marksToLeave
-        val reached = goal != null && marked.marksCare >= goal && marked.marksPlan >= goal && marked.marksSave >= goal
-        // Событие играется всегда, независимо от отметок (I6); главы 1 и 2 — от двух до трёх недель.
-        val end = w.number >= c.maxWeeks || (w.number >= c.minWeeks && reached)
+        val reached = goal == null || (marked.marksCare >= goal && marked.marksPlan >= goal && marked.marksSave >= goal)
+        val goalOk = marked.savings >= goalPrice(s)
+        val end = w.number >= c.minWeeks && (reached && goalOk || w.number >= c.maxWeeks)
         return s.copy(
             progress = marked,
             chapter = chapter,
             week = w.copy(fed = fed, summaryChoice = choice),
             nextPlan = nextPlan,
             phase = if (end) Phase.EVENT else Phase.AFTER_SUMMARY,
-            transition = if (end && !c.last) reason(p, marked, chapter, goal!!).let { r ->
-                Transition(c.chapter + 1, r, weeksOf(chapter, r))
-            } else null,
+            transition = if (end && goal != null) growth(s, p, marked, chapter, goal, reached) else null,
         )
+    }
+
+    /**
+     * Рост на конце главы (I82): стадия — 1 плюс число глав до этой включительно, чьи пороги отметок набраны
+     * (пороги сквозные, поэтому пропущенное в главе 1 можно догнать во второй). Подрос — строка причины:
+     * что замкнуло порог; не подрос — какой отметки не хватило.
+     */
+    private fun growth(s: GameState, before: Progress, after: Progress, chapter: ChapterState, goal: Int, reached: Boolean): Transition {
+        val c = ch(s)
+        val met = content.chapters.values.filter { it.chapter <= c.chapter }.count { k ->
+            val t = k.marksToLeave ?: return@count false
+            after.marksCare >= t && after.marksSave >= t && after.marksPlan >= t
+        }
+        val stage = maxOf(before.stage, 1 + met)
+        if (reached) {
+            val r = reason(before, after, chapter, goal)
+            return Transition(c.chapter + 1, r, weeksOf(chapter, r), grew = stage > before.stage, stage = stage)
+        }
+        val miss = listOf(Reason.CARE to after.marksCare, Reason.SAVE to after.marksSave, Reason.PLAN to after.marksPlan)
+            .first { it.second < goal }.first
+        return Transition(c.chapter + 1, miss, weeksOf(chapter, miss), grew = false, stage = before.stage)
     }
 
     /**
@@ -880,18 +1071,20 @@ class Game(val content: Content) {
             savings = s.progress.savings - price,
             inventory = if (keeps) s.progress.inventory + goalId else s.progress.inventory,
         ) else s.progress
+        // Финни подрастает на смене главы — стадия из итога последней недели (I82).
+        val grown = progress.copy(stage = maxOf(progress.stage, s.transition?.stage ?: 0))
         val done = s.copy(
-            progress = progress,
+            progress = grown,
             eventOutcome = if (given) EventOutcome.GIFT_GIVEN else EventOutcome.NOT_ENOUGH,
             eventGoal = goalId,
         )
         if (ch(s).last) return done.copy(phase = Phase.GAME_OVER)
         return done.copy(
-            progress = progress.copy(chapter = s.progress.chapter + 1, weekInChapter = 1),
+            progress = grown.copy(chapter = s.progress.chapter + 1, weekInChapter = 1),
             chapter = ChapterState(),
             phase = Phase.TRANSITION,
             week = null,
-            transition = s.transition ?: Transition(s.progress.chapter + 1, Reason.PLAN, s.chapter.planWeeks),
+            transition = s.transition ?: Transition(s.progress.chapter + 1, Reason.PLAN, maxOf(s.chapter.planWeeks, 1)),
         )
     }
 
@@ -921,8 +1114,10 @@ class Game(val content: Content) {
      * конце прототипа. Теперь дальше глава 2: такое сохранение продолжается плашкой перехода, строка
      * причины — по отметкам главы 1. Остальное в старых сохранениях читается как есть.
      */
-    fun migrate(s: GameState): GameState {
-        if (s.version >= CURRENT_VERSION) return s
+    fun migrate(s0: GameState): GameState {
+        if (s0.version >= CURRENT_VERSION) return s0
+        // Версия 3 (I82): стадия роста отдельно от главы. У старых сохранений глава и была стадией.
+        val s = if (s0.version < 3) s0.copy(progress = s0.progress.copy(stage = maxOf(s0.progress.stage, s0.progress.chapter))) else s0
         val stuck = s.phase == Phase.FREE_PLAY && !ch(s).last
         if (!stuck) return s.copy(version = CURRENT_VERSION)
         val p = s.progress
@@ -947,8 +1142,11 @@ class Game(val content: Content) {
     }
 
     companion object {
-        /** Версия сохранения: 2 — три главы. */
-        const val CURRENT_VERSION = 2
+        /** Версия сохранения: 2 — три главы; 3 — стадия роста отдельно от главы (I82). */
+        const val CURRENT_VERSION = 3
+
+        /** Последняя стадия роста: старт и по одной за каждую главу с набранными отметками. */
+        const val MAX_STAGE = 4
 
         /** Инвариант 9: любое число на экране не выше 100 — копилка тоже. */
         const val CEILING = 100

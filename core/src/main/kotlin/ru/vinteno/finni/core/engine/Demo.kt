@@ -11,11 +11,12 @@ import ru.vinteno.finni.core.model.SummaryChoice
 /**
  * Демо для проверки (ТЗ 2.5.13, 2.6; I49 B5, F7, D5) и канонический путь сценариев.
  *
- * Канонический путь: «Нужное» — ровно обязательное недели обычной ступенькой, «Копилка» — 10, остальное
- * — в «Хочу»; надбавка недели берётся, хотелка главы — когда помещается (качели на неделе 2, гирлянда на
- * неделе 5), мячик остаётся в копилке, F2 — ровно, цели — средние. Состояние начала любой из восьми
- * недель получается честным прогоном этих ходов через [Game], а не записанными числами: если правило
- * поменяется, демо поменяется вместе с ним.
+ * Канонический путь (I81): «Нужное» — ровно обязательное недели обычной ступенькой; «Копилка» — столько,
+ * чтобы к событию хватило на среднюю цель главы (остаток цели за вычетом будущих наград — поровну на
+ * оставшиеся недели); остальное — в «Хочу». Надбавка недели берётся, только если помещается в «Хочу»;
+ * хотелка главы — тоже. Мячик остаётся в копилке, F2 — из «Нужного», F3 — вторая куртка убрана, F6 —
+ * разложено верно. Состояние начала любой из восьми недель получается честным прогоном этих ходов через
+ * [Game], а не записанными числами: если правило поменяется, демо поменяется вместе с ним.
  */
 class Demo(private val game: Game) {
     /** Цели канонического пути — средние в каждой главе. */
@@ -36,36 +37,51 @@ class Demo(private val game: Game) {
         return s
     }
 
+    /** Сколько откладывать в неделю, чтобы к событию хватило на цель: остаток за вычетом наград — поровну. */
+    private fun pace(s: GameState): Int {
+        val c = game.ch(s)
+        val w = s.requireWeek()
+        val weeksLeft = maxOf(c.minWeeks - w.number + 1, 1)
+        val rewards = (w.number..maxOf(w.number, c.minWeeks)).sumOf { n ->
+            val id = if (n == w.number) w.taskId else c.week(n).taskId
+            id?.let(game.content::task)?.takeIf { !c.week(n).spare && it.id !in s.progress.rewardedTasks }?.reward ?: 0
+        }
+        val left = game.goalPrice(s) - s.progress.savings - rewards
+        return ((left + weeksLeft - 1) / weeksLeft).coerceAtLeast(0)
+    }
+
     /** Неделя канонического пути от посылки до итога. */
     fun playWeek(s0: GameState): GameState {
         var s = game.openParcel(s0)
         s = game.seeAnnouncement(s)
         val wc = game.weekContent(s)
-        val shelves = game.activeShelves(s)
         fun price(id: String) = game.content.item(id).price
+        val sit = wc.shelves.first { it.id == wc.situationShelf }
+        val sitBase = if (sit.onScreen) sit.tiers.first() else emptyList()
         // Обязательное обычной ступенькой: каша, мыло и вещь недели без надбавки.
-        val need = price("kasha") + price("mylo") + (game.situationShelf(s)?.tiers?.first()?.sumOf(::price) ?: 0)
-        val save = minOf(10, game.saveCap(s))
-        s = game.setPlan(s, Plan(need, s.progress.wallet - need - save, save))
+        val need = price("kasha") + price("mylo") + sitBase.sumOf(::price)
+        val wallet = s.progress.wallet
+        val save = minOf(pace(s), wallet - need, game.saveCap(s)).coerceAtLeast(0)
+        val want = wallet - need - save
+        s = game.setPlan(s, Plan(need, want, save))
         s = game.confirmPlan(s)
 
-        // Корзина: обязательное с надбавкой недели — верхняя ступенька ситуации.
+        // Надбавка недели — верхняя ступенька полки ситуации, если помещается в «Хочу».
+        val addon = sit.tiers.last().map(game.content::item).filter { it.addonOf != null }.sumOf { it.price }
+        val withAddon = want >= addon
         val situation = game.situationShelf(s)
-        if (situation != null) s = game.chooseSituation(s, situation.tiers.lastIndex)
-        val sitShelf = wc.shelves.first { it.id == wc.situationShelf }
-        val food = shelves.first { it.id == "food" }.tiers.last { it.first() == "kasha" }
-        val soap = shelves.first { it.id == "soap" }.tiers.last()
+        if (situation != null) s = game.chooseSituation(s, if (withAddon) situation.tiers.lastIndex else 0)
         val pick = buildList {
-            addAll(if (sitShelf.id == "food") food else listOf("kasha"))
-            addAll(if (sitShelf.id == "soap") soap else listOf("mylo"))
+            addAll(if (sit.id == "food" && withAddon) sit.tiers.last() else listOf("kasha"))
+            addAll(if (sit.id == "soap" && withAddon) sit.tiers.last() else listOf("mylo"))
             addAll(game.situationCart(s))
         }
         if (game.duplicatePending(s)) s = game.resolveDuplicate(s)
         val q = game.quote(s, pick)
-        s = game.buy(s, pick, agreedWant = true, agreedSavings = q.asksSavings, pay = if (game.asksPay(s, q)) PayChoice.EXACT else null)
+        s = game.buy(s, pick, agreedWant = q.asksWant, agreedSavings = q.asksSavings, pay = if (game.asksPay(s, q)) PayChoice.NEED else null)
         // Хотелка главы — если помещается в «Хочу».
         val wantId = game.ch(s).chapterWantId
-        if (!game.owns(s, wantId) && game.wantLeft(s) >= game.content.item(wantId).price) {
+        if (!game.owns(s, wantId) && game.wantLeft(s) >= price(wantId)) {
             s = game.buy(s, listOf(wantId))
         }
         s = game.leaveShop(s)

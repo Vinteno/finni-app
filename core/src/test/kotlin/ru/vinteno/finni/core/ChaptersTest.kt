@@ -23,9 +23,9 @@ import ru.vinteno.finni.core.model.Reason
 import ru.vinteno.finni.core.model.SummaryChoice
 
 /**
- * Главы 2 и 3 — final-plan.md, блок A, п. 10. Канонический путь восьми недель пересчитан по правилу
- * I48 п. 2 (надбавка платится из «Хочу»): цены те же, меняется только, из какого направления уплачено,
- * и что взнос недели 8 исполняется по плану (I32 во всех главах, I49 A5).
+ * Главы 2 и 3 — final-plan.md, блок A, п. 10. Канонический путь восьми недель — по экономике I81 (доход 25,
+ * награда 5) и росту I82: откладывается столько, чтобы к событию хватило на среднюю цель; надбавка — если
+ * помещается в «Хочу». Цены те же.
  */
 class ChaptersTest {
     private val content = Content.fromResources()
@@ -66,7 +66,7 @@ class ChaptersTest {
 
     @Test fun `канонический путь восьми недель — кошелёк и копилка на конец каждой недели`() {
         // Неделя: кошелёк и копилка на конце, после события главы — копилка после списания цели.
-        val expected = listOf(9 to 20, 4 to 40, 6 to 20, 12 to 30, 1 to 20, 4 to 30, 8 to 50, 12 to 60)
+        val expected = listOf(2 to 20, 2 to 40, 3 to 15, 4 to 30, 3 to 15, 1 to 25, 0 to 40, 2 to 50)
         var s = demo.weekStart(1)
         expected.forEachIndexed { i, (wallet, savings) ->
             assertEquals("номер недели", i + 1, game.weekNumber(s))
@@ -78,9 +78,11 @@ class ChaptersTest {
         assertEquals(Phase.EVENT, s.phase)
         s = game.playEvent(s)
         assertEquals(EventOutcome.GIFT_GIVEN, s.eventOutcome)
-        assertEquals(10, s.progress.savings) // корзина 50 из 60
+        assertEquals(0, s.progress.savings) // корзина 50 из 50
         assertEquals(Phase.GAME_OVER, s.phase)
         assertTrue("korzina" in s.progress.inventory)
+        assertEquals(Game.MAX_STAGE, s.progress.stage)
+        assertEquals(listOf("Мы ели четыре недели", "Я подрос"), explain.growthLines(s))
     }
 
     @Test fun `канонический путь — главы меняются после недель 2 и 4 по отметкам, строка причины считается`() {
@@ -92,7 +94,8 @@ class ChaptersTest {
         s = game.playEvent(s)
         assertEquals(Phase.TRANSITION, s.phase)
         assertEquals(2, s.progress.chapter)
-        assertEquals(listOf("Мы ели две недели", "Похолодало", "Мне зябко"), explain.transitionLines(s))
+        assertEquals(listOf("Мы ели две недели", "Я подрос", "Похолодало", "Мне зябко"), explain.transitionLines(s))
+        assertEquals(2, s.progress.stage)
         s = game.seeTransition(s)
         assertEquals(Phase.ONBOARDING, s.phase)
         assertNull(s.chapter.goalId)
@@ -106,18 +109,20 @@ class ChaptersTest {
         assertEquals(4, s.progress.marksSave)
         s = game.playEvent(s)
         assertEquals(3, s.progress.chapter)
-        assertEquals(listOf("Мы ели две недели", "Мы переехали", "Дом больше прежнего"), explain.transitionLines(s))
+        assertEquals(listOf("Мы ели две недели", "Я подрос", "Мы переехали", "Дом больше прежнего"), explain.transitionLines(s))
+        assertEquals(3, s.progress.stage)
         assertTrue("lezhanka" in s.progress.inventory) // мебель главы 2 остаётся в комнате
     }
 
     @Test fun `перенесённый план подгоняется под кошелёк при посылке — лишнее снимается с «Хочу» (I71)`() {
-        // Кошелёк 31 не меньше дохода 30: посылка не придёт, а с прошлой недели перенесён план 10 / 38 / 10.
-        val start = demo.weekStart(7).let { it.copy(progress = it.progress.copy(wallet = 31), week = it.week!!.copy(plan = Plan(10, 38, 10))) }
+        // Кошелёк 31, посылка 25 — 56; с прошлой недели перенесён план 10 / 48 / 10.
+        val start = demo.weekStart(7).let { it.copy(progress = it.progress.copy(wallet = 31), week = it.week!!.copy(plan = Plan(10, 48, 10))) }
         val opened = game.openParcel(start)
-        assertEquals(Plan(10, 11, 10), opened.week!!.plan)
+        assertEquals(56, opened.progress.wallet)
+        assertEquals(Plan(10, 36, 10), opened.week!!.plan)
         // Лишнего больше «Хочу» — дальше из копилки, потом из «Нужного».
-        val poor = demo.weekStart(7).let { it.copy(progress = it.progress.copy(wallet = 31), week = it.week!!.copy(plan = Plan(20, 5, 20))) }
-        assertEquals(Plan(20, 0, 11), game.openParcel(poor).week!!.plan)
+        val poor = demo.weekStart(7).let { it.copy(progress = it.progress.copy(wallet = 31), week = it.week!!.copy(plan = Plan(40, 1, 20))) }
+        assertEquals(Plan(40, 0, 16), game.openParcel(poor).week!!.plan)
         // Меньше кошелька — не трогается: разложить остаток — действие ребёнка.
         val small = demo.weekStart(7).let { it.copy(progress = it.progress.copy(wallet = 31), week = it.week!!.copy(plan = Plan(10, 10, 10))) }
         assertEquals(Plan(10, 10, 10), game.openParcel(small).week!!.plan)
@@ -139,18 +144,19 @@ class ChaptersTest {
         val starts = (1..8).map { demo.weekStart(it) }
         assertEquals(listOf(1, 1, 2, 2, 3, 3, 3, 3), starts.map { it.progress.chapter })
         assertEquals(listOf(1, 2, 1, 2, 1, 2, 3, 4), starts.map { it.week!!.number })
-        assertEquals(listOf(0, 9, 4, 6, 12, 1, 4, 8), starts.map { it.progress.wallet })
-        assertEquals(listOf(0, 20, 0, 20, 0, 20, 30, 50), starts.map { it.progress.savings })
+        assertEquals(listOf(0, 2, 2, 3, 4, 3, 1, 0), starts.map { it.progress.wallet })
+        assertEquals(listOf(0, 20, 0, 15, 0, 15, 25, 40), starts.map { it.progress.savings })
+        assertEquals(listOf(1, 1, 2, 2, 3, 3, 3, 3), starts.map { it.progress.stage })
         assertEquals(listOf("F1", "F5", "F4", "F3", "F2", null, "F6", null), starts.map { game.weekTask(it)?.id })
         assertTrue(starts.all { it.demo && it.week!!.parcel == null })
-        assertTrue("kurtka" in starts[3].progress.inventory && "risunok" in starts[3].progress.inventory)
-        assertTrue("girlyanda" in starts[5].progress.inventory && "korobka" in starts[5].progress.inventory)
+        assertTrue("kurtka" in starts[3].progress.inventory)
+        assertTrue("lezhanka" in starts[5].progress.inventory && "korobka" in starts[5].progress.inventory)
         assertEquals("korzina", starts[7].chapter.goalId)
     }
 
     // ---------- Длина главы и запасная неделя ----------
 
-    @Test fun `запасная неделя главы 1 — по недостающей заботе, задание F1 без награды`() {
+    @Test fun `запасная неделя главы 1 — по недостающей заботе, задание F1 без награды, без посылки`() {
         var s = fresh()
         s = skipWeek(s, save = 10)
         s = skipWeek(game.nextWeek(s), save = 10)
@@ -159,7 +165,10 @@ class ChaptersTest {
         assertEquals(3, s.week!!.number)
         assertEquals("F1", game.weekTask(s)!!.id)
         assertTrue(game.weekContent(s).spare)
+        assertEquals(30, s.progress.wallet)
         s = plan(s, 8, 10)
+        assertEquals(30, s.progress.wallet)                    // «ещё день»: посылки нет (I82)
+        assertEquals(listOf("Праздник уже скоро", "Мне нужно всё нужное", "Я хочу есть"), explain.announcement(s))
         val before = s.progress.savings
         s = game.buy(s, listOf("krupa", "mylo"))
         assertTrue(s.week!!.taskDone)
@@ -167,11 +176,29 @@ class ChaptersTest {
         assertEquals(before, s.progress.savings)
         s = game.deposit(game.leaveShop(s))
         s = game.finishWeek(game.leavePiggy(s), SummaryChoice.KEEP_PLAN)
-        assertEquals(Phase.EVENT, s.phase)                    // после третьей — конец в любом случае
-        // Порог не замкнут ничем: строка — о том, что делали чаще. Откладывали и смотрели три недели.
-        assertEquals(Reason.SAVE, s.transition!!.reason)
-        assertEquals(3, s.transition!!.weeks)
-        assertEquals("Мы откладывали три недели", explain.transitionLines(game.playEvent(s)).first())
+        assertEquals(Phase.EVENT, s.phase)                    // после третьей — конец в любом случае (D1)
+        // Заботы — одна неделя из двух нужных: Финни не подрос, строка — чего не хватило (I82).
+        assertFalse(s.transition!!.grew)
+        assertEquals(Reason.CARE, s.transition!!.reason)
+        s = game.playEvent(s)
+        assertEquals(1, s.progress.stage)
+        assertEquals(listOf("Я ещё подрасту", "Мне нужно всё нужное", "Похолодало", "Мне зябко"), explain.transitionLines(s))
+    }
+
+    @Test fun `запасная неделя по цели — отметки есть, на цель не хватает`() {
+        var s = fresh("podarok_samokat")
+        repeat(2) { i ->
+            if (i > 0) s = game.nextWeek(s)
+            s = plan(s, 8, 10)
+            s = game.buy(s, listOf("kasha", "mylo"))
+            s = game.leavePiggy(game.deposit(game.leaveShop(s)))
+            if (game.choiceOpen(s)) s = game.leavePiggy(game.chooseBall(s, false))
+            s = game.finishWeek(s, SummaryChoice.KEEP_PLAN)
+        }
+        assertEquals(Phase.AFTER_SUMMARY, s.phase)            // отметки 2/2/2, а 30 < 45 — ещё день
+        s = game.nextWeek(s)
+        assertEquals("F4", game.weekTask(s)!!.id)
+        assertEquals("На самокат пока не хватает", explain.announcement(game.seeAnnouncement(game.openParcel(s)))[1])
     }
 
     @Test fun `задание запасной недели — по типу, которого меньше, поровну — забота, накопления, план`() {
@@ -193,7 +220,7 @@ class ChaptersTest {
         assertEquals("F1", game.weekTask(game.nextWeek(t))!!.id)
     }
 
-    @Test fun `путь «ничего не покупаю» — игра всё равно кончается, 3 + 3 + 4 недели`() {
+    @Test fun `путь «ничего не покупаю» — игра всё равно кончается, 3 + 3 + 5 недель, Финни не растёт`() {
         var s = fresh("podarok_samokat")
         var weeks = 0
         while (s.phase != Phase.GAME_OVER) {
@@ -205,9 +232,11 @@ class ChaptersTest {
                 Phase.ONBOARDING -> game.chooseGoal(s, game.ch(s).goalIds.last())
                 else -> error(s.phase)
             }
-            assertTrue(weeks <= 10)
+            assertTrue(weeks <= 11)
         }
-        assertEquals(10, weeks)
+        assertEquals(11, weeks)
+        assertEquals(1, s.progress.stage)
+        assertEquals(listOf("Я ещё подрасту", "Мне нужно всё нужное"), explain.growthLines(s))
         assertEquals(EventOutcome.NOT_ENOUGH, s.eventOutcome)
         assertTrue(game.cold(s).not()) // в главе 3 не зябнут
     }
@@ -217,7 +246,10 @@ class ChaptersTest {
         var max = 0
         while (s.phase != Phase.GAME_OVER) {
             s = when (s.phase) {
-                Phase.WEEK -> skipWeek(s, save = minOf(game.saveCap(game.seeAnnouncement(game.openParcel(s))), s.progress.wallet + 30))
+                Phase.WEEK -> {
+                    val o = game.seeAnnouncement(game.openParcel(s))
+                    skipWeek(s, save = minOf(game.saveCap(o), o.progress.wallet))
+                }
                 Phase.AFTER_SUMMARY -> game.nextWeek(s)
                 Phase.EVENT -> game.playEvent(s)
                 Phase.TRANSITION -> game.seeTransition(s)
@@ -231,30 +263,61 @@ class ChaptersTest {
 
     // ---------- Задания глав 2 и 3 ----------
 
-    @Test fun `F4 на экране плана — награда 10 в копилку при подтверждении, объяснение из трёх строк`() {
+    @Test fun `F4 на экране плана — хватит к снегу, награда 5 в копилку, объяснение из трёх строк`() {
         var s = game.seeAnnouncement(game.openParcel(demo.weekStart(3)))
         assertTrue(game.planTask(s))
-        s = game.setPlan(s, Plan(14, 10, 10))
+        s = game.setPlan(s, Plan(14, 3, 10))
         s = game.confirmPlan(s)
-        assertEquals(10, s.progress.savings)
+        assertEquals(5, s.progress.savings)
         assertTrue(s.week!!.taskDone)
+        assertFalse(s.week!!.taskMissed)
         assertEquals(listOf("Откладываем 10 монет", "К снегу будет 30", "Хватит ровно"), explain.afterPlanTask(s))
     }
 
-    @Test fun `F3 — дубль куртки не списывается ни при каком выборе, награды нет`() {
+    @Test fun `F4 ошибочная ветка — ноль в копилке, награды нет, объяснение и что дальше`() {
+        var s = game.seeAnnouncement(game.openParcel(demo.weekStart(3)))
+        s = game.confirmPlan(game.setPlan(s, Plan(14, 13, 0)))
+        assertEquals(0, s.progress.savings)
+        assertTrue(s.week!!.taskDone && s.week!!.taskMissed)
+        assertEquals(listOf("Откладываем 0 монет", "К снегу будет 5", "Не хватит", "Поправим на следующей неделе"), explain.afterPlanTask(s))
+        assertFalse("F4" in s.progress.doneTasks)
+    }
+
+    @Test fun `F3 — вторую куртку убрали — награда, ничего не списано`() {
         var s = plan(demo.weekStart(4), 12, 10)
         assertTrue(game.duplicatePending(s))
         val q = game.quote(s, listOf("kurtka", "kasha"))
-        assertEquals(listOf("kasha"), q.items.map { it.id }) // вторая куртка не считается
+        assertEquals(listOf("kasha"), q.items.map { it.id }) // вторая куртка в обычной покупке не считается
         val wallet = s.progress.wallet
         val savings = s.progress.savings
         s = game.resolveDuplicate(s)
         assertEquals(wallet, s.progress.wallet)
-        assertEquals(savings, s.progress.savings)
-        assertEquals(0, s.week!!.taskReward)
+        assertEquals(savings + 5, s.progress.savings)
+        assertEquals(5, s.week!!.taskReward)
         assertTrue("F3" in s.progress.doneTasks)
-        assertFalse("F3" in s.progress.rewardedTasks)
+        assertEquals(listOf("Мы убрали вторую куртку", "Куртка у нас уже есть", "Вторая не нужна"), explain.afterDuplicate(bought = false))
         assertThrows { game.resolveDuplicate(s) }
+    }
+
+    @Test fun `F3 — вторую куртку купили — списана, её можно вернуть до конца недели`() {
+        var s = plan(demo.weekStart(4), 12, 10)
+        val wallet = s.progress.wallet
+        val savings = s.progress.savings
+        assertEquals(6, game.quoteDuplicate(s).total)
+        s = game.buyDuplicate(s)
+        assertEquals(wallet - 6, s.progress.wallet)
+        assertEquals(savings, s.progress.savings)
+        assertTrue(s.week!!.taskMissed)
+        assertEquals(0, s.week!!.taskReward)
+        assertFalse("F3" in s.progress.doneTasks)
+        assertEquals(listOf("Мы купили вторую куртку", "Одна у нас уже была", "Её можно вернуть"), explain.afterDuplicate(bought = true))
+        assertTrue(game.canReturnDuplicate(s))
+        s = game.returnDuplicate(s)
+        assertEquals(wallet, s.progress.wallet)
+        assertEquals(0, s.week!!.paidNeed)
+        assertTrue(s.week!!.purchases.isEmpty())
+        assertFalse(game.canReturnDuplicate(s))
+        assertFalse(game.duplicatePending(s))                // задание сыграно, второй раз не предлагается
     }
 
     @Test fun `F3 без купленной куртки не играется`() {
@@ -264,20 +327,29 @@ class ChaptersTest {
         assertNull(game.weekTask(plan(s, 12, 10)))
     }
 
-    @Test fun `F2 — способ оплаты обязателен, оба равны, в кошельке чистая стоимость`() {
-        var s = plan(demo.weekStart(5), 13, 10)
+    @Test fun `F2 — из «Нужного» верно и с наградой, из копилки — копилка меньше, награды нет`() {
+        // В начале главы 3 канонического пути копилка пуста (лежанка куплена) — кладём 20, чтобы был выбор.
+        var s = plan(demo.weekStart(5).let { it.copy(progress = it.progress.copy(savings = 20)) }, 13, 10)
         s = game.chooseSituation(s, 0)
         val cart = listOf("kasha", "mylo") + game.situationCart(s)
         assertThrows { game.buy(s, cart) }
         val wallet = s.progress.wallet
-        val a = game.buy(s, cart, pay = PayChoice.EXACT)
-        val b = game.buy(s, cart, pay = PayChoice.CHANGE)
+        val savings = s.progress.savings
+        val a = game.buy(s, cart, pay = PayChoice.NEED)
         assertEquals(wallet - 13, a.progress.wallet)
-        assertEquals(a.progress.wallet, b.progress.wallet)
-        assertEquals(a.progress.savings, b.progress.savings)
-        assertEquals(10, a.week!!.taskReward)
-        assertEquals(listOf("Мы дали 10 монет", "Нам вернули 5", "Коробка стоит 5"), explain.afterPay(b, exact = false))
-        assertEquals(listOf("Мы дали 5 монет", "Сдачи нет", "Коробка стоит 5"), explain.afterPay(a, exact = true))
+        assertEquals(savings + 5, a.progress.savings)
+        assertEquals(5, a.week!!.taskReward)
+        assertFalse(a.week!!.taskMissed)
+        assertEquals(listOf("Мы заплатили из «Нужного»", "Как и задумали", "Коробка стоит 5"), explain.afterPay(a, PayChoice.NEED))
+
+        assertEquals(savings - 5, game.payFromSavingsAfter(s))
+        val b = game.buy(s, cart, pay = PayChoice.SAVINGS)
+        assertEquals(wallet - 8, b.progress.wallet)             // коробка — не из кошелька
+        assertEquals(savings - 5, b.progress.savings)
+        assertEquals(0, b.week!!.taskReward)
+        assertTrue(b.week!!.taskMissed)
+        assertTrue(game.overPlan(b))
+        assertEquals(listOf("Мы заплатили из копилки", "В копилке стало ${savings - 5}", "«Нужное» можно отложить потом"), explain.afterPay(b, PayChoice.SAVINGS))
     }
 
     @Test fun `F6 — траты карточками по направлениям, итог открыт после раскладки`() {
@@ -292,9 +364,16 @@ class ChaptersTest {
         assertEquals(listOf("kasha", "mylo", "ugoshchenie", "glazur", Game.DEPOSIT), cards.map { it.id })
         assertEquals(listOf(Direction.NEED, Direction.NEED, Direction.NEED, Direction.WANT, null), cards.map { it.direction })
         assertEquals(listOf("Мы разложили траты", "На нужное ушло 13", "Как задумали"), explain.afterSort(s))
-        s = game.finishSort(s)
-        assertEquals(10, s.week!!.taskReward)
-        assertTrue(game.summaryOpen(s))
+        val right = game.finishSort(s)
+        assertEquals(5, right.week!!.taskReward)
+        assertTrue(game.summaryOpen(right))
+        // Глазурь — в «Нужное»: раскладка принимается, объяснение называет, куда она относится, награды нет.
+        val placed = listOf(Direction.NEED, Direction.NEED, Direction.NEED, Direction.NEED, null)
+        assertEquals(listOf("Глазурь — это «Хочу»", "На нужное ушло 13", "Как задумали"), explain.afterSort(s, placed))
+        val wrong = game.finishSort(s, placed)
+        assertEquals(0, wrong.week!!.taskReward)
+        assertTrue(wrong.week!!.taskMissed)
+        assertTrue(game.summaryOpen(wrong))
     }
 
     // ---------- Ситуация, вещи, носимое ----------
@@ -303,7 +382,7 @@ class ChaptersTest {
         var s = game.seeAnnouncement(game.openParcel(demo.weekStart(3)))
         assertFalse(game.situationOpen(s)) // до плана — нет
         assertThrows { game.chooseSituation(s, 0) }
-        s = game.confirmPlan(game.setPlan(s, Plan(14, 10, 10)))
+        s = game.confirmPlan(game.setPlan(s, Plan(14, 4, 9)))
         assertTrue(game.situationOpen(s))
         val wallet = s.progress.wallet
         s = game.chooseSituation(s, 1)
@@ -358,14 +437,14 @@ class ChaptersTest {
 
     @Test fun `«Сложнее» — план каждой недели открывается пустым, со следующего плана`() {
         var s = game.setDifficulty(fresh(), senior = true)
-        assertEquals(Plan(10, 10, 10), s.week!!.plan) // текущий план не трогается
+        assertEquals(Plan(10, 5, 10), s.week!!.plan) // текущий план не трогается
         s = game.nextWeek(skipWeek(s, save = 10))
         assertEquals(Plan(0, 0, 0), s.week!!.plan)
         s = game.nextWeek(skipWeek(game.setDifficulty(s, senior = false), save = 10))
-        assertEquals(Plan(0, 40, 10), s.week!!.plan) // «Проще» — как вышло или оставленный план
+        assertEquals(Plan(0, 30, 10), s.week!!.plan) // «Проще» — как вышло или оставленный план
     }
 
-    @Test fun `бонус взрослого — раз в неделю, 5 в копилку`() {
+    @Test fun `бонус взрослого — раз в главу, 5 в копилку`() {
         var s = fresh()
         assertTrue(game.canBonus(s))
         s = game.adultBonus(s)
@@ -373,8 +452,10 @@ class ChaptersTest {
         assertFalse(game.canBonus(s))
         assertThrows { game.adultBonus(s) }
         s = game.nextWeek(skipWeek(s))
-        assertTrue(game.canBonus(s))
+        assertFalse(game.canBonus(s))                        // та же глава — нет (I81)
         assertEquals(0, s.week!!.bonus)
+        val ch2 = demo.weekStart(3)
+        assertTrue(game.canBonus(ch2))                       // новая глава — снова можно
     }
 
     @Test fun `конец игры — «Играть дальше» без денег, «Начать сначала» с тем же питомцем`() {
