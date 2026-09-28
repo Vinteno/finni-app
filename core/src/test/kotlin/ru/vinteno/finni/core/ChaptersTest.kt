@@ -82,7 +82,7 @@ class ChaptersTest {
         assertEquals(Phase.GAME_OVER, s.phase)
         assertTrue("korzina" in s.progress.inventory)
         assertEquals(Game.MAX_STAGE, s.progress.stage)
-        assertEquals(listOf("Мы ели четыре недели", "Я подрос"), explain.growthLines(s))
+        assertEquals(listOf("Мы ели четыре недели. Я подрос"), explain.growthLines(s))
     }
 
     @Test fun `канонический путь — главы меняются после недель 2 и 4 по отметкам, строка причины считается`() {
@@ -94,7 +94,7 @@ class ChaptersTest {
         s = game.playEvent(s)
         assertEquals(Phase.TRANSITION, s.phase)
         assertEquals(2, s.progress.chapter)
-        assertEquals(listOf("Мы ели две недели", "Я подрос", "Похолодало", "Мне зябко"), explain.transitionLines(s))
+        assertEquals(listOf("Мы ели две недели. Я подрос", "Похолодало", "Мне зябко"), explain.transitionLines(s))
         assertEquals(2, s.progress.stage)
         s = game.seeTransition(s)
         assertEquals(Phase.ONBOARDING, s.phase)
@@ -109,7 +109,7 @@ class ChaptersTest {
         assertEquals(4, s.progress.marksSave)
         s = game.playEvent(s)
         assertEquals(3, s.progress.chapter)
-        assertEquals(listOf("Мы ели две недели", "Я подрос", "Мы переехали", "Дом больше прежнего"), explain.transitionLines(s))
+        assertEquals(listOf("Мы ели две недели. Я подрос", "Мы переехали", "Дом больше прежнего"), explain.transitionLines(s))
         assertEquals(3, s.progress.stage)
         assertTrue("lezhanka" in s.progress.inventory) // мебель главы 2 остаётся в комнате
     }
@@ -182,7 +182,7 @@ class ChaptersTest {
         assertEquals(Reason.CARE, s.transition!!.reason)
         s = game.playEvent(s)
         assertEquals(1, s.progress.stage)
-        assertEquals(listOf("Я ещё подрасту", "Мне нужно всё нужное", "Похолодало", "Мне зябко"), explain.transitionLines(s))
+        assertEquals(listOf("Я ещё подрасту. Мне нужно всё нужное", "Похолодало", "Мне зябко"), explain.transitionLines(s))
     }
 
     @Test fun `запасная неделя по цели — отметки есть, на цель не хватает`() {
@@ -236,7 +236,7 @@ class ChaptersTest {
         }
         assertEquals(11, weeks)
         assertEquals(1, s.progress.stage)
-        assertEquals(listOf("Я ещё подрасту", "Мне нужно всё нужное"), explain.growthLines(s))
+        assertEquals(listOf("Я ещё подрасту. Мне нужно всё нужное"), explain.growthLines(s))
         assertEquals(EventOutcome.NOT_ENOUGH, s.eventOutcome)
         assertTrue(game.cold(s).not()) // в главе 3 не зябнут
     }
@@ -279,7 +279,7 @@ class ChaptersTest {
         s = game.confirmPlan(game.setPlan(s, Plan(14, 13, 0)))
         assertEquals(0, s.progress.savings)
         assertTrue(s.week!!.taskDone && s.week!!.taskMissed)
-        assertEquals(listOf("Откладываем 0 монет", "К снегу будет 5", "Не хватит", "Поправим на следующей неделе"), explain.afterPlanTask(s))
+        assertEquals(listOf("Откладываем 0 монет", "К снегу будет 5", "Не хватит. Отложим больше потом"), explain.afterPlanTask(s))
         assertFalse("F4" in s.progress.doneTasks)
     }
 
@@ -481,11 +481,11 @@ class ChaptersTest {
         val a = explain.eventLines(s8)
         assertEquals(listOf("Пришла Кира", "Мы купили корзину", "Вещи теперь на месте"), a)
         val b = explain.eventLines(s8.copy(progress = s8.progress.copy(savings = 10)))
-        assertEquals("Монет на корзину не хватило", b[1])
+        assertEquals("На корзину не хватило", b[1])
         val snow = demo.playWeek(demo.weekStart(4))
         assertEquals(listOf("Выпал первый снег", "Мы купили тёплую лежанку", "Я сплю на лежанке"), explain.eventLines(snow))
         val cold = snow.copy(progress = snow.progress.copy(savings = 0, inventory = emptyList()))
-        assertEquals(listOf("Выпал первый снег", "Монет на тёплую лежанку не хватило", "Я сплю у окна"), explain.eventLines(cold))
+        assertEquals(listOf("Выпал первый снег", "На тёплую лежанку не хватило", "Я сплю у окна"), explain.eventLines(cold))
         (a + b).let { assertTrue(texts.screenWords(it.joinToString(" ")) <= 25) }
     }
 
@@ -520,7 +520,7 @@ class ChaptersTest {
         val m = game.migrate(old)
         assertEquals(Phase.TRANSITION, m.phase)
         assertEquals(2, m.progress.chapter)
-        assertEquals("Мы ели две недели", explain.transitionLines(m).first())
+        assertEquals("Мы ели две недели. Я подрос", explain.transitionLines(m).first())
         assertEquals(m, game.migrate(m))
         val fresh = game.migrate(GameState(version = 1))
         assertEquals(Phase.ONBOARDING, fresh.phase)

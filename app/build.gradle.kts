@@ -14,8 +14,8 @@ android {
         applicationId = "ru.vinteno.finni"
         minSdk = 26 // Android 8.0 — ТЗ 3.1
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.2.2"
+        versionCode = 5
+        versionName = "0.3.0"
     }
 
     buildTypes {
@@ -53,6 +53,8 @@ android {
     // и шрифт ×2,0 без эмулятора. В APK ничего из этого не попадает.
     testOptions {
         unitTests.isIncludeAndroidResources = true
+        // Снимки с картинками комнаты 2400 px не помещались в 512 МБ по умолчанию — падали OutOfMemoryError.
+        unitTests.all { it.maxHeapSize = "2g" }
     }
 }
 

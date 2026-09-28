@@ -77,7 +77,7 @@ class FlowTest {
         return s.copy(profile = s.profile.copy(animationOn = false))
     }
 
-    private fun week1() = game.chooseGoal(fresh(), "podarok_kniga")
+    private fun week1(goal: String = "podarok_kniga") = game.chooseGoal(fresh(), goal)
 
     /** Весь кошелёк по направлениям: «Нужное» и «Копилка» по 10, остальное — в «Хочу». */
     private fun fill(s: GameState) = game.setPlan(s, Plan(10, s.progress.wallet - 20, 10))
@@ -117,7 +117,7 @@ class FlowTest {
     private val jars = "Нужное, Хочу, Копилка"
 
     @Test fun weekOneAndTwo() {
-        app(week1())
+        app(week1("podarok_myach"))
         noteSays("Открой посылку"); shot("w1_01_parcel")
         // До посылки предметы отвечают репликой, а не молчат; календарь, пока не ведёт к итогу, — дневник (I49, F4).
         tap("Магазин"); assertTrue(shown("Сначала открой посылку")); shot("w1_02_say_parcel_first")
@@ -125,6 +125,8 @@ class FlowTest {
         tap("Посылка"); shot("w1_03_parcel_note")
         press("Понятно"); shot("w1_04_announce")
         press("Понятно"); noteSays("Разложи монеты"); shot("w1_05_step_plan")
+        // Активное задание — на записке под шагом, рядом с Финни, кошельком и копилкой (ТЗ 2.5.3, аудит MAIN-01).
+        assertTrue(shown("Что взять на неделю"))
         // До плана: витрина магазина, копилка — только посмотреть, календарь — реплика.
         tap("Магазин"); assertTrue(shown("Сначала разложи монеты")); shot("w1_06_shop_showcase")
         tap("Назад")
@@ -148,7 +150,7 @@ class FlowTest {
         shot("w1_14_cart")
         // Ягоды платятся из «Хочу», «Нужного» хватает: окна нехватки нет.
         press("Купить")
-        assertEquals(10, s.progress.savings); assertTrue(s.week!!.taskDone)
+        assertEquals(5, s.progress.savings); assertTrue(s.week!!.taskDone)
         assertTrue(shown("Домой")); shot("w1_15_shop_explained")
         press("Домой"); noteSays("Покорми"); shot("w1_16_step_feed")
         // Записка не нажимается: к шагу ведёт только предмет.
@@ -166,26 +168,26 @@ class FlowTest {
         tap("Назад")
         tap("Неделя 1")
 
-        // Неделя 2: 39 в кошельке, 10 / 10 / 10 не подтвердить, пока не разложен весь кошелёк.
+        // Неделя 2: 29 в кошельке, 10 / 5 / 10 не подтвердить, пока не разложен весь кошелёк. Остаток — в копилку:
+        // мяч для Киры стоит 30, а к событию будет 15 + 14 + 5.
         assertEquals(2, s.week!!.number); shot("w2_01_parcel")
         tap("Посылка"); press("Понятно"); press("Понятно")
         tap(jars)
-        assertEquals(39, s.progress.wallet)
-        assertTrue(shown("Осталось разложить 9 монет"))
+        assertEquals(29, s.progress.wallet)
+        assertTrue(shown("Осталось разложить 4 монеты"))
         assertFalse(game.canConfirmPlan(s)); shot("w2_02_plan_under")
-        repeat(9) { compose.onAllNodes(hasContentDescription("Добавить монету") and hasClickAction())[1].performClick() }
+        repeat(4) { compose.onAllNodes(hasContentDescription("Добавить монету") and hasClickAction())[2].performClick() }
         idle()
-        assertEquals(Plan(10, 19, 10), s.week!!.plan); shot("w2_03_plan_full")
+        assertEquals(Plan(10, 5, 14), s.week!!.plan); shot("w2_03_plan_full")
         press("Подтвердить план")
-        // Качели — на остаток, без копилки.
-        tap("Магазин"); listOf("Каша", "Мыло", "Качели").forEach { tap(it) }
+        tap("Магазин"); listOf("Каша", "Мыло").forEach { tap(it) }
         press("Купить")
-        assertTrue("kacheli" in s.progress.inventory); assertEquals(20, s.progress.savings)
+        assertEquals(15, s.progress.savings)
         shot("w2_04_shop_explained")
         press("Домой")
         tap("Миска"); tap("Мыло"); noteSays("Отложить")
-        tap("Копилка"); press("Отложить 10"); shot("w2_05_f5")
-        press("Взять мячик"); shot("w2_06_f5_after")
+        tap("Копилка"); press("Отложить 14"); shot("w2_05_f5")
+        press("Оставить в копилке"); shot("w2_06_f5_after")
         press("Домой"); noteSays("Итог недели"); shot("w2_07_step_summary")
         tap("Неделя 2"); press("Оставить план")
         assertEquals(Phase.EVENT, s.phase); shot("w2_08_event")
@@ -224,7 +226,7 @@ class FlowTest {
 
     /** Шаги недели по порядку записки — и неделя 2 с F5, и после события. */
     private fun steps(): List<Pair<String, GameState>> {
-        val w1 = week1()
+        val w1 = week1("podarok_myach")
         val parcel = w1
         val note = game.openParcel(w1)
         val plan = game.seeAnnouncement(note)
@@ -237,10 +239,11 @@ class FlowTest {
         val next = game.finishWeek(summary, SummaryChoice.KEEP_PLAN)
         var w2 = game.seeAnnouncement(game.openParcel(game.nextWeek(next)))
         val w2plan = w2
-        w2 = game.confirmPlan(game.setPlan(w2, Plan(10, 19, 10)))
-        w2 = game.wash(game.feed(game.buy(w2, listOf("kasha", "mylo", "kacheli"))))
+        // 4 + 25 = 29 в кошельке; к событию 15 + 21 + 5 = 41 — мяч для Киры (30) готов, глава кончается.
+        w2 = game.confirmPlan(game.setPlan(w2, Plan(8, 0, 21)))
+        w2 = game.wash(game.feed(game.buy(w2, listOf("kasha", "mylo"))))
         val w2f5 = game.deposit(w2)
-        val free = game.playEvent(game.finishWeek(game.leavePiggy(game.chooseBall(w2f5, true)), SummaryChoice.KEEP_PLAN)) // переход главы
+        val free = game.playEvent(game.finishWeek(game.leavePiggy(game.chooseBall(w2f5, false)), SummaryChoice.KEEP_PLAN)) // переход главы
         return listOf(
             "01_parcel" to parcel, "02_parcel_note" to note, "03_plan" to plan, "04_shop" to shop, "05_shop_left" to shopLeft,
             "06_feed" to feed, "07_wash" to wash, "08_save" to save, "09_summary" to summary, "10_next_week" to next,
@@ -332,7 +335,7 @@ class FlowTest {
     // ---------- Таблица касаний ----------
 
     @Test fun tapsTable() {
-        val w1 = week1()
+        val w1 = week1("podarok_myach")
         val announce = game.openParcel(w1)
         val beforePlan = game.seeAnnouncement(announce)
         val planned = game.confirmPlan(beforePlan)

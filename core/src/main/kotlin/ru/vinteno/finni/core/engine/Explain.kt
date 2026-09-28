@@ -146,7 +146,7 @@ class Explain(private val game: Game) {
         return candidates.filterIndexed { i, line ->
             val n = texts.screenWords(line)
             (i == 0 || n <= budget).also { if (it) budget -= n }
-        }
+        }.take(SUMMARY_LINES)
     }
 
     /**
@@ -163,11 +163,11 @@ class Explain(private val game: Game) {
                 Enough.SHORT -> "enough.short"
             }
         ]
-        return listOfNotNull(
+        return listOf(
             texts.format("f4.did", "n" to w.plan.save),
             texts.format("f4.result.${s.progress.chapter}", "n" to atEvent.coerceAtMost(Game.CEILING)),
-            third,
-            if (w.taskMissed) texts["f4.fix"] else null,
+            // Ошибочная ветка — способ исправить той же строкой: экран F4 на 360 × 600 не прокручивается.
+            if (w.taskMissed) third + ". " + texts["f4.fix"] else third,
         )
     }
 
@@ -238,19 +238,19 @@ class Explain(private val game: Game) {
     }
 
     /**
-     * Рост на конце главы (I82; ТЗ 2.5.10). Подрос — действие ребёнка, замкнувшее порог (сценарий главы 1,
-     * §9), и «Я подрос». Не подрос — «Я ещё подрасту» и чего не хватило, теми же словами, что на запасной
-     * неделе. Факт о питомце, без оценки ребёнка.
+     * Рост на конце главы (I82; ТЗ 2.5.10) — одной строкой из двух фраз, чтобы плашка перехода не выросла.
+     * Подрос — действие ребёнка, замкнувшее порог (сценарий главы 1, §9), и «Я подрос». Не подрос — «Я ещё
+     * подрасту» и чего не хватило, теми же словами, что на запасной неделе. Факт о питомце, без оценки.
      */
     fun growthLines(s: GameState): List<String> {
         val t = s.transition ?: return emptyList()
-        if (!t.grew) return listOf(texts["growth.later"], texts["spare.why." + t.reason.name.lowercase()])
+        if (!t.grew) return listOf(texts["growth.later"] + ". " + texts["spare.why." + t.reason.name.lowercase()])
         val reason = when (t.reason) {
             Reason.CARE -> texts.format("reason.care", "weeks" to weeksWord(t.weeks))
             Reason.SAVE -> texts.format("reason.save", "weeks" to weeksWord(t.weeks))
             Reason.PLAN -> texts.format("reason.plan", "weeks" to weeksWord(t.weeks))
         }
-        return listOf(reason, texts["growth.up"])
+        return listOf(reason + ". " + texts["growth.up"])
     }
 
     /** «две недели» словами: число в строке причины — недели, когда действие было (D6). */
@@ -286,5 +286,8 @@ class Explain(private val game: Game) {
     companion object {
         /** Экран целиком — не больше 25 слов (инвариант 10). */
         const val SCREEN_WORDS = 25
+
+        /** Строк под сеткой итога — не больше трёх: на 360 × 600 итог не прокручивается. */
+        const val SUMMARY_LINES = 3
     }
 }

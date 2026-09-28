@@ -71,6 +71,8 @@ import ru.vinteno.finni.ui.components.MainButton
 import ru.vinteno.finni.ui.components.NeedBadge
 import ru.vinteno.finni.ui.components.FinniIcons
 import ru.vinteno.finni.ui.components.NoteStep
+import ru.vinteno.finni.ui.components.NoteTask
+import ru.vinteno.finni.ui.components.NOTE_GAP
 import ru.vinteno.finni.ui.components.Picture
 import ru.vinteno.finni.ui.components.PlateText
 import ru.vinteno.finni.ui.components.ProgressCells
@@ -132,6 +134,21 @@ private val DEPTH_SWING = 4.dp
 private val DEPTH_FINNI = 10.dp
 private val DEPTH_PARCEL = 12.dp
 private val DEPTH_BOWL = 14.dp
+
+/** Передний ряд ниже линии стены: всегда на [FRONT_MIN], на высоком экране — ещё на долю подъёма стены. */
+private val FRONT_MIN = 18.dp
+private const val FRONT_SHARE = 0.6f
+
+/** Стена поднимается не больше чем на эту долю высоты экрана. */
+private const val LIFT_SHARE = 0.14f
+
+/** Размер Финни от стадии роста 1–4 (I82): видно, что подрос, и зоны нажатия не мельче 48 dp. */
+private fun stageScale(stage: Int): Float = when (stage) {
+    1 -> 0.86f
+    2 -> 0.91f
+    3 -> 0.96f
+    else -> 1f
+}
 
 /** Посылка и миска — ширина по непрозрачному краю картинки. */
 private val PARCEL = 52.dp
@@ -375,7 +392,12 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
         goal != null || s.phase == Phase.FREE_PLAY -> a.f("home.saved", "n" to s.progress.savings)
         else -> null
     }
-    val texts = RoomTexts(STEP_KEYS.map(a::t), a.t("home.shopSign"), savedText, goal?.price)
+    // Задание недели — на записке под шагом, пока не пройдено (ТЗ 2.5.3, аудит MAIN-01). Место под него
+    // держится всю неделю, где задание есть: записка и Финни не меняют размер, когда оно пройдено.
+    val weekTask = w?.takeIf { s.phase == Phase.WEEK || s.phase == Phase.AFTER_SUMMARY }?.let { g.weekTask(s) }
+    val taskTitle = weekTask?.let { a.t(it.title) }
+    val activeTask = taskTitle?.takeIf { s.phase == Phase.WEEK && w?.taskDone == false }
+    val texts = RoomTexts(STEP_KEYS.map(a::t), a.t("home.shopSign"), savedText, goal?.price, taskTitle)
     // В банках комнаты — черновик плана до подтверждения, потом — сколько осталось в каждом направлении.
     val jars = w?.let {
         if (it.planConfirmed) listOf(it.plan.need - it.paidNeed, it.plan.want - it.paidWant, it.plan.save - it.deposit).map { v -> v.coerceAtLeast(0) }
@@ -461,11 +483,26 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
         val rightTop = maxOf(if (stacked) needsY + needsH else pad + purseH, gateY + gateH).toDp()
         val headerH = maxOf(needsY + needsH, pad + purseH, gateY + gateH)
 
-        val floor = height.toDp() - STRIP - DEPTH_BOWL
+        val base = height.toDp() - STRIP - DEPTH_BOWL
         // Не помещается — листок записки сначала становится ниже своей картинки (до 0,7): при шрифте ×1,3 на
         // 360 dp квадратный листок под «Следующая неделя» прокручивал комнату на 35 dp (правка 27.09).
-        val plan = sequenceOf(1f, 0.85f, 0.7f).map { k -> planRoom(width.toDp(), leftTop, rightTop, floor, texts, tm, this, k) }
-            .firstOrNull { it.lack <= 0.dp } ?: planRoom(width.toDp(), leftTop, rightTop, floor, texts, tm, this, 0.7f)
+        fun planAt(fl: Dp, t: RoomTexts) = sequenceOf(1f, 0.85f, 0.7f).map { k -> planRoom(width.toDp(), leftTop, rightTop, fl, t, tm, this, k) }
+            .firstOrNull { it.lack <= 0.dp } ?: planRoom(width.toDp(), leftTop, rightTop, fl, t, tm, this, 0.7f)
+        // Название задания на записке уступает первым, если из-за него дом прокручивался бы (крупный шрифт):
+        // задание видно и в дневнике, и заголовком своего экрана.
+        val withTask = planAt(base, texts)
+        val fits = texts.task == null || withTask.lack <= 0.dp || planAt(base, texts.copy(task = null)).lack >= withTask.lack
+        val roomTexts = if (fits) texts else texts.copy(task = null)
+        fun planAt(fl: Dp) = planAt(fl, roomTexts)
+        // Высокий экран (аудит VIS-01, UI-03): Финни уже упёрся в ширину, и над полом оставалась пустая стена.
+        // Стена поднимается на свободное место — пол становится глубже, и передний ряд встаёт на него ниже
+        // линии стены: комната читается сценой с глубиной, а не полосой вещей на одной линии.
+        val plan0 = planAt(base)
+        val lift = minOf(plan0.slack, height.toDp() * LIFT_SHARE).coerceAtLeast(0.dp)
+        val plan = if (lift > 4.dp) planAt(base - lift).takeIf { it.lack <= 0.dp && it.finniH >= plan0.finniH - 0.5.dp } ?: plan0 else plan0
+        val floor = if (plan === plan0) base else base - lift
+        // Передний ряд — Финни, миска, посылка, лежанка — на полу, ниже линии стены.
+        val front = FRONT_MIN + (base - floor) * FRONT_SHARE
         // Не помещается и при самом маленьком Финни (крупный шрифт) — комната выше экрана, и полоса
         // под шапкой прокручивается; в конце прокрутки пол — внизу, как без неё.
         val extra = plan.lack.roundToPx()
@@ -475,6 +512,8 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
         val stageH = height + extra
         val fl = (floor.roundToPx() + extra).toDp()
         plan.props(fl).forEach { (p, x) -> propX[p] = x.toPx() }
+        // Стадия роста — Финни чуть крупнее с каждой (I82): стоит на том же месте, растёт вверх.
+        val grow = maxOf(stageScale(s.progress.stage), minOf(1f, FinniDimens.MinTouch / plan.finniW))
         finniX = (plan.finniX + plan.finniW / 2).toPx()
 
         val back = subcompose(Slot.BACK) {
@@ -495,12 +534,12 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
         val stage = subcompose(Slot.STAGE) {
             Box(Modifier.fillMaxSize().then(if (scrolling) Modifier.verticalScroll(stageScroll) else Modifier)) {
                 Room(
-                    s, plan, fl, stageH.toDp(), Modifier.layout { m, _ ->
+                    s, plan, fl, front, grow, stageH.toDp(), Modifier.layout { m, _ ->
                         val r = m.measure(Constraints.fixed(width, stageH))
                         layout(width, stageH - viewTop) { r.place(0, -viewTop) }
                     },
                     background = scrolling,
-                    note = noteStep, jars = jars, soapShown = soapShown,
+                    note = noteStep, task = activeTask.takeIf { fits }, jars = jars, soapShown = soapShown,
                     // Пока открыта плашка, значка нет: предметы сейчас только замечают её.
                     mark = target?.takeIf { stage != Stage.AFTER_EVENT && !plateUp },
                     say = say,
@@ -521,7 +560,7 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
                         val moving = walk.value > 0f && walk.value < 1f
                         Box(m.graphicsLayer { translationX = plan.toBowl.toPx() * walk.value }) {
                             Finni(
-                                s.profile.fur, s.profile.accessory, Modifier.width(plan.finniW),
+                                s.profile.fur, s.profile.accessory, Modifier.width(plan.finniW * grow),
                                 reaction = if (sleeping) Reaction.SLEEP else a.reaction, reactionKey = a.reactionKey,
                                 animate = a.animationOn,
                                 // Замечает в сторону предмета шага: слева — посылка и дверь, справа — полка и миска.
@@ -549,8 +588,8 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
         // Плашка посылки или объявления не закрывает Финни: встаёт на полосу пола под его ногами, а не
         // помещается там — наверху стены, под шапкой, до макушки Финни; не влезает и туда — прокручивается.
         val scrolled = if (scrolling) stageScroll.value else 0
-        val finniTop = (fl + DEPTH_FINNI - plan.finniH).roundToPx() - scrolled
-        val finniBottom = (fl + DEPTH_FINNI).roundToPx() - scrolled
+        val finniTop = (fl + DEPTH_FINNI + front - plan.finniH * grow).roundToPx() - scrolled
+        val finniBottom = (fl + DEPTH_FINNI + front).roundToPx() - scrolled
         val gap = 8.dp.roundToPx()
         val plate = subcompose(Slot.PLATE) {
             SlideUp(plateLines != null) {
@@ -594,7 +633,7 @@ private val HEADER_PAD = 12.dp
  * Место под записку — по самому длинному шагу с самым длинным заданием: Финни и дверь не меняют
  * размер от шага к шагу.
  */
-private data class RoomTexts(val steps: List<String>, val sign: String, val saved: String?, val price: Int?) {
+private data class RoomTexts(val steps: List<String>, val sign: String, val saved: String?, val price: Int?, val task: String? = null) {
     /** Клетки по 5 монет до цены цели. */
     val cells: Int? get() = price?.let { (it + 4) / 5 }
 
@@ -619,6 +658,8 @@ private data class RoomPlan(
     val plateMaxW: Dp, val plateH: Dp,
     /** Сколько высоты не хватило при самом маленьком Финни: на столько комната прокручивается. */
     val lack: Dp,
+    /** Сколько пустой стены остаётся, когда Финни упёрся в ширину: на столько можно поднять стену. */
+    val slack: Dp = 0.dp,
     /** Клетка плашки накоплений. */
     val cell: Dp = CELL,
 ) {
@@ -659,12 +700,15 @@ private fun planRoom(width: Dp, leftTop: Dp, rightTop: Dp, floor: Dp, t: RoomTex
     val noteRatio = thingRatio("zapiska")
     fun noteH(nw: Dp, step: String): Dp {
         val inner = nw * (1f - 2 * TEXT_SIDE)
-        val body = textH(step, NoteStep, inner)
+        val body = textH(step, NoteStep, inner) + (t.task?.let { NOTE_GAP + textH(it, NoteTask, inner) } ?: 0.dp)
         return maxOf(nw * noteRatio * noteK, body / (1f - TEXT_TOP - TEXT_BOTTOM))
     }
     val signH = textH(t.sign, PlateText, width) + 4.dp
     // Самое длинное слово шагов помещается на листке целиком: при крупном шрифте листок шире.
-    val longestWord = t.steps.flatMap { typo(it).split(' ') }.maxOf { textW(it, NoteStep) }
+    val longestWord = maxOf(
+        t.steps.flatMap { typo(it).split(' ') }.maxOf { textW(it, NoteStep) },
+        t.task?.let { typo(it).split(' ').maxOf { w -> textW(w, NoteTask) } } ?: 0.dp,
+    )
     val noteMin = maxOf(NOTE_MIN, longestWord / (1f - 2 * TEXT_SIDE) + 4.dp)
     val noteMax = maxOf((width * 0.36f).coerceIn(NOTE_MIN, NOTE_MAX), noteMin)
     val widths = generateSequence(noteMax) { it - 4.dp }.takeWhile { it >= noteMin }.toList().ifEmpty { listOf(noteMax) }
@@ -720,7 +764,8 @@ private fun planRoom(width: Dp, leftTop: Dp, rightTop: Dp, floor: Dp, t: RoomTex
         return maxOf(leftNeed(noteReserve) - (free - hd), shelfBottomMin(u) - shelfBottomMax(floor, hd, u), 0.dp)
     }
 
-    var hf = minOf(byWidth, FINNI_MAX)
+    val widest = minOf(byWidth, FINNI_MAX)
+    var hf = widest
     while (hf > FINNI_MIN && lackAt(hf) > 0.dp) hf -= 2.dp
     hf = hf.coerceAtLeast(FINNI_MIN)
     val lack = lackAt(hf)
@@ -750,6 +795,9 @@ private fun planRoom(width: Dp, leftTop: Dp, rightTop: Dp, floor: Dp, t: RoomTex
     // Полка — как можно ниже: над календарём с его значком и не ниже верха двери.
     val sw = shelfW(u)
     val shelfTop = shelfBottomMax(fl, hd, u) - sw * thingRatio("polka")
+    // Пустая стена слева (между запиской и табличкой) и справа (между шапкой и полкой) — только если Финни
+    // не уменьшался по высоте: иначе места и так не хватает.
+    val slack = if (hf < widest) 0.dp else minOf(fl - hd - leftTop - leftNeed(nh), shelfBottomMax(fl, hd, u) - shelfBottomMin(u)).coerceAtLeast(0.dp)
 
     return RoomPlan(
         finniW = fw, finniH = hf, finniX = finniX, toBowl = bowlX + BOWL / 2 - finniX - fw,
@@ -762,6 +810,7 @@ private fun planRoom(width: Dp, leftTop: Dp, rightTop: Dp, floor: Dp, t: RoomTex
         windowW = windowW, windowX = windowX, windowTop = doorTop,
         plateMaxW = plateMaxW, plateH = plateH,
         lack = lack,
+        slack = slack,
         cell = cell,
     )
 }
@@ -783,10 +832,15 @@ private fun Room(
     s: GameState,
     p: RoomPlan,
     floor: Dp,
+    /** Насколько передний ряд — Финни, миска, посылка, лежанка — стоит ниже линии стены, на полу. */
+    front: Dp,
+    /** Размер Финни от стадии роста. */
+    grow: Float,
     height: Dp,
     modifier: Modifier,
     background: Boolean,
     note: String,
+    task: String?,
     jars: List<Int>,
     soapShown: Boolean,
     mark: Prop?,
@@ -808,7 +862,7 @@ private fun Room(
 
         // ---------- Стена ----------
         // Записка читается диктором, но не нажимается.
-        WallNote(note, null, p.noteW, p.noteH, Modifier.offset(x = SIDE + 4.dp, y = p.noteTop).semantics(mergeDescendants = true) {})
+        WallNote(note, task, p.noteW, p.noteH, Modifier.offset(x = SIDE + 4.dp, y = p.noteTop).semantics(mergeDescendants = true) {})
         // Окно — декор на стене между дверью и Финни, может уходить за Финни. Места мало — окна нет.
         // В главе 2 — окно с инеем целиком на замену обычного (final-plan §3, п. 1).
         val window = if (s.progress.chapter == 2) "okno_inej" else "okno"
@@ -960,10 +1014,10 @@ private fun Room(
             }
         }
         LampOnSill(s, p)
-        FloorItems(s, p, floor)
+        FloorItems(s, p, floor, front, grow)
 
         // Миска на полу справа стоит всё время; в ней то, что куплено: крупа, каша или каша с ягодами.
-        Box(Modifier.standOn(p.bowlX, floor + DEPTH_BOWL)) {
+        Box(Modifier.standOn(p.bowlX, floor + DEPTH_BOWL + front)) {
             Box(Modifier.align(Alignment.BottomStart).prop(a.t("a11y.bowl")) { onProp(Prop.BOWL) }) {
                 Thing("miska", BOWL)
                 // Еда появляется по правилу появления §7.1, одинаково для любой ступеньки, и гаснет
@@ -978,7 +1032,7 @@ private fun Room(
 
         // Посылка у двери, пока не открыта: между ней и соседями — пустые полосы.
         if (w != null && w.parcel == null) {
-            Box(Modifier.standOn(p.parcelX, floor + DEPTH_PARCEL)) {
+            Box(Modifier.standOn(p.parcelX, floor + DEPTH_PARCEL + front)) {
                 Appear("parcel:${w.number}", Modifier.align(Alignment.BottomStart)) {
                     Box(Modifier.anchor(a.flights, "parcel").prop(a.t("a11y.parcel")) { onProp(Prop.PARCEL) }) {
                         Thing("posylka", PARCEL)
@@ -989,7 +1043,7 @@ private fun Room(
         // Мячик — на месте посылки, когда её нет; в главе 3 он в коробках переезда, потом в цели.
         if ("myachik" in inv && !chapter3 && !(w != null && w.parcel == null)) {
             val x = (slotL + slotR) / 2 - FinniDimens.MinTouch / 2
-            Box(Modifier.standOn(x, floor + DEPTH_BOWL)) {
+            Box(Modifier.standOn(x, floor + DEPTH_BOWL + front)) {
                 Box(
                     Modifier.align(Alignment.BottomStart)
                         .graphicsLayer { translationY = -ballLift() * 24.dp.toPx() }
@@ -1004,18 +1058,19 @@ private fun Room(
             }
         }
 
-        // Финни ближе к центру, не мельче 96 dp.
-        Box(Modifier.standOn(p.finniX, floor + DEPTH_FINNI)) {
+        // Финни ближе к центру, не мельче 96 dp; на полу, ниже линии стены. Меньше на ранней стадии роста —
+        // серединой на том же месте.
+        Box(Modifier.standOn(p.finniX + p.finniW * (1f - grow) / 2, floor + DEPTH_FINNI + front)) {
             finni(Modifier.align(Alignment.BottomStart).clickable(null, null, onClick = onFinni))
         }
 
         // Значок над предметом текущего шага — неподвижный (инвариант 4).
         mark?.let { m ->
             val top = when (m) {
-                Prop.PARCEL -> floor + DEPTH_PARCEL - PARCEL * thingRatio("posylka") - MARK_BAND
+                Prop.PARCEL -> floor + DEPTH_PARCEL + front - PARCEL * thingRatio("posylka") - MARK_BAND
                 Prop.DOOR -> floor - p.doorH - 4.dp - p.signH - MARK_BAND
                 Prop.JARS, Prop.SOAP, Prop.PIGGY -> p.board - p.itemsH - MARK_BAND
-                Prop.BOWL -> floor + DEPTH_BOWL - BOWL * thingRatio("miska") - MARK_BAND
+                Prop.BOWL -> floor + DEPTH_BOWL + front - BOWL * thingRatio("miska") - MARK_BAND
                 Prop.CALENDAR -> p.calendarTop - MARK_BAND
             }
             if (m != Prop.SOAP || soapShown) StepMark(p.props(floor).getValue(m), top)
@@ -1024,7 +1079,7 @@ private fun Room(
         // Реплика Финни — над его головой, хвостиком к нему; не выходит за края экрана.
         say?.let { text ->
             Box(
-                Modifier.fillMaxWidth().height(floor + DEPTH_FINNI - p.finniH - TAIL).padding(horizontal = SIDE),
+                Modifier.fillMaxWidth().height(floor + DEPTH_FINNI + front - p.finniH * grow - TAIL).padding(horizontal = SIDE),
                 contentAlignment = Alignment.BottomStart,
             ) { SayBubble(text, anchorX = p.finniX + p.finniW / 2 - SIDE, maxWidth = 220.dp) }
         }
@@ -1047,7 +1102,8 @@ private fun lampId(s: GameState) = if ("abazhur" in s.progress.inventory) "lampa
 @Composable
 private fun LampOnSill(s: GameState, p: RoomPlan) {
     if ("lampa" !in s.progress.inventory || p.windowW <= 0.dp) return
-    val lw = p.windowW * 0.3f
+    // Лампа — треть окна и больше: мельче она терялась рядом с дверью и Финни (аудит VIS-01).
+    val lw = p.windowW * 0.4f
     val sill = p.windowTop + p.windowW * thingRatio("okno") * SILL
     Box(Modifier.standOn(p.windowX + p.windowW * 0.12f, sill)) {
         Appear("lamp", Modifier.align(Alignment.BottomStart)) {
@@ -1069,7 +1125,7 @@ private val FLOOR_ITEM = 34.dp
  * до края. Касания не ловят: до двери и миски над ними достаёт палец.
  */
 @Composable
-private fun FloorItems(s: GameState, p: RoomPlan, floor: Dp) {
+private fun FloorItems(s: GameState, p: RoomPlan, floor: Dp, front: Dp, grow: Float) {
     val inv = s.progress.inventory
     val ch3 = s.progress.chapter >= 3
     val packed = packedAway(s)
@@ -1082,19 +1138,20 @@ private fun FloorItems(s: GameState, p: RoomPlan, floor: Dp) {
     // полосы пола справа. Места между Финни и миской на 360–411 dp нет: там лежанка вставала за миску.
     val bed = listOf("lezhanka", "plaid").firstOrNull { it in inv }
     bed?.let { id ->
-        val bw = p.finniW * (if (id == "plaid") 1.6f else 1.45f)
-        Box(Modifier.standOn(p.finniX + p.finniW / 2 - bw / 2, floor + DEPTH_FINNI + 2.dp)) {
+        val bw = p.finniW * grow * (if (id == "plaid") 1.6f else 1.45f)
+        Box(Modifier.standOn(p.finniX + p.finniW / 2 - bw / 2, floor + DEPTH_FINNI + front + 2.dp)) {
             Appear("bed:$id", Modifier.align(Alignment.BottomStart)) {
                 Thing(id, bw, description = app().game.content.items[id]?.name)
             }
         }
     }
     val right = buildList {
-        if ("pechka" in inv) add("pechka" to 1.25f)
+        if ("pechka" in inv) add("pechka" to 1.6f)
         if ("lampa" in inv && p.windowW <= 0.dp) add(lampId(s) to 1.2f)
     }
-    val maxH = STRIP - 6.dp
-    val bottom = floor + DEPTH_BOWL + STRIP - 2.dp
+    // Полоса пола у края экрана — ниже переднего ряда; вещи на ней чуть крупнее — ближе к ребёнку.
+    val maxH = STRIP - 6.dp + front * 0.6f
+    val bottom = floor + DEPTH_BOWL + STRIP - 2.dp + (front - FRONT_MIN)
     @Composable
     fun group(items: List<Pair<String, Float>>, from: Dp, to: Dp) {
         if (items.isEmpty()) return

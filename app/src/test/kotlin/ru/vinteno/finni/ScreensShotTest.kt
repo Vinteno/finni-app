@@ -172,7 +172,7 @@ class ScreensShotTest {
     @Test fun dialogWant() {
         // Нехватка в «Нужном»: каша и мыло стоят 8, а в «Нужном» 5. Надбавка теперь платится из «Хочу»
         // и нехватки в «Нужном» сама не создаёт, поэтому план здесь с малым «Нужным».
-        shot("14_dialog_want", game.confirmPlan(planned(week1(), Plan(5, 15, 10)))) { ShopScreen(it) {} }
+        shot("14_dialog_want", game.confirmPlan(planned(week1(), Plan(5, 10, 10)))) { ShopScreen(it) {} }
         listOf("Каша", "Мыло").forEach { compose.onNodeWithContentDescription(it).performClick() }
         compose.onNodeWithText("Купить").performClick()
         compose.onRoot().captureRoboImage("build/shots/14_dialog_want.png")
@@ -211,7 +211,7 @@ class ScreensShotTest {
         compose.onRoot().captureRoboImage("build/shots/16_parcel_flight.png")
         compose.mainClock.advanceTimeBy(1200)
         assertEquals(0, model.flights.walletPending)
-        assertEquals(30, store.state.value.progress.wallet)
+        assertEquals(25, store.state.value.progress.wallet)
     }
 
     /**
@@ -318,7 +318,7 @@ class ScreensShotTest {
     // План
     @Test fun sPlan600() = screen("04_plan_360x600", planned(week1())) { PlanScreen(it, {}, {}) }
     @Test fun sPlanOver600() = screen("04_plan_over_360x600", planned(week1(), Plan(14, 10, 10))) { PlanScreen(it, {}, {}) }
-    @Test fun sPlanZero600() = screen("04_plan_need0_360x600", planned(week1(), Plan(0, 20, 10))) { PlanScreen(it, {}, {}) }
+    @Test fun sPlanZero600() = screen("04_plan_need0_360x600", planned(week1(), Plan(0, 15, 10))) { PlanScreen(it, {}, {}) }
     @Test fun sPlanReady600() = screen("04_plan_ready_360x600", planned(week1().let { it.copy(progress = it.progress.copy(savings = 40)) })) { PlanScreen(it, {}, {}) }
     @Test fun sPlanMax600() = screen("04_plan_max_360x600", planned(week1(), Plan(45, 44, 10))) { PlanScreen(it, {}, {}) }
     @Config(qualifiers = "w360dp-h760dp-xxhdpi") @Test fun sPlan800() = screen("04_plan_360x800", planned(week1())) { PlanScreen(it, {}, {}) }
@@ -457,9 +457,9 @@ class ScreensShotTest {
 
     // Окна нехватки: «Хочу», копилка, мало монет. Зоны — только кнопок окна: экран под ним закрыт.
     // «Хочу» пусто, «Нужное» 4, в копилке взнос 26: добор 4 из копилки. Весь кошелёк разложен — иначе план не подтвердить (I45).
-    private fun savingsShop() = game.leaveShop(game.deposit(game.confirmPlan(planned(week1(), Plan(4, 0, 26)))))
+    private fun savingsShop() = game.leaveShop(game.deposit(game.confirmPlan(planned(week1(), Plan(4, 0, 21)))))
     // Нехватка в «Нужном» при деньгах в «Хочу»: каша и мыло стоят 8, в «Нужном» 5.
-    private fun wantShop() = game.confirmPlan(planned(week1(), Plan(5, 15, 10)))
+    private fun wantShop() = game.confirmPlan(planned(week1(), Plan(5, 10, 10)))
     private fun fewSavingsShop() = savingsShop().let { it.copy(progress = it.progress.copy(savings = 2)) }
     // На крупном шрифте полки прокручиваются: вещь сначала прокручивается в окно, потом нажимается.
     private fun buy(vararg items: String) {
@@ -523,6 +523,6 @@ class ScreensShotTest {
         plus.performTouchInput { click(androidx.compose.ui.geometry.Offset(width - 2f, height / 2f)) }
         compose.waitForIdle()
         assertEquals(11, store.state.value.week!!.plan.need)
-        assertEquals(10, store.state.value.week!!.plan.want)
+        assertEquals(5, store.state.value.week!!.plan.want)
     }
 }

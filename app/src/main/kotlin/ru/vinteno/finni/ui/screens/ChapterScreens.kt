@@ -17,12 +17,14 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -203,9 +205,9 @@ private fun SituationCard(tier: List<String>, name: String, nameH: Dp, tagH: Dp,
 /**
  * Задание F6 «Что задумали и что вышло» — final-plan §3, п. 8. Траты недели карточками с картинкой и
  * ценой; ребёнок раскладывает их касанием: касание карточки, затем касание банки (перетаскивания нет).
- * На карточке — значок направления, как на банке: так карточка находит свою банку. Не та банка —
- * карточка остаётся на месте, реплика «Посмотри на значок» — без оценки. Готово, когда разложены все;
- * вывод говорит объяснение после, а не подсказка до.
+ * Значка направления на карточке нет (I83): куда относится трата — это и есть задание. Не та банка
+ * принимается, как положена; после «Понятно» объяснение называет, куда относится трата, награда — только
+ * за верную раскладку. Готово, когда разложены все; вывод говорит объяснение после, а не подсказка до.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -213,7 +215,8 @@ fun SortScreen(s: GameState, onBack: () -> Unit, onDone: () -> Unit) {
     val a = app()
     val g = a.game
     val cards = remember(s.week?.number) { g.sortCards(s) }
-    val placed = remember(s.week?.number) { mutableStateListOf<Int>() }
+    // Куда положена каждая карточка: номер карточки → банка.
+    val placed = remember(s.week?.number) { mutableStateMapOf<Int, Direction?>() }
     var picked by remember { mutableStateOf<Int?>(null) }
     var hint by remember { mutableStateOf(false) }
     var after by remember { mutableStateOf<List<String>?>(null) }
@@ -221,20 +224,19 @@ fun SortScreen(s: GameState, onBack: () -> Unit, onDone: () -> Unit) {
     BackHandler { onBack() }
 
     fun finish() {
-        val lines = a.explain.afterSort(s)
-        if (a.act(g::finishSort)) {
+        val order = cards.indices.map { placed[it] }
+        val lines = a.explain.afterSort(s, order)
+        if (a.act { g.finishSort(it, order) }) {
             a.react(Reaction.HAPPY)
             after = lines
         }
     }
 
     fun drop(jar: Direction?) {
-        val i = picked ?: run { hint = false; return }
-        if (cards[i].direction == jar) {
-            placed += i
-            picked = null
-            hint = false
-        } else hint = true
+        val i = picked ?: run { hint = true; return }
+        placed[i] = jar
+        picked = null
+        hint = false
     }
 
     SoftScreen(
@@ -253,7 +255,7 @@ fun SortScreen(s: GameState, onBack: () -> Unit, onDone: () -> Unit) {
                     }
                     all -> MainButton(a.t("common.ok"), onClick = ::finish)
                     else -> Box(Modifier.fillMaxWidth().heightIn(min = FinniDimens.MainButtonHeight), contentAlignment = Alignment.Center) {
-                        if (hint) Txt(a.t("f6.look"), FinniText.Subtitle)
+                        if (hint) Txt(a.t("f6.hint"), FinniText.Subtitle)
                     }
                 }
             }
@@ -271,7 +273,7 @@ fun SortScreen(s: GameState, onBack: () -> Unit, onDone: () -> Unit) {
                 val big = bigFont()
                 val jarRow: @Composable (Direction?, Modifier) -> Unit = { d, m0 ->
                     val st = directionStyle(d)
-                    val sum = placed.filter { cards[it].direction == d }.sumOf { cards[it].price }
+                    val sum = placed.filterValues { it == d }.keys.sumOf { cards[it].price }
                     val scale = maxOf(cards.sumOf { it.price }, 1)
                     PressBox({ drop(d) }, m0, description = a.t(st.labelKey)) { m ->
                         if (big) Row(
@@ -295,7 +297,7 @@ fun SortScreen(s: GameState, onBack: () -> Unit, onDone: () -> Unit) {
                 if (cards.isEmpty()) Txt(a.t("f6.empty"), FinniText.Subtitle)
                 FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     cards.forEachIndexed { i, card ->
-                        if (i in placed) return@forEachIndexed
+                        if (i in placed.keys) return@forEachIndexed
                         SortCardView(card, picked == i) { picked = if (picked == i) null else i; hint = false }
                     }
                 }
@@ -305,24 +307,24 @@ fun SortScreen(s: GameState, onBack: () -> Unit, onDone: () -> Unit) {
     }
 }
 
-/** Карточка траты: картинка, цена и значок направления в кольце — тот же, что над банкой. */
+/** Карточка траты: картинка и цена. Значка направления нет — куда её положить, решает ребёнок (I83). */
 @Composable
 private fun SortCardView(card: SortCard, selected: Boolean, onClick: () -> Unit) {
     val a = app()
-    val st = directionStyle(card.direction)
     val name = if (card.id == Game.DEPOSIT) a.t("f6.deposit") else a.game.content.item(card.id).name
     val r = FinniDimens.RadiusSmall + 6.dp
     PressBox(onClick, Modifier.semantics { this.selected = selected }, shape = RoundedCornerShape(r), description = name) { m ->
         Column(
-            m.softPlate(r).picked(selected, r).padding(8.dp).width(76.dp),
+            m.softPlate(r).picked(selected, r).padding(8.dp).widthIn(min = 76.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Picture(card.id, 56.dp)
+            // Название под картинкой: значка направления нет, и надбавка-слой (глазурь) без подписи не узнаётся.
+            Txt(name, FinniText.Caption.copy(textAlign = androidx.compose.ui.text.style.TextAlign.Center))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Coin(18.dp)
                 Txt(card.price.toString(), FinniText.Button)
-                Icon(st.icon, st.color, 18.dp)
             }
         }
     }
@@ -348,15 +350,20 @@ fun EndScreen(s: GameState) {
         },
     ) { viewport ->
         Column(Modifier.fillMaxSize().padding(horizontal = FinniDimens.ScreenPadding)) {
-            Box(Modifier.fillMaxWidth().padding(top = 8.dp).softPlate(FinniDimens.RadiusCard - 4.dp).padding(horizontal = 18.dp, vertical = 14.dp)) {
+            Column(
+                Modifier.fillMaxWidth().padding(top = 8.dp).softPlate(FinniDimens.RadiusCard - 4.dp).padding(horizontal = 18.dp, vertical = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
                 Txt(a.t("end.title"), FinniText.Title)
+                // Рост на последней главе (I82): подрос — что к этому привело; нет — чего не хватило.
+                a.explain.growthLines(s).forEach { Txt(it, FinniText.Body) }
             }
             BoxWithConstraints(Modifier.fillMaxWidth().weight(1f).padding(top = 12.dp, bottom = 2.dp)) {
                 val fw = minOf(maxHeight * (100f / 212f), maxWidth * 0.4f).coerceAtLeast(48.dp)
                 val side = maxWidth * 0.4f
                 Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.SpaceEvenly) {
                     Finni(
-                        s.profile.fur, s.profile.accessory, Modifier.width(fw),
+                        s.profile.fur, s.profile.accessory, Modifier.width(fw * (0.86f + 0.14f * (s.progress.stage - 1) / 3f)),
                         reaction = Reaction.HAPPY, reactionKey = 1, animate = a.animationOn,
                         description = s.profile.petName, wear = g.worn(s),
                     )

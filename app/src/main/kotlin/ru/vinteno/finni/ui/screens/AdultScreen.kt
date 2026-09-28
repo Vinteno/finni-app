@@ -109,6 +109,9 @@ private fun Done(s: GameState) {
             else a.f("adult.where", "ch" to s.progress.chapter, "n" to g.weekNumber(s)),
             AdultStrong,
         )
+        // Стадия роста отдельно от главы (I82): растёт по отметкам, а не по времени.
+        Txt(a.f("adult.stage", "n" to s.progress.stage), AdultStrong)
+        Txt(a.t("adult.stage.about"), AdultBody)
         listOf("plan", "save", "shop").forEach { theme ->
             Txt(a.t("adult.theme.$theme"), AdultStrong)
             g.content.tasks.values.filter { it.theme == theme }.forEach { task ->
@@ -124,24 +127,27 @@ private fun Done(s: GameState) {
         else {
             Txt(a.f("adult.facts.care", "n" to h.count { it.care }, "total" to h.size), AdultBody)
             Txt(a.f("adult.facts.save", "n" to h.count { it.fact.save > 0 }, "total" to h.size), AdultBody)
+            Txt(a.f("adult.facts.plan", "n" to h.count { it.onPlan }, "total" to h.size), AdultBody)
         }
     }
 }
 
 /** Сложность «Проще / Сложнее» (I42, I49 A7) и анимации (перекрывает системную настройку); звуков нет. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Settings(s: GameState) {
     val a = app()
     val g = a.game
     Section(a.t("adult.settings")) {
         Txt(a.t("adult.level"), AdultStrong)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // Кнопки не помещаются в ряд — вторая уходит строкой ниже целиком, слово не рвётся (аудит UI-02).
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Toggle(a.t("adult.level.easy"), !s.profile.senior) { a.act { g.setDifficulty(it, senior = false) } }
             Toggle(a.t("adult.level.hard"), s.profile.senior) { a.act { g.setDifficulty(it, senior = true) } }
         }
         Txt(a.t("adult.level.about"), AdultBody)
         Txt(a.t("adult.anim"), AdultStrong)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Toggle(a.t("adult.anim.on"), s.profile.animationOn) { a.setAnimations(true) }
             Toggle(a.t("adult.anim.off"), !s.profile.animationOn) { a.setAnimations(false) }
         }
@@ -165,7 +171,7 @@ private fun Toggle(text: String, selected: Boolean, onClick: () -> Unit) {
     }
 }
 
-/** Бонус взрослого (I49, F12.3): +5 в копилку раз в игровую неделю, после — объяснение, почему недоступно. */
+/** Бонус взрослого (I49, F12.3): +5 в копилку раз в главу (I81), после — объяснение, почему недоступно. */
 @Composable
 private fun Bonus(s: GameState) {
     val a = app()
@@ -176,7 +182,7 @@ private fun Bonus(s: GameState) {
         when {
             g.canBonus(s) -> SecondaryButton(a.t("adult.bonus.add"), onClick = { a.act(g::adultBonus) })
             w == null || (s.phase != Phase.WEEK && s.phase != Phase.AFTER_SUMMARY) -> Txt(a.t("adult.bonus.wait"), AdultStrong)
-            w.bonus > 0 -> Txt(a.t("adult.bonus.used"), AdultStrong)
+            s.chapter.bonus > 0 -> Txt(a.t("adult.bonus.used"), AdultStrong)
             else -> Txt(a.t("adult.bonus.full"), AdultStrong)
         }
     }

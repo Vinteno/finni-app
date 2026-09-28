@@ -78,7 +78,7 @@ class ChaptersShotTest {
         s = game.chooseSituation(s, 1)
         val cart = listOf("kasha", "mylo") + game.situationCart(s)
         val q = game.quote(s, cart)
-        s = game.buy(s, cart, agreedWant = true, pay = if (game.asksPay(s, q)) ru.vinteno.finni.core.model.PayChoice.CHANGE else null)
+        s = game.buy(s, cart, agreedWant = true, agreedSavings = true, pay = if (game.asksPay(s, q)) ru.vinteno.finni.core.model.PayChoice.NEED else null)
         return quiet(game.leaveShop(s))
     }
 
@@ -147,14 +147,21 @@ class ChaptersShotTest {
         compose.onAllNodesWithText("Купить")[0].performClick()
         compose.waitForIdle()
         capture("33b_shop_f3_after")
-        assertTrue(shown("Куртка у нас уже есть"))
+        // «Купить» со второй курткой — ошибочная ветка F3 (I83): куртка списана, её можно вернуть.
+        assertTrue(shown("Одна у нас уже была"))
+        assertTrue(shown("Вернуть куртку"))
+        compose.onAllNodesWithText("Вернуть куртку")[0].performClick()
+        compose.waitForIdle()
+        capture("33c_shop_f3_returned")
+        assertTrue(shown("Мы вернули куртку"))
     }
     @Test fun shopF2() {
         shot("34_shop_f2_pay", quiet(game.chooseSituation(planned(5), 0))) { ShopScreen(it) {} }
         compose.onAllNodesWithText("Купить")[0].performClick()
         compose.waitForIdle()
         capture("34_shop_f2_pay")
-        assertTrue(shown("Отдать 10 и взять сдачу"))
+        assertTrue(shown("Из копилки"))
+        assertTrue(shown("Из «Нужного»"))
     }
     @Test fun piggyReady() = shot("35_piggy_ch3", quiet(game.deposit(bought(7)))) { PiggyScreen(it) {} }
     @Test fun sort() = shot("36_sort_f6", quiet(game.leavePiggy(game.deposit(bought(7))))) { SortScreen(it, {}, {}) }

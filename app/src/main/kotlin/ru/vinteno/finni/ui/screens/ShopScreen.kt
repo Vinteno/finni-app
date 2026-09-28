@@ -59,6 +59,7 @@ import ru.vinteno.finni.ui.components.Coin
 import ru.vinteno.finni.ui.components.DirectionLabel
 import ru.vinteno.finni.ui.components.FitColumn
 import ru.vinteno.finni.ui.components.MainButton
+import ru.vinteno.finni.ui.components.SecondaryButton
 import ru.vinteno.finni.ui.components.NeedRing
 import ru.vinteno.finni.ui.components.PLANK
 import ru.vinteno.finni.ui.components.Picture
@@ -109,8 +110,10 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
     var explained by remember { mutableStateOf<List<String>?>(null) }
     // Что купили только что: на месте полок — эти вещи на одной полке и строка «Купили …» заголовком.
     var bought by remember { mutableStateOf<Bought?>(null) }
-    // Объяснение F3 — с «Понятно», после него покупки продолжаются.
+    // Объяснение F3 — с «Понятно», после него покупки продолжаются. Купили вторую куртку — ещё «Вернуть куртку».
     var dupPlate by remember { mutableStateOf<List<String>?>(null) }
+    // «Купить» со второй курткой в корзине: окна нехватки считаются по ней одной (I83).
+    var dupBuying by remember { mutableStateOf(false) }
     val showcase = !w.planConfirmed
     // Согласия из окон, пока открыто окно «Чем заплатишь?» (F2).
     var agreedSavings by remember { mutableStateOf(false) }
@@ -124,12 +127,22 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
     val cart = shelves.flatMap { sh -> tiers[sh.id]?.let { sh.tiers[it] } ?: emptyList() } + situation +
         (if (wantPicked && !g.owns(s, wantId)) listOf(wantId) else emptyList())
 
-    /** F3 пройдено: дубль убран или «Купить» — одно объяснение, награды нет, и это не комментируется. */
+    /** F3, верная ветка: вторую куртку убрали из корзины (I83). */
     fun resolveDuplicate() {
         if (a.act(g::resolveDuplicate)) {
             a.react(Reaction.HAPPY)
-            dupPlate = a.explain.afterDuplicate()
+            dupPlate = a.explain.afterDuplicate(bought = false)
         }
+    }
+
+    /** F3, ошибочная ветка: «Купить» со второй курткой — она списывается; объяснение и «Вернуть куртку». */
+    fun buyDuplicate(withWant: Boolean, withSavings: Boolean) {
+        if (a.act { g.buyDuplicate(it, withWant, withSavings) }) {
+            a.react(Reaction.HAPPY)
+            dupPlate = a.explain.afterDuplicate(bought = true)
+        }
+        dupBuying = false
+        ask = Ask.NONE; agreedWant = false; agreedSavings = false
     }
 
     fun leave() {
@@ -141,7 +154,8 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
     BackHandler { leave() }
 
     fun buy(q: Checkout, withWant: Boolean, withSavings: Boolean, pay: PayChoice? = null) {
-        // F2: перед оплатой коробки — «Чем заплатишь?», два равных способа.
+        if (dupBuying) { buyDuplicate(withWant, withSavings); return }
+        // F2: перед оплатой коробки — «Чем заплатишь?»: из «Нужного» или из копилки (I83).
         if (pay == null && g.asksPay(s, q)) {
             agreedWant = withWant; agreedSavings = withSavings
             ask = Ask.PAY
@@ -150,7 +164,7 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
         if (a.act { g.buy(it, cart, agreedWant = withWant, agreedSavings = withSavings, pay = pay) }) {
             val shopLines = a.explain.afterShop(a.state.value, q.items.map { it.id })
             // Заголовок — что купили; в плашке внизу — остальное объяснение (для F2 — все три строки оплаты).
-            explained = if (pay != null) a.explain.afterPay(a.state.value, pay == PayChoice.EXACT) else shopLines.drop(1)
+            explained = if (pay != null) a.explain.afterPay(a.state.value, pay) else shopLines.drop(1)
             bought = Bought(shopLines.first(), pieces(q.items, a::t))
             tiers.clear(); wantPicked = false
             // `доволен` одинаков для любого набора — инвариант 8.
@@ -160,14 +174,23 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
     }
 
     /** Порядок один для любой покупки: своё направление → «Хочу» → копилка с отдельным окном. */
-    fun proceed(q: Checkout, wantOk: Boolean) {
-        // F3: «Купить» при второй куртке в корзине — она не списывается, объяснение, покупки дальше.
-        if (dupId != null) { resolveDuplicate(); return }
+    fun proceed(q0: Checkout, wantOk: Boolean) {
+        // F3: «Купить» при второй куртке в корзине — сначала списывается она, с теми же окнами (I83);
+        // остальная корзина остаётся и покупается следующим «Купить».
+        dupBuying = dupId != null
+        val q = if (dupBuying) g.quoteDuplicate(s) else q0
         when {
             q.asksWant && !wantOk -> ask = Ask.WANT
             q.asksSavings && q.savingsAfter < 0 -> ask = Ask.NO_SAVINGS
             q.asksSavings -> ask = Ask.SAVINGS
             else -> buy(q, wantOk, false)
+        }
+    }
+
+    fun returnDuplicate() {
+        if (a.act(g::returnDuplicate)) {
+            a.react(Reaction.HAPPY)
+            dupPlate = a.explain.afterReturn()
         }
     }
 
@@ -214,6 +237,7 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
                                 Modifier.fillMaxWidth().softPlate(FinniDimens.RadiusCard - 6.dp).padding(horizontal = 14.dp, vertical = 10.dp),
                                 verticalArrangement = Arrangement.spacedBy(4.dp),
                             ) { dupAfter.forEachIndexed { i, l -> Txt(l, if (i == 0) FinniText.Button else FinniText.Body) } }
+                            if (g.canReturnDuplicate(s)) SecondaryButton(a.t("f3.return"), onClick = ::returnDuplicate)
                             MainButton(a.t("common.ok"), onClick = { dupPlate = null })
                         }
                         // Три строки объяснения выше пустой корзины: место растёт по ним — полки после покупки
@@ -240,7 +264,7 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
                             val empty = cart.isEmpty() && dupId == null
                             MainButton(
                                 a.t("shop.buy"),
-                                onClick = { if (!empty) proceed(g.quote(s, cart), false) },
+                                onClick = { if (!empty) proceed(if (cart.isEmpty()) g.quoteDuplicate(s) else g.quote(s, cart), false) },
                                 modifier = if (empty) Modifier.alpha(0f).clearAndSetSemantics {} else Modifier,
                             )
                         }
@@ -287,16 +311,21 @@ fun ShopScreen(s: GameState, onLeave: () -> Unit) {
             }
         }
 
-        val q = if (cart.isEmpty() || showcase) null else g.quote(s, cart)
+        val q = when {
+            showcase -> null
+            dupBuying && g.duplicatePending(s) -> g.quoteDuplicate(s)
+            cart.isEmpty() -> null
+            else -> g.quote(s, cart)
+        }
         when (ask) {
             Ask.WANT -> q?.let {
-                WantSheet(s, it, onTake = { agreedWant = true; proceed(it, true) }, onBack = { ask = Ask.NONE })
+                WantSheet(s, it, onTake = { agreedWant = true; proceed(it, true) }, onBack = { ask = Ask.NONE; dupBuying = false })
             }
             Ask.SAVINGS -> q?.let {
-                SavingsSheet(s, it, onTake = { buy(it, agreedWant, true) }, onBack = { ask = Ask.NONE; agreedWant = false })
+                SavingsSheet(s, it, onTake = { buy(it, agreedWant, true) }, onBack = { ask = Ask.NONE; agreedWant = false; dupBuying = false })
             }
             Ask.NO_SAVINGS -> q?.let {
-                SavingsSheet(s, it, onTake = null, onBack = { ask = Ask.NONE; agreedWant = false })
+                SavingsSheet(s, it, onTake = null, onBack = { ask = Ask.NONE; agreedWant = false; dupBuying = false })
             }
             Ask.PAY -> q?.let {
                 PaySheet(s, onPay = { choice -> buy(it, agreedWant, agreedSavings, choice) }, onBack = { ask = Ask.NONE; agreedWant = false; agreedSavings = false })
@@ -520,7 +549,7 @@ private fun CartBasket(
                 // отдельной позицией: каша 5 под «Нужное», ягоды 3 под «Хочу». Если бы надбавка платилась
                 // в том же направлении, что основа, она легла бы на картинку основы одной позицией.
                 listOf(Direction.NEED, Direction.WANT).forEach { dir ->
-                    // Вторая куртка F3 лежит в корзине своей категорией, но в сумму не входит: не списывается.
+                    // Вторая куртка F3 лежит в корзине своей категорией и входит в сумму: «Купить» её списывает (I83).
                     val items = q.items.filter { g.direction(it) == dir } + extra.map(g.content::item).filter { g.direction(it) == dir }
                     if (items.isEmpty()) return@forEach
                     val st = directionStyle(dir)
@@ -550,7 +579,7 @@ private fun CartBasket(
         }
         val total: @Composable () -> Unit = {
             Box(Modifier.softPlate(FinniDimens.RadiusSmall + 4.dp).padding(horizontal = 10.dp, vertical = 6.dp)) {
-                Txt(a.f("shop.cart.total", "n" to q.total), FinniText.Button)
+                Txt(a.f("shop.cart.total", "n" to q.total + extra.sumOf { g.content.item(it).price }), FinniText.Button)
             }
         }
         // Крупный шрифт: сумма — под картинками, иначе она забирает ширину и картинки встают столбиком.
@@ -732,19 +761,22 @@ private fun SavingsSheet(s: GameState, q: Checkout, onTake: (() -> Unit)?, onBac
 }
 
 /**
- * Окно «Чем заплатишь?» — задание F2 (сценарий главы 3, неделя 5). Два одинаковых способа, оба верны:
- * отдать ровно или отдать десятку и взять сдачу; в кошельке — чистая стоимость. Монетами-картинками.
+ * Окно «Чем заплатишь?» — задание F2 (сценарий главы 3, неделя 5; I83): из «Нужного», как задумано, или из
+ * копилки. Что станет с копилкой, видно до выбора (ТЗ 2.5.7). Две одинаковые кнопки — ни одна не выделена.
+ * В копилке меньше цены — «Из копилки» остаётся, а на касание окно говорит, что монет мало.
  */
 @Composable
 private fun PaySheet(s: GameState, onPay: (PayChoice) -> Unit, onBack: () -> Unit) {
     val a = app()
-    val item = a.game.weekTask(s)?.itemId?.let(a.game.content::item) ?: return
-    val ten = a.explain.changeCoin(item.price)
+    val g = a.game
+    val item = g.weekTask(s)?.itemId?.let(g.content::item) ?: return
+    val after = g.payFromSavingsAfter(s)
+    var short by remember { mutableStateOf(false) }
     FinniSheet(
         buttons = {
             SheetButtons(
-                a.f("f2.exact", "n" to item.price) to { onPay(PayChoice.EXACT) },
-                a.f("f2.withChange", "n" to ten) to { onPay(PayChoice.CHANGE) },
+                a.t("f2.fromNeed") to { onPay(PayChoice.NEED) },
+                a.t("f2.fromSavings") to { if (after >= 0) onPay(PayChoice.SAVINGS) else short = true },
             )
         },
     ) {
@@ -755,15 +787,13 @@ private fun PaySheet(s: GameState, onPay: (PayChoice) -> Unit, onBack: () -> Uni
                 Coin(24.dp)
                 Txt(item.price.toString(), FinniText.Title)
             }
+            Thing("kopilka", 56.dp, description = a.t("piggy.title"))
         }
-        // Два способа картинками: пять монет — или одна десятка.
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround, verticalAlignment = Alignment.CenterVertically) {
-            Row(horizontalArrangement = Arrangement.spacedBy((-6).dp)) { repeat(item.price) { Coin(22.dp) } }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Coin(34.dp)
-                Txt(ten.toString(), FinniText.Button)
-            }
-        }
+        // Последствие снятия — до выбора: сколько останется в копилке от цели.
+        Txt(
+            if (after >= 0 && !short) a.f("shortfall.savings.3", "n" to after, "goal" to g.goalPrice(s)) else a.t("f5.notEnough"),
+            FinniText.Body,
+        )
     }
 }
 

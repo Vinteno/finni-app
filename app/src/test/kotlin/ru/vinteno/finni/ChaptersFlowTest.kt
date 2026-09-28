@@ -83,47 +83,48 @@ class ChaptersFlowTest {
     private val jars = "Нужное, Хочу, Копилка"
 
     @Test fun chapterTwo() {
-        // Неделя 3: посылка и объявление пройдены, план разложен — F4 на плане.
+        // Неделя 3: посылка и объявление пройдены, план разложен — F4 на плане. Откладываем 13: к снегу хватит.
         val start = game.seeAnnouncement(game.openParcel(demo.weekStart(3)))
-        app(game.setPlan(start, Plan(14, 10, 10)))
+        app(game.setPlan(start, Plan(14, 0, 13)))
         assertTrue(game.cold(s))
         tap(jars); check("Сколько отложишь?"); shot("01_f4")
-        press("Подтвердить план"); check("Откладываем 10 монет"); assertEquals(10, s.progress.savings); shot("02_f4_after")
+        press("Подтвердить план"); check("Откладываем 13 монет"); assertEquals(5, s.progress.savings); shot("02_f4_after")
         press("Домой")
         // Дверь после плана — экран ситуации; выбор кладёт куртку в корзину и ведёт в магазин.
         tap("Магазин"); check("Обе куртки одинаково тёплые"); shot("03_situation")
-        tap("Куртка с рисунком"); check("Что возьмёшь на неделю?")
-        assertEquals(1, s.week!!.situationPick)
+        tap("Куртка"); check("Что возьмёшь на неделю?")
+        assertEquals(0, s.week!!.situationPick)
         tap("Каша"); tap("Мыло"); shot("04_cart")
         press("Купить"); check("Купили кашу, мыло и куртку"); shot("05_bought")
-        assertTrue("kurtka" in s.progress.inventory && "risunok" in s.progress.inventory)
+        assertTrue("kurtka" in s.progress.inventory)
         assertFalse(game.cold(s))
         press("Домой")
-        tap("Миска"); tap("Мыло"); tap("Копилка"); press("Отложить 10"); press("Домой")
-        assertEquals(20, s.progress.savings)
-        tap("Неделя 3"); check("Мы взяли куртку с рисунком"); shot("06_summary")
+        tap("Миска"); tap("Мыло"); tap("Копилка"); press("Отложить 13"); press("Домой")
+        assertEquals(18, s.progress.savings)
+        tap("Неделя 3"); check("Мы взяли куртку"); shot("06_summary")
         press("Оставить план"); assertEquals(Phase.AFTER_SUMMARY, s.phase)
         tap("Неделя 3"); assertEquals(2, s.week!!.number)
 
-        // Неделя 4: заноза, F3 в корзине, первый снег.
+        // Неделя 4: заноза, F3 в корзине, первый снег. План перенесён и подогнан под кошелёк 25: 14 / 0 / 11.
         tap("Посылка"); press("Понятно"); check("Так бывает у всех"); shot("07_announce_zanoza"); press("Понятно")
         tap(jars)
-        repeat(2) { compose.onAllNodes(hasContentDescription("Добавить монету") and hasClickAction())[0].performClick() }
-        idle()
+        assertEquals(Plan(14, 0, 11), s.week!!.plan)
         press("Подтвердить план")
         tap("Магазин"); check("Лапа заживёт одинаково")
-        tap("Лечение с бинтом"); check("Что в корзине?"); shot("08_f3")
-        press("Купить"); check("Второй раз покупать не нужно"); shot("09_f3_after")
-        assertTrue(s.week!!.taskDone); assertEquals(0, s.week!!.taskReward)
+        tap("Лечение"); check("Что в корзине?"); shot("08_f3")
+        // Вторую куртку убирают касанием в корзине — верная ветка F3, награда 5 (I83).
+        tap("Куртка"); check("Вторая не нужна"); shot("09_f3_after")
+        assertTrue(s.week!!.taskDone); assertEquals(5, s.week!!.taskReward)
         press("Понятно")
         tap("Каша"); tap("Мыло"); press("Купить"); press("Домой")
-        assertTrue("bint" in game.worn(s))
-        tap("Миска"); tap("Мыло"); tap("Копилка"); press("Отложить 10"); press("Домой")
+        tap("Миска"); tap("Мыло"); tap("Копилка"); press("Отложить 11"); press("Домой")
+        assertEquals(34, s.progress.savings)
         tap("Неделя 4"); press("Оставить план")
         assertEquals(Phase.EVENT, s.phase); check("Выпал первый снег"); check("Я сплю на лежанке"); shot("10_snow")
         press("Дальше")
-        // Переезд: плашка со строкой причины, затем цель главы 3.
-        assertEquals(Phase.TRANSITION, s.phase); check("Мы переехали"); shot("11_move")
+        // Переезд: плашка со строкой причины и ростом, затем цель главы 3.
+        assertEquals(Phase.TRANSITION, s.phase); check("Мы переехали"); check("Я подрос"); shot("11_move")
+        assertEquals(3, s.progress.stage)
         press("Понятно"); check("Куда сложим вещи?")
         tap("Корзина для вещей"); press("Выбрать")
         assertEquals("korzina", s.chapter.goalId); assertEquals(5, game.weekNumber(s)); shot("12_ch3_home")
@@ -131,28 +132,39 @@ class ChaptersFlowTest {
     }
 
     @Test fun payF2() {
-        // Неделя 5: F2 — чем заплатить.
-        app(game.confirmPlan(game.setPlan(game.seeAnnouncement(game.openParcel(demo.weekStart(5))), Plan(13, 19, 10))))
+        // Неделя 5: F2 — чем заплатить. В копилке пусто: «Из копилки» отвечает, что монет мало.
+        app(game.confirmPlan(game.setPlan(game.seeAnnouncement(game.openParcel(demo.weekStart(5))), Plan(13, 6, 10))))
         tap("Магазин"); tap("Коробка"); tap("Каша"); tap("Мыло")
         press("Купить"); check("Чем заплатишь?"); shot("20_f2")
-        press("Отдать 10 и взять сдачу"); check("Нам вернули 5"); shot("21_f2_after")
-        assertEquals(29, s.progress.wallet); assertEquals(10, s.progress.savings)
+        press("Из копилки"); check("В копилке мало монет")
+        press("Из «Нужного»"); check("Как и задумали"); shot("21_f2_after")
+        assertEquals(16, s.progress.wallet); assertEquals(5, s.progress.savings)
+    }
+
+    @Test fun payF2FromSavings() {
+        // Ошибочная ветка F2 (I83): коробка из копилки — копилка меньше, награды нет, объяснение и что дальше.
+        val w5 = demo.weekStart(5).let { it.copy(progress = it.progress.copy(savings = 20)) }
+        app(game.confirmPlan(game.setPlan(game.seeAnnouncement(game.openParcel(w5)), Plan(13, 6, 10))))
+        tap("Магазин"); tap("Коробка"); tap("Каша"); tap("Мыло")
+        press("Купить"); check("Останется 15 из 50"); shot("21b_f2_savings")
+        press("Из копилки"); check("Мы заплатили из копилки"); check("«Нужное» можно отложить потом"); shot("21c_f2_savings_after")
+        assertEquals(15, s.progress.savings); assertEquals(0, s.week!!.taskReward)
     }
 
     @Test fun sortF6() {
-        // Неделя 7: F6 касанием перед итогом.
-        var w7 = game.confirmPlan(game.setPlan(game.seeAnnouncement(game.openParcel(demo.weekStart(7))), Plan(13, 11, 10)))
+        // Неделя 7: F6 касанием перед итогом. Значка на карточке нет, не та банка принимается (I83).
+        var w7 = game.confirmPlan(game.setPlan(game.seeAnnouncement(game.openParcel(demo.weekStart(7))), Plan(13, 3, 10)))
         w7 = game.chooseSituation(w7, 1)
         w7 = game.buy(w7, listOf("kasha", "mylo") + game.situationCart(w7))
         w7 = game.leavePiggy(game.deposit(game.leaveShop(w7)))
         app(game.wash(game.feed(w7)))
         tap("Неделя 7"); check("Куда ушли монеты?"); shot("22_f6")
-        tap("Глазурь"); tap("Нужное"); check("Посмотри на значок")
-        tap("Хочу")
+        tap("Нужное"); check("Сначала выбери карточку")
+        tap("Глазурь"); tap("Нужное")
         listOf("Каша", "Мыло", "Угощение").forEach { tap(it); tap("Нужное") }
         tap("Взнос"); tap("Копилка")
-        press("Понятно"); check("На нужное ушло 13"); shot("23_f6_after")
-        assertTrue(s.week!!.taskDone)
+        press("Понятно"); check("Глазурь — это «Хочу»"); check("На нужное ушло 13"); shot("23_f6_after")
+        assertTrue(s.week!!.taskDone); assertTrue(s.week!!.taskMissed); assertEquals(0, s.week!!.taskReward)
         press("Домой"); tap("Неделя 7"); check("Что задумали и что вышло")
     }
 
@@ -173,7 +185,7 @@ class ChaptersFlowTest {
         compose.onAllNodes(hasContentDescription("Взрослым"))[0].performSemanticsAction(SemanticsActions.OnClick); idle()
         check("Для взрослого"); shot("30_adult")
         press("Добавить 5 монет в копилку"); assertEquals(child.progress.savings + 5, s.progress.savings)
-        check("Бонус этой недели уже добавлен")
+        check("Бонус этой главы уже добавлен")
         press("Сложнее"); assertTrue(s.profile.senior)
         press("Начать демо"); press("Да")
         assertTrue(s.demo); check("На что копим Кире?"); shot("31_demo_goal")

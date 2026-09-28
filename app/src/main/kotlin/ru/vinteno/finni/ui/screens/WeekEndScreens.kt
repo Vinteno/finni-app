@@ -151,7 +151,7 @@ fun PiggyScreen(s: GameState, onBack: () -> Unit) {
                     }
                     when {
                         ballPlate != null -> MainButton(a.t("common.home"), onClick = ::leave)
-                        // В копилке меньше цены мячика: «Понятно» засчитывает задание с наградой (I19).
+                        // В копилке меньше цены мячика: «Понятно» — задание сыграно без награды (I83; было — с наградой, I19).
                         noBall -> MainButton(a.t("common.ok"), onClick = { a.act(g::acknowledgeNoBall) })
                         else -> Column(verticalArrangement = Arrangement.spacedBy(FinniDimens.CardGap)) {
                             SecondaryButton(a.t("f5.take"), onClick = { choose(true) })
@@ -631,7 +631,8 @@ private fun BallChoice(s: GameState, goal: ru.vinteno.finni.core.content.Goal, o
                     after != null -> SlideUp(true) {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) { after.forEach { Txt(it) } }
                     }
-                    offer == null || !offer.available -> Txt(a.t("f5.notEnough"))
+                    // Монет меньше цены мячика: выбора нет — что это значит и что дальше (I83), без награды.
+                    offer == null || !offer.available -> a.explain.noBall().forEach { Txt(it) }
                     else -> {
                         Txt(a.f("f5.preview", "n" to offer.price))
                         val filled = minOf(s.progress.savings, goal.price) / COINS_PER_CELL
