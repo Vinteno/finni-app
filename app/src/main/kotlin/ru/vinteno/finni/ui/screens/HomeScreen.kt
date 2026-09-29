@@ -72,6 +72,7 @@ import ru.vinteno.finni.ui.components.NeedBadge
 import ru.vinteno.finni.ui.components.FinniIcons
 import ru.vinteno.finni.ui.components.NoteStep
 import ru.vinteno.finni.ui.components.NoteTask
+import ru.vinteno.finni.ui.components.NoteTaskLabel
 import ru.vinteno.finni.ui.components.NOTE_GAP
 import ru.vinteno.finni.ui.components.Picture
 import ru.vinteno.finni.ui.components.PlateText
@@ -254,14 +255,13 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
 
     val canFeed = w != null && s.phase != Phase.ONBOARDING && g.canFeed(s)
     val target = stepProp(step, canFeed)
-    // Плашка перехода главы и плашка бонуса взрослого — после посылки и объявления, по одной.
+    // Плашка перехода главы — после посылки и объявления.
     val transitionUp = s.phase == Phase.TRANSITION
-    val bonusUp = w != null && w.bonus > 0 && !w.bonusSeen && !parcelNote && step != Step.ANNOUNCE
     // Смена обстановки на переходе главы: кроссфейд или затемнение, 320 мс; без анимаций — сразу.
     val fade = remember(s.transition?.chapter) { Animatable(if (s.phase == Phase.TRANSITION && a.animationOn) 1f else 0f) }
     LaunchedEffect(s.transition?.chapter) { fade.animateTo(0f, tween(FinniMotion.SCREEN_MS)) }
     // Плашка на экране: пока её не закрыли, предметы только замечают её.
-    val plateUp = parcelNote || step == Step.ANNOUNCE || transitionUp || bonusUp
+    val plateUp = parcelNote || step == Step.ANNOUNCE || transitionUp
     val stage = when {
         s.phase == Phase.FREE_PLAY || s.phase == Phase.TRANSITION -> Stage.AFTER_EVENT
         s.phase == Phase.AFTER_SUMMARY || s.phase == Phase.EVENT -> Stage.AFTER_SUMMARY
@@ -397,7 +397,7 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
     val weekTask = w?.takeIf { s.phase == Phase.WEEK || s.phase == Phase.AFTER_SUMMARY }?.let { g.weekTask(s) }
     val taskTitle = weekTask?.let { a.t(it.title) }
     val activeTask = taskTitle?.takeIf { s.phase == Phase.WEEK && w?.taskDone == false }
-    val texts = RoomTexts(STEP_KEYS.map(a::t), a.t("home.shopSign"), savedText, goal?.price, taskTitle)
+    val texts = RoomTexts(STEP_KEYS.map(a::t), a.t("home.shopSign"), savedText, goal?.price, taskTitle, a.t("home.task"))
     // В банках комнаты — черновик плана до подтверждения, потом — сколько осталось в каждом направлении.
     val jars = w?.let {
         if (it.planConfirmed) listOf(it.plan.need - it.paidNeed, it.plan.want - it.paidWant, it.plan.save - it.deposit).map { v -> v.coerceAtLeast(0) }
@@ -416,11 +416,9 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
         parcelNote -> parcelLines(s)
         step == Step.ANNOUNCE -> a.explain.announcement(s)
         transitionUp -> a.explain.transitionLines(s)
-        bonusUp -> listOf(a.f("bonus.plate", "n" to w!!.bonus))
         else -> null
     }
-    // Картинка плашки: посылка — у записки бабушки, предмет недели — у объявления (гайд §12.2), копилка —
-    // у бонуса взрослого.
+    // Картинка плашки: посылка — у записки бабушки, предмет недели — у объявления (гайд §12.2).
     val platePicture = when {
         parcelNote -> "posylka"
         step == Step.ANNOUNCE -> g.weekContent(s).announceItem
@@ -431,7 +429,6 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
             ru.vinteno.finni.core.model.Reason.SAVE -> "kopilka"
             else -> null
         }
-        bonusUp -> "kopilka"
         else -> null
     }
     // Плашка выезжает и уезжает обратно (§7.4); пока уезжает, показывает прежние строки.
@@ -539,7 +536,8 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
                         layout(width, stageH - viewTop) { r.place(0, -viewTop) }
                     },
                     background = scrolling,
-                    note = noteStep, task = activeTask.takeIf { fits }, jars = jars, soapShown = soapShown,
+                    // Пока открыта плашка, задания на записке нет (как подсказки, QA-B10): экран до 25 слов; место держится.
+                    note = noteStep, task = activeTask.takeIf { fits && !plateUp }, jars = jars, soapShown = soapShown,
                     // Пока открыта плашка, значка нет: предметы сейчас только замечают её.
                     mark = target?.takeIf { stage != Stage.AFTER_EVENT && !plateUp },
                     say = say,
@@ -598,7 +596,6 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
                         parcelNote -> parcelNote = false
                         transitionUp -> a.act(g::seeTransition)
                         step == Step.ANNOUNCE -> a.act(g::seeAnnouncement)
-                        bonusUp -> a.act(g::seeBonus)
                     }
                 }
             }
@@ -633,7 +630,7 @@ private val HEADER_PAD = 12.dp
  * Место под записку — по самому длинному шагу с самым длинным заданием: Финни и дверь не меняют
  * размер от шага к шагу.
  */
-private data class RoomTexts(val steps: List<String>, val sign: String, val saved: String?, val price: Int?, val task: String? = null) {
+private data class RoomTexts(val steps: List<String>, val sign: String, val saved: String?, val price: Int?, val task: String? = null, val taskLabel: String = "") {
     /** Клетки по 5 монет до цены цели. */
     val cells: Int? get() = price?.let { (it + 4) / 5 }
 
@@ -700,7 +697,7 @@ private fun planRoom(width: Dp, leftTop: Dp, rightTop: Dp, floor: Dp, t: RoomTex
     val noteRatio = thingRatio("zapiska")
     fun noteH(nw: Dp, step: String): Dp {
         val inner = nw * (1f - 2 * TEXT_SIDE)
-        val body = textH(step, NoteStep, inner) + (t.task?.let { NOTE_GAP + textH(it, NoteTask, inner) } ?: 0.dp)
+        val body = textH(step, NoteStep, inner) + (t.task?.let { NOTE_GAP + textH(t.taskLabel, NoteTaskLabel, inner) + textH(it, NoteTask, inner) } ?: 0.dp)
         return maxOf(nw * noteRatio * noteK, body / (1f - TEXT_TOP - TEXT_BOTTOM))
     }
     val signH = textH(t.sign, PlateText, width) + 4.dp
@@ -862,7 +859,7 @@ private fun Room(
 
         // ---------- Стена ----------
         // Записка читается диктором, но не нажимается.
-        WallNote(note, task, p.noteW, p.noteH, Modifier.offset(x = SIDE + 4.dp, y = p.noteTop).semantics(mergeDescendants = true) {})
+        WallNote(note, task, a.t("home.task"), p.noteW, p.noteH, Modifier.offset(x = SIDE + 4.dp, y = p.noteTop).semantics(mergeDescendants = true) {})
         // Окно — декор на стене между дверью и Финни, может уходить за Финни. Места мало — окна нет.
         // В главе 2 — окно с инеем целиком на замену обычного (final-plan §3, п. 1).
         val window = if (s.progress.chapter == 2) "okno_inej" else "okno"

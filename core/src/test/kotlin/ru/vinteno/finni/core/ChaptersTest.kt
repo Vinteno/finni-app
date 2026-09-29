@@ -453,20 +453,6 @@ class ChaptersTest {
         assertEquals(Plan(0, 30, 10), s.week!!.plan) // «Проще» — как вышло или оставленный план
     }
 
-    @Test fun `бонус взрослого — раз в главу, 5 в копилку`() {
-        var s = fresh()
-        assertTrue(game.canBonus(s))
-        s = game.adultBonus(s)
-        assertEquals(5, s.progress.savings)
-        assertFalse(game.canBonus(s))
-        assertThrows { game.adultBonus(s) }
-        s = game.nextWeek(skipWeek(s))
-        assertFalse(game.canBonus(s))                        // та же глава — нет (I81)
-        assertEquals(0, s.week!!.bonus)
-        val ch2 = demo.weekStart(3)
-        assertTrue(game.canBonus(ch2))                       // новая глава — снова можно
-    }
-
     @Test fun `конец игры — «Играть дальше» без денег, «Начать сначала» с тем же питомцем`() {
         var s = game.playEvent(demo.playWeek(demo.weekStart(8)))
         assertEquals(Phase.GAME_OVER, s.phase)
@@ -511,14 +497,14 @@ class ChaptersTest {
 
     // ---------- Сохранение ----------
 
-    @Test fun `сохранение — глава 3 с носимым, бонусом, дневником и отметками читается целиком`() {
+    @Test fun `сохранение — глава 3 с носимым, дневником и отметками читается целиком`() {
         val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true; encodeDefaults = true }
         var s = plan(demo.weekStart(6), 14, 10)
-        s = game.adultBonus(game.chooseSituation(s, 1))
+        s = game.chooseSituation(s, 1)
         s = game.buy(s, listOf("kasha", "mylo") + game.situationCart(s))
         val back = json.decodeFromString(GameState.serializer(), json.encodeToString(GameState.serializer(), s))
         assertEquals(s, back)
-        assertTrue(back.progress.history.size == 5 && "kurtka" in back.progress.inventory && back.week!!.bonus == 5)
+        assertTrue(back.progress.history.size == 5 && "kurtka" in back.progress.inventory)
     }
 
     @Test fun `старое сохранение после дня рождения продолжается переходом в главу 2`() {

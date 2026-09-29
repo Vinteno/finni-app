@@ -57,7 +57,6 @@ data class WeekRecord(
     val taskDone: Boolean = false,
     /** Всё обязательное недели куплено. */
     val care: Boolean = false,
-    val bonus: Int = 0,
     /** Неделя прошла по плану — отметка плана (I82): без перелива из «Хочу» и добора из копилки. */
     val onPlan: Boolean = false,
     /** Задание сыграно ошибочной веткой: объяснение показано, награды нет (I83). */
@@ -99,8 +98,6 @@ data class ChapterState(
     val careWeeks: Int = 0,
     val saveWeeks: Int = 0,
     val planWeeks: Int = 0,
-    /** Бонус взрослого в этой главе: раз в главу, а не раз в неделю (I81). */
-    val bonus: Int = 0,
 )
 
 @Serializable
@@ -178,9 +175,6 @@ data class WeekState(
     val fed: Boolean = false,
     val washed: Boolean = false,
     val summaryChoice: SummaryChoice? = null,
-    /** Бонус взрослого, добавленный на этой неделе (I49, F12.3; раз в главу — I81), и видел ли ребёнок плашку о нём. */
-    val bonus: Int = 0,
-    val bonusSeen: Boolean = false,
 )
 
 @Serializable

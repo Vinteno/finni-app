@@ -123,7 +123,6 @@ class ChaptersShotTest {
     @Test fun homeFull() = shot("27_home_ch3_w8", bought(8)) { HomeScreen(it) {} }
     @Config(qualifiers = "w412dp-h915dp-xxhdpi")
     @Test fun homeFullTall() = shot("27b_home_ch3_w8_tall", bought(8)) { HomeScreen(it) {} }
-    @Test fun homeBonus() = shot("28_home_bonus", quiet(game.adultBonus(demo.weekStart(6)))) { HomeScreen(it) {} }
     @Test fun homeFree() = shot("29_home_free", quiet(game.keepPlaying(game.playEvent(demo.playWeek(demo.weekStart(8)))))) { HomeScreen(it) {} }
 
     // ---------- Неделя с ситуацией ----------

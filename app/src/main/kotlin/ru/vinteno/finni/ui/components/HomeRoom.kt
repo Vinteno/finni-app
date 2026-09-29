@@ -261,7 +261,7 @@ val TAIL = 7.dp
  * [TEXT_SIDE] с боков, [TEXT_BOTTOM] снизу.
  */
 @Composable
-fun WallNote(step: String, task: String?, width: Dp, height: Dp, modifier: Modifier = Modifier) {
+fun WallNote(step: String, task: String?, taskLabel: String, width: Dp, height: Dp, modifier: Modifier = Modifier) {
     Box(modifier.size(width, height)) {
         Thing("zapiska", width, height = height)
         Column(
@@ -270,14 +270,21 @@ fun WallNote(step: String, task: String?, width: Dp, height: Dp, modifier: Modif
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Txt(step, NoteStep.copy(textAlign = TextAlign.Center))
-            task?.let { Txt(it, NoteTask.copy(textAlign = TextAlign.Center)) }
+            // Задание недели (ТЗ 2.5.3): метка «Задание» и название — без метки строка читалась как лишняя подпись.
+            task?.let {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Txt(taskLabel, NoteTaskLabel.copy(textAlign = TextAlign.Center))
+                    Txt(it, NoteTask.copy(textAlign = TextAlign.Center))
+                }
+            }
         }
     }
 }
 
-/** Шаг на записке — кеглем кнопки: это и есть прежняя кнопка. Задание под ним — подписью. */
+/** Шаг на записке — кеглем кнопки: это и есть прежняя кнопка. Задание под ним — подписью с меткой. */
 val NoteStep = FinniText.Button
-val NoteTask = FinniText.Caption.copy(color = FinniColors.InkMute)
+val NoteTask = FinniText.Caption
+val NoteTaskLabel = FinniText.Caption.copy(color = FinniColors.InkMute)
 val NOTE_GAP = 4.dp
 
 /** Высота полосы над предметом, где стоит значок шага, вместе с зазором до предмета. */

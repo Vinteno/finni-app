@@ -40,7 +40,6 @@ class StrategiesTest {
         /** Покупать надбавки и хотелки, даже если придётся брать из копилки. */
         val greedy: Boolean = false,
         val ball: Boolean = false,
-        val bonus: Boolean = false,
         /** Ошибочные ветки заданий: F2 из копилки, F3 купить вторую куртку. */
         val wrongTasks: Boolean = false,
         val takeActual: Boolean = false,
@@ -86,7 +85,6 @@ class StrategiesTest {
             weeks++
             s = game.openParcel(s)
             s = game.seeAnnouncement(s)
-            if (st.bonus && game.canBonus(s)) s = game.adultBonus(s)
             val wc = game.weekContent(s)
             val sit = wc.shelves.first { it.id == wc.situationShelf }
             val food = if (st.cheapFood) "krupa" else "kasha"
@@ -169,9 +167,9 @@ class StrategiesTest {
 
     private val all: List<Strategy> = buildList {
         for (goal in Goal.entries) for (save in listOf(Save.PACE, Save.TEN, Save.MAX)) for (addons in listOf(false, true))
-            for (wants in listOf(false, true)) for (ball in listOf(false, true)) for (bonus in listOf(false, true))
+            for (wants in listOf(false, true)) for (ball in listOf(false, true))
                 for (greedy in listOf(false, true)) for (cheapFood in listOf(false, true))
-                    add(Strategy(goal, save, cheapFood, addons, wants, greedy, ball, bonus))
+                    add(Strategy(goal, save, cheapFood, addons, wants, greedy, ball))
     }
 
     @Test fun `награда задания меньше обязательных трат недели`() {
@@ -206,12 +204,12 @@ class StrategiesTest {
     }
 
     @Test fun `расточительный путь не берёт все цели и не кончается с крупным остатком`() {
-        for (goal in listOf(Goal.MID, Goal.EXPENSIVE)) for (bonus in listOf(false, true)) {
-            val r = play(Strategy(goal = goal, save = Save.TEN, addons = true, wants = true, greedy = true, ball = true, bonus = bonus))
-            assertFalse("$goal $bonus → $r", r.goals.all { it })
+        for (goal in listOf(Goal.MID, Goal.EXPENSIVE)) {
+            val r = play(Strategy(goal = goal, save = Save.TEN, addons = true, wants = true, greedy = true, ball = true))
+            assertFalse("$goal → $r", r.goals.all { it })
             // Остаток — это копилка, которой не хватило на цель: купить на него пропущенное нельзя.
-            assertTrue("$goal $bonus → $r", r.finalTotal < r.missedPrice)
-            assertEquals("$goal $bonus → $r", 1, r.stage)
+            assertTrue("$goal → $r", r.finalTotal < r.missedPrice)
+            assertEquals("$goal → $r", 1, r.stage)
         }
     }
 
@@ -253,12 +251,6 @@ class StrategiesTest {
         assertTrue("$r", r.ended)
     }
 
-    @Test fun `бонус взрослого — раз в главу`() {
-        val r0 = play(Strategy(goal = Goal.CHEAP, save = Save.TEN))
-        val r1 = play(Strategy(goal = Goal.CHEAP, save = Save.TEN, bonus = true))
-        assertTrue(r1.finalTotal - r0.finalTotal <= 3 * Game.BONUS)
-    }
-
     /** Таблица для документации: `./gradlew :core:test --tests '*StrategiesTest.таблица*' -i`. */
     @Test fun `таблица стратегий`() {
         val rows = listOf(
@@ -267,7 +259,7 @@ class StrategiesTest {
             "средние цели, хотелки любой ценой" to Strategy(Goal.MID, Save.PACE, wants = true, greedy = true),
             "дешёвые цели, хотелки и надбавки по месту" to Strategy(Goal.CHEAP, Save.PACE, addons = true, wants = true),
             "дорогие цели, крупа" to Strategy(Goal.EXPENSIVE, Save.PACE, cheapFood = true),
-            "дорогие цели, всё верхнее, мячик, бонус" to Strategy(Goal.EXPENSIVE, Save.TEN, addons = true, wants = true, greedy = true, ball = true, bonus = true),
+            "дорогие цели, всё верхнее, мячик" to Strategy(Goal.EXPENSIVE, Save.TEN, addons = true, wants = true, greedy = true, ball = true),
             "всё в копилку" to Strategy(Goal.MID, Save.MAX),
             "дешёвые цели, крупа, ни одной хотелки" to Strategy(Goal.CHEAP, Save.PACE, cheapFood = true),
             "ничего не откладывать" to Strategy(Goal.MID, Save.ZERO),

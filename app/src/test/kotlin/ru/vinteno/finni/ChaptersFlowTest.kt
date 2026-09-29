@@ -183,21 +183,21 @@ class ChaptersFlowTest {
         val child = s
         // Барьер — удержание 3 секунды; диктор открывает двойным касанием — так же проверяется здесь.
         compose.onAllNodes(hasContentDescription("Взрослым"))[0].performSemanticsAction(SemanticsActions.OnClick); idle()
-        check("Для взрослого"); shot("30_adult")
-        press("Добавить 5 монет в копилку"); assertEquals(child.progress.savings + 5, s.progress.savings)
-        check("Бонус этой главы уже добавлен")
+        check("Для взрослых"); shot("30_adult")
+        // Бонуса взрослого нет (29.09), кодов заданий на экране нет — понятные названия.
+        assertFalse(shown("Бонус")); assertFalse(shown("F1")); check("Покупки на неделю")
         press("Сложнее"); assertTrue(s.profile.senior)
-        press("Начать демо"); press("Да")
+        press("Начать демо"); press("Включить")
         assertTrue(s.demo); check("На что копим Кире?"); shot("31_demo_goal")
         tap("Книжка для Киры"); press("Выбрать")
         compose.onAllNodes(hasContentDescription("Взрослым"))[0].performSemanticsAction(SemanticsActions.OnClick); idle()
-        compose.onAllNodes(hasContentDescription("К неделе… 4") and hasClickAction())[0].let { runCatching { it.performScrollTo() }; it.performClick() }; idle()
+        compose.onAllNodes(hasContentDescription("Перейти к неделе 4") and hasClickAction())[0].let { runCatching { it.performScrollTo() }; it.performClick() }; idle()
         assertEquals(4, game.weekNumber(s)); assertEquals(2, s.progress.chapter)
         compose.onAllNodes(hasContentDescription("Взрослым"))[0].performSemanticsAction(SemanticsActions.OnClick); idle()
         press("Вернуться к игре ребёнка")
         assertFalse(s.demo); assertEquals(child.progress.wallet, s.progress.wallet); assertEquals(3, s.progress.chapter)
         compose.onAllNodes(hasContentDescription("Взрослым"))[0].performSemanticsAction(SemanticsActions.OnClick); idle()
-        press("Удалить данные игры"); press("Да, удалить")
+        press("Удалить данные игры"); press("Удалить")
         assertFalse(s.profile.introSeen)
     }
 }

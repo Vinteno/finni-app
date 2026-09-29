@@ -48,11 +48,13 @@ import ru.vinteno.finni.ui.theme.FinniText
 private val AdultBody = FinniText.Body
 private val AdultHead = FinniText.Subtitle
 private val AdultStrong = FinniText.Body.copy(fontWeight = FontWeight.Bold)
+/** Пояснение к заданию — 16 sp, приглушённым цветом: вторично к названию, но читается. */
+private val AdultNote = FinniText.Caption.copy(color = FinniColors.InkMute)
 
 /**
  * Раздел для взрослого — final-plan §4; ТЗ 2.5.12, 2.5.13, 3.5, 3.6. За барьером удержания на доме.
  * Спокойный, плотнее детских экранов; лимиты 5 и 25 слов здесь не действуют, числа больше 100
- * разрешены. Сверху вниз: чему учит игра, что пройдено (факты без оценок ребёнка), настройки, бонус,
+ * разрешены. Сверху вниз: чему учит игра, что пройдено (факты без оценок ребёнка), настройки,
  * демо для проверки, удаление данных. Всё, что заметно меняет прогресс, — с подтверждением.
  */
 @Composable
@@ -69,7 +71,6 @@ fun AdultScreen(s: GameState, onBack: () -> Unit) {
             Teach()
             Done(s)
             Settings(s)
-            Bonus(s)
             DemoBlock(onBack)
             Wipe(onBack)
             Box(Modifier.height(16.dp))
@@ -92,7 +93,16 @@ private fun Section(title: String, content: @Composable ColumnScope.() -> Unit) 
 @Composable
 private fun Teach() {
     val a = app()
-    Section(a.t("adult.teach")) { (1..6).forEach { Txt("$it. " + a.t("adult.teach.$it"), AdultBody) } }
+    // Навык — жирным, как он проявляется в игре — строкой ниже.
+    Section(a.t("adult.teach")) {
+        (1..6).forEach {
+            val (skill, how) = a.t("adult.teach.$it").split(". ", limit = 2).let { p -> p[0] to p.getOrElse(1) { "" } }
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Txt(skill, AdultStrong)
+                if (how.isNotEmpty()) Txt(how, AdultBody)
+            }
+        }
+    }
 }
 
 /**
@@ -112,16 +122,23 @@ private fun Done(s: GameState) {
         // Стадия роста отдельно от главы (I82): растёт по отметкам, а не по времени.
         Txt(a.f("adult.stage", "n" to s.progress.stage), AdultStrong)
         Txt(a.t("adult.stage.about"), AdultBody)
+        // Задания по трём темам ТЗ 2.5.8: понятное взрослому название, что в нём делает ребёнок, выполнено или
+        // нет. Кодов F1–F6 на экране нет — они для документации, взрослому ничего не говорят (правка 29.09).
+        Txt(a.t("adult.tasks"), AdultHead)
         listOf("plan", "save", "shop").forEach { theme ->
             Txt(a.t("adult.theme.$theme"), AdultStrong)
             g.content.tasks.values.filter { it.theme == theme }.forEach { task ->
                 val done = task.id in s.progress.doneTasks
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) { if (done) CheckMark(20.dp) }
-                    Txt("${task.id}. ${a.t(task.title)} — ${a.t(if (done) "adult.taskDone" else "adult.taskOpen")}", AdultBody, Modifier.weight(1f))
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Txt("${a.t("adult.task.${task.id}")} — ${a.t(if (done) "adult.taskDone" else "adult.taskOpen")}", AdultBody)
+                        Txt(a.t("adult.task.${task.id}.about"), AdultNote)
+                    }
                 }
             }
         }
+        Txt(a.t("adult.facts"), AdultHead)
         val h = s.progress.history
         if (h.isEmpty()) Txt(a.t("adult.facts.none"), AdultBody)
         else {
@@ -171,23 +188,6 @@ private fun Toggle(text: String, selected: Boolean, onClick: () -> Unit) {
     }
 }
 
-/** Бонус взрослого (I49, F12.3): +5 в копилку раз в главу (I81), после — объяснение, почему недоступно. */
-@Composable
-private fun Bonus(s: GameState) {
-    val a = app()
-    val g = a.game
-    Section(a.t("adult.bonus")) {
-        Txt(a.t("adult.bonus.about"), AdultBody)
-        val w = s.week
-        when {
-            g.canBonus(s) -> SecondaryButton(a.t("adult.bonus.add"), onClick = { a.act(g::adultBonus) })
-            w == null || (s.phase != Phase.WEEK && s.phase != Phase.AFTER_SUMMARY) -> Txt(a.t("adult.bonus.wait"), AdultStrong)
-            s.chapter.bonus > 0 -> Txt(a.t("adult.bonus.used"), AdultStrong)
-            else -> Txt(a.t("adult.bonus.full"), AdultStrong)
-        }
-    }
-}
-
 /**
  * Демо для проверки (ТЗ 2.5.13, 2.6, 2.5.8): готовый питомец, переход к началу любой из восьми недель с
  * состоянием канонического пути — так любое задание и любая стадия доступны сразу; сброс к исходному
@@ -202,7 +202,7 @@ private fun DemoBlock(onBack: () -> Unit) {
     Section(a.t("adult.demo")) {
         Txt(a.t(if (inDemo) "adult.demo.on" else "adult.demo.about"), AdultBody)
         if (!inDemo) {
-            if (ask) Confirm(a.t("adult.demo.ask"), a.t("adult.yes"), onYes = { ask = false; a.startDemo(); onBack() }, onNo = { ask = false })
+            if (ask) Confirm(a.t("adult.demo.ask"), a.t("adult.demo.yes"), onYes = { ask = false; a.startDemo(); onBack() }, onNo = { ask = false })
             else SecondaryButton(a.t("adult.demo.start"), onClick = { ask = true })
         } else {
             Txt(a.t("adult.demo.week"), AdultStrong)

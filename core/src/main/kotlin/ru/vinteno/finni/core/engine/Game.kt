@@ -160,34 +160,6 @@ class Game(val content: Content) {
     /** Анимации — тумблер взрослого перекрывает системную настройку (ТЗ 3.6). */
     fun setAnimations(s: GameState, on: Boolean): GameState = s.copy(profile = s.profile.copy(animationOn = on, animationSet = true))
 
-    /**
-     * Бонус взрослого (I49, F12.3): +5 в копилку «за дело в жизни» — раз в главу (I81; было раз в неделю, и
-     * еженедельные +5 возвращали лишние деньги). Дом показывает плашку с источником и суммой (ТЗ 2.5.4).
-     * Копилка не поднимается выше 100 — инвариант 9.
-     */
-    fun canBonus(s: GameState): Boolean {
-        val w = s.week ?: return false
-        if (s.phase != Phase.WEEK && s.phase != Phase.AFTER_SUMMARY || s.chapter.bonus != 0) return false
-        // Взнос и награда этой недели ещё придут в копилку — место под них держится.
-        val pending = if (s.phase == Phase.WEEK) (if (w.deposited) 0 else w.plan.save) + pendingReward(s) else 0
-        return s.progress.savings + pending + BONUS <= CEILING
-    }
-
-    fun adultBonus(s: GameState): GameState {
-        rule(canBonus(s)) { "Бонус этой недели уже добавлен" }
-        val w = s.requireWeek()
-        return s.copy(
-            progress = s.progress.copy(savings = s.progress.savings + BONUS),
-            chapter = s.chapter.copy(bonus = BONUS),
-            week = w.copy(bonus = BONUS, bonusSeen = false),
-        )
-    }
-
-    fun seeBonus(s: GameState): GameState {
-        val w = s.requireWeek()
-        return s.copy(week = w.copy(bonusSeen = true))
-    }
-
     // ---------- Неделя ----------
 
     private fun startWeek(s: GameState, n: Int): GameState {
@@ -946,7 +918,7 @@ class Game(val content: Content) {
             history = p.history + WeekRecord(
                 chapter = p.chapter, week = w.number, number = weekNumber(s), plan = w.plan,
                 fact = summary(s).fact, reward = w.taskReward, purchases = w.purchases,
-                taskId = weekTask(s)?.id, taskDone = w.taskDone && !w.taskMissed, care = care, bonus = w.bonus,
+                taskId = weekTask(s)?.id, taskDone = w.taskDone && !w.taskMissed, care = care,
                 onPlan = planned, taskMissed = w.taskMissed,
             ),
         )
@@ -1152,7 +1124,6 @@ class Game(val content: Content) {
         const val CEILING = 100
 
         /** Бонус взрослого за неделю (I49, F12.3). */
-        const val BONUS = 5
 
         /** Карточка взноса в задании F6. */
         const val DEPOSIT = "deposit"

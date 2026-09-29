@@ -303,17 +303,6 @@ class EconomyTest {
         assertEquals(w, s.progress.wallet)
     }
 
-    @Test fun `бонус взрослого — раз в главу`() {
-        var s = toPlan(newGame())
-        assertTrue(game.canBonus(s))
-        s = game.adultBonus(s)
-        assertEquals(5, s.progress.savings)
-        assertFalse(game.canBonus(s))
-        s = game.finishWeek(game.leavePiggy(game.leaveShop(s)), SummaryChoice.KEEP_PLAN)
-        s = toPlan(game.nextWeek(s))
-        assertFalse(game.canBonus(s))                       // новая неделя той же главы — нет (I81)
-    }
-
     @Test fun `I82 запасная неделя — «ещё день» без посылки`() {
         var s = toPlan(newGame(), Plan(10, 15, 0))
         s = game.finishWeek(skipShop(s), SummaryChoice.KEEP_PLAN)
@@ -350,7 +339,7 @@ class EconomyTest {
             s.phase == Phase.TRANSITION -> game.seeTransition(s)
             s.phase == Phase.ONBOARDING -> game.chooseGoal(s, game.ch(s).goalIds.random(rnd))
             s.phase == Phase.EVENT -> game.playEvent(s)
-            s.phase == Phase.AFTER_SUMMARY -> if (rnd.nextInt(6) == 0 && game.canBonus(s)) game.adultBonus(s) else game.nextWeek(s)
+            s.phase == Phase.AFTER_SUMMARY -> game.nextWeek(s)
             w!!.parcel == null -> game.openParcel(s)
             !w.announcementSeen -> game.seeAnnouncement(s)
             !w.planConfirmed -> {
@@ -383,7 +372,6 @@ class EconomyTest {
                     game.canReturnDuplicate(s) -> game.returnDuplicate(s)
                     else -> game.finishSort(s, game.sortCards(s).map { if (rnd.nextBoolean()) it.direction else null })
                 }
-                8 -> if (game.canBonus(s)) game.adultBonus(s) else null
                 else -> game.finishWeek(s, if (rnd.nextBoolean()) SummaryChoice.KEEP_PLAN else SummaryChoice.TAKE_ACTUAL)
             }
         }

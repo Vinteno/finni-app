@@ -399,7 +399,7 @@ class JourneyTest {
             line.split(Regex("(?<=[.?])\\s+")).filter { words(it) > 5 }.forEach { note("Фраза длиннее 5 слов", "$where: «$it»") }
         }
         val total = scope.flatMap { n -> n.config.getOrNull(SemanticsProperties.Text).orEmpty().map { plain(it.text) } }.sumOf(::words)
-        if (total > 25 && !has("Для взрослого")) note("Экран больше 25 слов", "$where: $total — ${t.joinToString(" | ")}")
+        if (total > 25 && !has("Для взрослых")) note("Экран больше 25 слов", "$where: $total — ${t.joinToString(" | ")}")
     }
 
     private fun isAncestor(a: SemanticsNode, b: SemanticsNode): Boolean = generateSequence(b.parent) { it.parent }.any { it.id == a.id }
