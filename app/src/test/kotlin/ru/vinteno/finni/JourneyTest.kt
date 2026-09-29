@@ -392,7 +392,6 @@ class JourneyTest {
         }
         // Тексты.
         t.forEach { line ->
-            Regex("\\d+").findAll(line).map { it.value.toInt() }.filter { it > 100 }.forEach { note("Число больше 100", "$where: «$line»") }
             if ('!' in line) note("Восклицательный знак", "$where: «$line»")
             val low = line.lowercase()
             FORBIDDEN.filter { it in low }.forEach { note("Запретное слово «$it»", "$where: «$line»") }

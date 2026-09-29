@@ -14,8 +14,8 @@ android {
         applicationId = "ru.vinteno.finni"
         minSdk = 26 // Android 8.0 — ТЗ 3.1
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.3.0"
+        versionCode = 7
+        versionName = "0.3.2"
     }
 
     buildTypes {

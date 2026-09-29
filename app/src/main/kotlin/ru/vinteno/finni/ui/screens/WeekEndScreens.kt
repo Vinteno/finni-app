@@ -230,7 +230,7 @@ private fun PiggyRoom(s: GameState, goal: ru.vinteno.finni.core.content.Goal, sa
         HeadTitle(s, a.t("piggy.title"), width)
         Box(Modifier.flex(min = 12.dp))
         SavingsPlate(tailFromEnd = width / 2, maxWidth = width, modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.fillMaxWidth().padding(4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.fillMaxWidth().padding(4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Picture(goal.id, 56.dp, description = goal.name)
                     Txt(goal.name, FinniText.Subtitle, Modifier.weight(1f))
@@ -238,8 +238,10 @@ private fun PiggyRoom(s: GameState, goal: ru.vinteno.finni.core.content.Goal, sa
                 // Клетки — во всю ширину плашки: главный предмет экрана, а не мелкая строка (гайд §10.9).
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
                     val cell = ((maxWidth - 4.dp * (cells - 1)) / cells).coerceIn(CELL_MIN, CELL_MAX)
-                    ProgressCells(minOf(arrived, goal.price) / COINS_PER_CELL, cells, Modifier.anchor(a.flights, "piggy"), cell = cell)
+                    val shownCoins = minOf(arrived, goal.price)
+                    ProgressCells(shownCoins / COINS_PER_CELL, cells, Modifier.anchor(a.flights, "piggy"), cell = cell, partialCoins = shownCoins % COINS_PER_CELL)
                 }
+                Txt(a.t("piggy.cell"), FinniText.Caption)
                 Txt(
                     // Больше цены — «Накопили 30 из 20» читается как ошибка счёта: цена уже не нужна (правка 27.09).
                     if (saved > goal.price) a.explain.chapterText(s, "piggy.over", "n" to saved)
@@ -386,7 +388,7 @@ private fun PlanFactGrid(plan: Plan, fact: Plan, reward: Int) {
         fun jar(d: Direction?, v: Int) {
             val st = directionStyle(d)
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Jar(v, scale, st.bg, st.color, GRID_JAR)
+                Jar(v, scale, d, GRID_JAR)
                 Txt(v.toString(), FinniText.Subtitle)
             }
         }

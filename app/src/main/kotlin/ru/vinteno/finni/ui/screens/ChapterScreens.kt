@@ -280,12 +280,12 @@ fun SortScreen(s: GameState, onBack: () -> Unit, onDone: () -> Unit) {
                             m.fillMaxWidth().softPlate(FinniDimens.RadiusCard - 6.dp).padding(6.dp),
                             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Jar(sum, scale, st.bg, st.color, 48.dp)
+                            Jar(sum, scale, d, 48.dp)
                             DirectionLabel(st.icon, st.color, a.t(st.labelKey), Modifier.weight(1f))
                             Txt(sum.toString(), FinniText.Subtitle)
                         } else Column(m.fillMaxWidth().softPlate(FinniDimens.RadiusCard - 6.dp).padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                             DirectionLabel(st.icon, st.color, a.t(st.labelKey))
-                            Jar(sum, scale, st.bg, st.color, 72.dp)
+                            Jar(sum, scale, d, 72.dp)
                             Txt(sum.toString(), FinniText.Subtitle)
                         }
                     }

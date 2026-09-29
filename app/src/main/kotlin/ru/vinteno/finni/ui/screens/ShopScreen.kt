@@ -718,7 +718,7 @@ private fun SheetButtons(vararg buttons: Pair<String, () -> Unit>) {
 private fun SheetJar(d: Direction, value: Int, scale: Int, height: Dp) {
     val st = directionStyle(d)
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Jar(value, scale, st.bg, if (d == Direction.NEED) FinniColors.NeedDeep else FinniColors.WantDeep, height)
+        Jar(value, scale, d, height)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             Icon(st.icon, st.color, 20.dp)
             Txt(value.toString(), FinniText.Button)

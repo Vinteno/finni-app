@@ -154,6 +154,16 @@ class ChaptersTest {
         assertEquals("korzina", starts[7].chapter.goalId)
     }
 
+    @Test fun `демо — исходный профиль показывает первый запуск`() {
+        val s = demo.initial()
+        assertTrue(s.demo)
+        assertFalse(s.profile.introSeen)
+        assertFalse(s.profile.created)
+        assertEquals(0, s.progress.wallet)
+        assertEquals(0, s.progress.savings)
+        assertTrue(s.progress.history.isEmpty())
+    }
+
     // ---------- Длина главы и запасная неделя ----------
 
     @Test fun `запасная неделя главы 1 — по недостающей заботе, задание F1 без награды, без посылки`() {
@@ -241,7 +251,7 @@ class ChaptersTest {
         assertTrue(game.cold(s).not()) // в главе 3 не зябнут
     }
 
-    @Test fun `путь «всё в копилку» — копилка не выше 100 ни на одной неделе`() {
+    @Test fun `путь «всё в копилку» не теряет доход из-за потолка 100`() {
         var s = fresh("podarok_samokat")
         var max = 0
         while (s.phase != Phase.GAME_OVER) {
@@ -258,7 +268,7 @@ class ChaptersTest {
             }
             max = maxOf(max, s.progress.savings, s.progress.wallet)
         }
-        assertTrue("до $max", max <= 100)
+        assertTrue("до $max", max > 100)
     }
 
     // ---------- Задания глав 2 и 3 ----------

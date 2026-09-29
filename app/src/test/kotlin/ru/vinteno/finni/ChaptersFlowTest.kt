@@ -35,6 +35,8 @@ import ru.vinteno.finni.data.GameStore
 import ru.vinteno.finni.ui.AppModel
 import ru.vinteno.finni.ui.FinniNavHost
 import ru.vinteno.finni.ui.LocalApp
+import ru.vinteno.finni.ui.Screen
+import ru.vinteno.finni.ui.startScreen
 
 /**
  * Главы 2 и 3 по настоящей навигации — final-plan, блок G: неделя 3 с F4 и экраном ситуации, неделя 4 с F3
@@ -187,11 +189,16 @@ class ChaptersFlowTest {
         // Бонуса взрослого нет (29.09), кодов заданий на экране нет — понятные названия.
         assertFalse(shown("Бонус")); assertFalse(shown("F1")); check("Покупки на неделю")
         press("Сложнее"); assertTrue(s.profile.senior)
-        press("Начать демо"); press("Включить")
-        assertTrue(s.demo); check("На что копим Кире?"); shot("31_demo_goal")
+        press("Начать демо")
+        // Состояние первого запуска проверяется до запуска автопроигрывания предыстории.
+        compose.onAllNodes(hasText("Включить") and hasClickAction())[0].performClick()
+        assertTrue(s.demo); assertEquals(Screen.INTRO, startScreen(s))
+        // После знакомства и создания питомца — обычный экран цели, затем доступ к любому заданию.
+        store.replace(demo.profile()); idle()
+        check("На что копим Кире?"); shot("31_demo_goal")
         tap("Книжка для Киры"); press("Выбрать")
         compose.onAllNodes(hasContentDescription("Взрослым"))[0].performSemanticsAction(SemanticsActions.OnClick); idle()
-        compose.onAllNodes(hasContentDescription("Перейти к неделе 4") and hasClickAction())[0].let { runCatching { it.performScrollTo() }; it.performClick() }; idle()
+        press("Неделя 4 · Лишняя покупка")
         assertEquals(4, game.weekNumber(s)); assertEquals(2, s.progress.chapter)
         compose.onAllNodes(hasContentDescription("Взрослым"))[0].performSemanticsAction(SemanticsActions.OnClick); idle()
         press("Вернуться к игре ребёнка")

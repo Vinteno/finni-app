@@ -17,6 +17,7 @@ class GameStore(context: Context) {
     private val tmp = File(context.filesDir, "state.json.tmp")
     /** Игра ребёнка, отложенная на время демо: вернётся по кнопке в разделе взрослого. */
     private val child = File(context.filesDir, "child.json")
+    private val childTmp = File(context.filesDir, "child.json.tmp")
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
     private val _state = MutableStateFlow(read())
@@ -39,20 +40,25 @@ class GameStore(context: Context) {
      * или переход к другой неделе её не трогает (ТЗ 2.5.13).
      */
     fun startDemo(demo: GameState) {
-        if (!child.exists()) child.writeText(json.encodeToString(GameState.serializer(), _state.value))
+        if (!child.exists()) {
+            childTmp.writeText(json.encodeToString(GameState.serializer(), _state.value))
+            check(childTmp.renameTo(child)) { "Не удалось сохранить игру ребёнка" }
+        }
         replace(demo)
     }
 
     /** Вернуть игру ребёнка, как её оставили. */
-    fun endDemo() {
-        val saved = runCatching { json.decodeFromString<GameState>(child.readText()) }.getOrElse { GameState() }
+    fun endDemo(): Boolean {
+        val saved = runCatching { json.decodeFromString<GameState>(child.readText()) }.getOrNull() ?: return false
         replace(saved)
         child.delete()
+        return true
     }
 
     /** Удалить данные игры целиком — и отложенную на время демо; дальше первый запуск (ТЗ 3.5). */
     fun wipe() {
         child.delete()
+        childTmp.delete()
         tmp.delete()
         file.delete()
         _state.value = GameState()

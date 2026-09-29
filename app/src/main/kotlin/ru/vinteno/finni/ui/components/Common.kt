@@ -31,9 +31,14 @@ import ru.vinteno.finni.ui.motion.anchor
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -105,7 +110,7 @@ fun Wallet(amount: Int, modifier: Modifier = Modifier) {
 
 /**
  * Ряд монет — §10.5. Длина линейна по величине: до 20 — отдельные монеты 16 dp с зазором
- * после каждой пятой, от 21 до 100 — лента с насечками через 10. Все ряды одного экрана
+ * после каждой пятой, от 21 — лента с насечками через 10. Все ряды одного экрана
  * рисуются одним масштабом, выбранным по большему числу, — поэтому `scaleMax` общий.
  */
 @Composable
@@ -125,7 +130,8 @@ fun CoinRow(value: Int, scaleMax: Int, modifier: Modifier = Modifier) {
                     drawCircle(FinniColors.CoinEdge, d / 2 - 1.dp.toPx(), c, style = Stroke(2.dp.toPx()))
                 }
             } else {
-                val len = w * value / 100f
+                val max = maxOf(scaleMax, value, 1)
+                val len = w * value / max
                 val h = size.height
                 drawRoundRect(FinniColors.Coin, size = androidx.compose.ui.geometry.Size(len, h),
                     cornerRadius = androidx.compose.ui.geometry.CornerRadius(h / 2))
@@ -133,7 +139,7 @@ fun CoinRow(value: Int, scaleMax: Int, modifier: Modifier = Modifier) {
                     cornerRadius = androidx.compose.ui.geometry.CornerRadius(h / 2), style = Stroke(2.dp.toPx()))
                 var t = 10
                 while (t < value) {
-                    val x = w * t / 100f
+                    val x = w * t / max
                     drawLine(FinniColors.CoinEdge, Offset(x, 3.dp.toPx()), Offset(x, h - 3.dp.toPx()), 2.dp.toPx())
                     t += 10
                 }
@@ -143,12 +149,13 @@ fun CoinRow(value: Int, scaleMax: Int, modifier: Modifier = Modifier) {
 }
 
 /**
- * Прогресс к цели ячейками, одна ячейка — 5 монет; число — подписью рядом, один раз (§10.9).
+ * Прогресс к цели ячейками, одна ячейка — 5 монет. Неполная пятёрка тоже видна,
+ * а точное число остаётся подписью рядом (§10.9).
  * Новая клетка заполняется так (animation-howto §7.7): масштаб 0,8 → 1,0 с заливкой, 200 мс,
  * клетки по одной с задержкой 60 мс. Число рядом не анимируется.
  */
 @Composable
-fun ProgressCells(filled: Int, total: Int, modifier: Modifier = Modifier, cell: Dp = 24.dp, perRow: Int = total) {
+fun ProgressCells(filled: Int, total: Int, modifier: Modifier = Modifier, cell: Dp = 24.dp, perRow: Int = total, partialCoins: Int = 0) {
     val animate = ru.vinteno.finni.ui.app().animationOn
     val shown = remember { mutableIntStateOf(filled) }
     val from = shown.intValue
@@ -168,13 +175,24 @@ fun ProgressCells(filled: Int, total: Int, modifier: Modifier = Modifier, cell: 
                             grow.animateTo(1f, tween(200, easing = LinearOutSlowInEasing))
                         }
                     }
-                    val shape = RoundedCornerShape(minOf(FinniDimens.RadiusSmall, cell / 4))
-                    Box(
-                        Modifier.size(cell)
-                            .graphicsLayer { scaleX = grow.value; scaleY = grow.value }
-                            .background(if (on) FinniColors.Coin else FinniColors.Surface, shape)
-                            .border(FinniDimens.Outline, if (on) FinniColors.CoinEdge else FinniColors.StrokeStrong, shape),
-                    )
+                    val partial = if (i == filled) partialCoins.coerceIn(0, 4) else 0
+                    Canvas(Modifier.size(cell).graphicsLayer { scaleX = grow.value; scaleY = grow.value }) {
+                        val radius = minOf(FinniDimens.RadiusSmall, cell / 4).toPx()
+                        val rounded = Path().apply { addRoundRect(RoundRect(0f, 0f, size.width, size.height, CornerRadius(radius))) }
+                        drawPath(rounded, FinniColors.Surface)
+                        val gold = Brush.verticalGradient(
+                            listOf(lerp(FinniColors.Coin, Color.White, 0.25f), FinniColors.Coin, lerp(FinniColors.Coin, FinniColors.CoinEdge, 0.22f)),
+                            startY = 0f, endY = size.height,
+                        )
+                        if (on) drawPath(rounded, gold)
+                        else if (partial > 0) clipPath(rounded) {
+                            val top = size.height * (1f - partial / 5f)
+                            drawRect(gold, Offset(0f, top), Size(size.width, size.height - top))
+                        }
+                        val edge = if (on || partial > 0) FinniColors.CoinEdge else FinniColors.StrokeStrong
+                        drawRoundRect(edge, cornerRadius = CornerRadius(radius), style = Stroke(FinniDimens.Outline.toPx()))
+                        if (on) drawLine(Color.White.copy(alpha = 0.42f), Offset(size.width * 0.18f, size.height * 0.18f), Offset(size.width * 0.72f, size.height * 0.18f), 1.5.dp.toPx())
+                    }
                 }
             }
         }

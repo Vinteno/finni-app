@@ -166,10 +166,7 @@ class Game(val content: Content) {
         val total = s.progress.weekTotal + 1
         val wc = ch(s).week(n)
         val taskId = if (wc.spare) spareTask(s) else wc.taskId
-        // Черновик не кладёт в копилку больше, чем в неё влезет до 100 с наградой недели (инвариант 9).
-        val reward = taskId?.let(content::task)?.takeIf { !wc.spare && it.id !in s.progress.rewardedTasks }?.reward ?: 0
         val draft = if (s.profile.senior) Plan.EMPTY else s.nextPlan
-        val plan = draft.copy(save = minOf(draft.save, (CEILING - s.progress.savings - reward).coerceAtLeast(0)))
         // Носимое со сроком снимается само: бинт — через неделю после покупки.
         val expired = s.progress.boughtAt.filter { (id, at) -> content.item(id).wearWeeks?.let { at + it <= total } == true }.keys
         return s.copy(
@@ -182,7 +179,7 @@ class Game(val content: Content) {
             ),
             // «Сыт» и «чист» обнуляются в начале недели: еда и мыло — расходники (I9).
             // «Сложнее» — план каждой недели пустой (I49, A7).
-            week = WeekState(number = n, plan = plan, taskId = taskId),
+            week = WeekState(number = n, plan = draft, taskId = taskId),
         )
     }
 
@@ -226,17 +223,16 @@ class Game(val content: Content) {
     fun weekNumber(s: GameState): Int = s.progress.weekTotal.takeIf { it > 0 } ?: s.week?.number ?: 1
 
     /**
-     * Посылка: доход главы каждую неделю, один и тот же (I81; ТЗ 2.5.4, инвариант 5). Не приходит, если
-     * кошелёк с ней перевалил бы за 100 (инвариант 9) — это не ошибка, E02, — и на запасной неделе: это
-     * «ещё день» до события, а не новая неделя дохода (сценарий §9а, I82). Исправить недобор можно тем, что
-     * осталось, — иначе промах приносил бы лишнюю посылку и был бы выгоден.
+     * Посылка: доход главы приходит каждую обычную неделю независимо от остатка. Искусственный
+     * потолок 100 убран: иначе бережливый ребёнок терял доход. На запасной неделе это «ещё день»
+     * до события, а не новая неделя дохода; дополнительная посылка сделала бы промах выгодным.
      */
     fun openParcel(s: GameState): GameState {
         val w = s.requireWeek()
         rule(s.phase == Phase.WEEK) { "Посылка приходит в начале недели" }
         rule(w.parcel == null) { "Посылка этой недели уже открыта" }
         val income = ch(s).income
-        val arrives = !spareWeek(s) && s.progress.wallet + income <= CEILING
+        val arrives = !spareWeek(s)
         val wallet = s.progress.wallet + if (arrives) income else 0
         return s.copy(
             progress = s.progress.copy(wallet = wallet),
@@ -267,22 +263,14 @@ class Game(val content: Content) {
 
     // ---------- План ----------
 
-    /**
-     * Сколько можно положить в «Копилку» на этой неделе, чтобы копилка с наградой за задание не
-     * перевалила за 100 — инвариант 9. Каноническому пути не мешает: копилка там не выше 60.
-     */
-    fun saveCap(s: GameState): Int = (CEILING - s.progress.savings - pendingReward(s)).coerceAtLeast(0)
-
-    /** Награда за задание этой недели, которая ещё придёт в копилку. */
-    private fun pendingReward(s: GameState): Int =
-        weekTask(s)?.let { if (s.requireWeek().taskDone) 0 else taskReward(s, it) } ?: 0
+    /** Доступный взнос ограничен только кошельком; накопления не имеют искусственного потолка. */
+    fun saveCap(s: GameState): Int = s.progress.wallet
 
     /** Черновик допускает превышение: ввод не блокируется и не исправляется — E07. */
     fun setPlan(s: GameState, plan: Plan): GameState {
         val w = s.requireWeek()
         rule(!w.planConfirmed) { "План подтверждён и заморожен до конца недели" }
         rule(plan.need >= 0 && plan.want >= 0 && plan.save >= 0) { "В направлении не бывает меньше нуля" }
-        rule(plan.save <= maxOf(saveCap(s), w.plan.save)) { "Копилка не бывает больше 100" }
         return s.copy(week = w.copy(plan = plan))
     }
 
@@ -293,8 +281,7 @@ class Game(val content: Content) {
      */
     fun canConfirmPlan(s: GameState): Boolean {
         val w = s.requireWeek()
-        return s.phase == Phase.WEEK && !w.planConfirmed && w.announcementSeen && w.plan.total == s.progress.wallet &&
-            w.plan.save <= saveCap(s)
+        return s.phase == Phase.WEEK && !w.planConfirmed && w.announcementSeen && w.plan.total == s.progress.wallet
     }
 
     /**
@@ -565,9 +552,7 @@ class Game(val content: Content) {
         val w = s.requireWeek()
         if (w.taskDone) return s
         val task = weekTask(s) ?: return s
-        // Копилка полна до 100 — награда добирает только до потолка (инвариант 9; бывает, только если
-        // откладывать почти всё все недели подряд).
-        val reward = if (ok) minOf(taskReward(s, task), CEILING - s.progress.savings).coerceAtLeast(0) else 0
+        val reward = if (ok) taskReward(s, task) else 0
         return s.copy(
             progress = s.progress.copy(
                 savings = s.progress.savings + reward,
@@ -1120,8 +1105,6 @@ class Game(val content: Content) {
         /** Последняя стадия роста: старт и по одной за каждую главу с набранными отметками. */
         const val MAX_STAGE = 4
 
-        /** Инвариант 9: любое число на экране не выше 100 — копилка тоже. */
-        const val CEILING = 100
 
         /** Бонус взрослого за неделю (I49, F12.3). */
 

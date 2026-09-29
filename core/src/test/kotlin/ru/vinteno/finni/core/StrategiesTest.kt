@@ -18,7 +18,7 @@ import ru.vinteno.finni.core.model.SummaryChoice
 
 /**
  * Экономика целиком (I81, аудит ECON-01): стратегии ребёнка проходят всю игру через настоящий [Game], и
- * проверяется не только диапазон 0..100, но и то, что выбор что-то значит — хотелка и цель спорят за одни
+ * проверяется неотрицательный баланс и то, что выбор что-то значит — хотелка и цель спорят за одни
  * монеты, расточительный путь не берёт всё, стадия не меняется сама.
  */
 class StrategiesTest {
@@ -54,7 +54,7 @@ class StrategiesTest {
         val maxTotal: Int,
         val chapter: Int,
         val stage: Int,
-        /** Самое большое число в кошельке или копилке за игру — инвариант 9. */
+        /** Самое большое число в кошельке или копилке за игру. */
         val maxPocket: Int = 0,
         /** Цена самой дорогой цели, на которую не хватило. */
         val missedPrice: Int = 0,
@@ -187,20 +187,13 @@ class StrategiesTest {
         assertTrue(price("kasha") + price("yagody") + price("mylo") + pace(game.seeAnnouncement(s)) - 5 > s.progress.wallet)
     }
 
-    @Test fun `каждая стратегия без тупика и ни одно число не выше 100`() {
-        val over = mutableListOf<Pair<Strategy, Run>>()
+    @Test fun `каждая стратегия без тупика и без отрицательных денег`() {
         for (st in all + listOf(Strategy(save = Save.ZERO), Strategy(goal = Goal.EXPENSIVE, save = Save.ZERO, wants = true, greedy = true))) {
             val r = play(st)
             assertTrue("$st → $r", r.ended)
-            assertTrue("$st → $r", r.maxPocket <= 100)
+            assertTrue("$st → $r", r.maxPocket in 0..305)
             assertTrue("$st → $r", r.weeks in 8..11)
-            if (r.maxTotal > 100) over += st to r
         }
-        // Кошелёк с копилкой вместе переваливают за 100 (каждое число при этом не выше 100) только у того, кто
-        // пропустил цель — копилка не сгорает, безопасная ошибка, ТЗ 2.2, — ни разу не купил хотелку или всю игру
-        // брал самое дешёвое: дешёвые цели и крупу (I81).
-        val unexplained = over.filterNot { (st, r) -> r.goals.any { !it } || r.wants == 0 || st.goal == Goal.CHEAP && st.cheapFood }
-        assertTrue("$unexplained", unexplained.isEmpty())
     }
 
     @Test fun `расточительный путь не берёт все цели и не кончается с крупным остатком`() {

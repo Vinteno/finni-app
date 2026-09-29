@@ -1,5 +1,7 @@
 package ru.vinteno.finni.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -14,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,9 +66,6 @@ import ru.vinteno.finni.ui.theme.FinniColors
 import ru.vinteno.finni.ui.theme.FinniDimens
 import ru.vinteno.finni.ui.theme.FinniText
 
-/** Потолок числа на экране — инвариант 9. Сумма направления не растёт выше. */
-private const val MAX_NUMBER = 99
-
 /** Банки: не ниже 96 dp, не шире своей колонки. На крупном шрифте — маленькая банка в строке. */
 private val JAR_MIN = 96.dp
 private val JAR_ROW = 64.dp
@@ -79,8 +79,8 @@ private const val HEAD_RATIO = 312f / 459f
 
 /**
  * Экран плана — ядро продукта, сценарий главы 1, шаг 3. Три одинаковые банки на одной полке в
- * неизменном порядке: Нужное, Хочу, Копилка. В банке — монеты рядами по 5, больше монет — выше
- * столбик; под банкой число и «− +». Черновик 10 / 10 / 10 или то, что выбрано на прошлом итоге.
+ * неизменном порядке: Нужное, Хочу, Копилка. Высота россыпи показывает долю от
+ * доступного дохода, точное число — на ярлыке непосредственно под банкой.
  * Превышение разрешено: в банке просто больше монет, остаток показан строкой, подтверждение закрыто,
  * лишнее убирает сам ребёнок. Ни одного движения на экране, Финни не реагирует на суммы —
  * animation-howto.md §10.
@@ -98,9 +98,8 @@ fun PlanScreen(s: GameState, onBack: () -> Unit, onConfirmed: () -> Unit) {
     val left = wallet - plan.total
     val big = bigFont()
 
-    // Инвариант 9: любое число на экране не выше 100, включая «Разложено N из W». Поэтому «+»
-    // не поднимает сумму плана выше 99; превышение кошелька при этом остаётся возможным (E07).
-    fun set(p: Plan) = if (p.total > MAX_NUMBER && p.total > plan.total) false else a.act { a.game.setPlan(it, p) }
+    // Перебор разрешён и объясняется под банками; сумма больше 100 не блокируется.
+    fun set(p: Plan) = a.act { a.game.setPlan(it, p) }
 
     // В подтверждённом плане — сколько осталось сейчас: задуманное минус потраченное и отложенное.
     val shown = if (frozen) Plan(
@@ -179,7 +178,8 @@ fun PlanScreen(s: GameState, onBack: () -> Unit, onConfirmed: () -> Unit) {
             val titleStyle = if (textWidth(title, FinniText.Title) <= width - FinniDimens.PetHead - 12.dp) FinniText.Title else FinniText.Subtitle
             val titleH = textHeight(listOf(title), titleStyle, width - FinniDimens.PetHead - 12.dp)
             val counter: @Composable (Direction?, Int, (Int) -> Plan) -> Unit = { d, v, copy ->
-                Counter(frozen, onMinus = { if (v > 0) set(copy(v - 1)) }, onPlus = { set(copy((v + 1).coerceAtMost(MAX_NUMBER))) })
+                // Один шаг сверх кошелька виден как перебор; бесконечно накликивать цифры нельзя.
+                Counter(frozen, onMinus = { if (v > 0) set(copy(v - 1)) }, onPlus = { if (v <= wallet) set(copy(v + 1)) })
             }
             FitColumn(viewport) {
                 Box(Modifier.height(4.dp))
@@ -193,7 +193,7 @@ fun PlanScreen(s: GameState, onBack: () -> Unit, onConfirmed: () -> Unit) {
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                 val st = directionStyle(d)
                                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.Start, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Box(Modifier.padding(start = 4.dp)) { Jar(v, scaleMax, st.bg, deep(d), JAR_ROW) }
+                                    Box(Modifier.padding(start = 4.dp)) { Jar(v, scaleMax, d, JAR_ROW) }
                                     DirectionLabel(st.icon, st.color, a.t(st.labelKey))
                                 }
                                 Number(a.t(st.labelKey), v, Modifier.widthIn(min = 56.dp))
@@ -210,12 +210,12 @@ fun PlanScreen(s: GameState, onBack: () -> Unit, onConfirmed: () -> Unit) {
                         val jarH = minOf(maxHeight, colW / JAR_RATIO)
                         Columns(colW, Modifier.fillMaxSize(), fill = true) { i ->
                             val (d, v) = dirs[i]
-                            Jar(v, scaleMax, directionStyle(d).bg, deep(d), jarH)
+                            Jar(v, scaleMax, d, jarH)
                         }
                     }
                     ShelfPlank(Modifier.fillMaxWidth())
                     Box(Modifier.height(4.dp))
-                    Columns(colW) { i -> Number(a.t(directionStyle(dirs[i].first).labelKey), dirs[i].second) }
+                    Columns(colW) { i -> Number(a.t(directionStyle(dirs[i].first).labelKey), dirs[i].second, Modifier.fillMaxWidth(), tagged = true) }
                     // После объяснения F4 «− +» не вернутся — их пустой ряд не держим: на 360 × 600 из-за него
                     // экран прокручивался на 2 dp (правка 28.09).
                     if (taskLines == null) Columns(colW) { i -> val (d, v, copy) = dirs[i]; counter(d, v, copy) }
@@ -233,15 +233,8 @@ fun PlanScreen(s: GameState, onBack: () -> Unit, onConfirmed: () -> Unit) {
 private fun restVariants(wallet: Int): List<String> {
     val a = app()
     return listOf(21, 22, 25).flatMap { n ->
-        listOf(a.f("plan.left", "n" to n), a.f("plan.over", "sum" to MAX_NUMBER, "wallet" to wallet, "n" to n))
+        listOf(a.f("plan.left", "n" to n), a.f("plan.over", "sum" to (wallet + n), "wallet" to wallet, "n" to n))
     } + a.t("plan.done")
-}
-
-/** Обводка крышки — глубокий цвет направления. */
-private fun deep(d: Direction?) = when (d) {
-    Direction.NEED -> FinniColors.NeedDeep
-    Direction.WANT -> FinniColors.WantDeep
-    null -> FinniColors.SaveDeep
 }
 
 /** Три колонки одной ширины [colW] под тремя банками: всё под банкой стоит строго под ней. */
@@ -273,12 +266,17 @@ private fun TitleRow(s: GameState, title: String, modifier: Modifier, style: and
 
 /** Число под банкой — 28 sp; для экранного диктора с названием направления. */
 @Composable
-private fun Number(label: String, value: Int, modifier: Modifier = Modifier) {
-    Txt(
-        value.toString(),
-        FinniText.Title.copy(textAlign = TextAlign.Center),
-        modifier.semantics { contentDescription = "$label $value" },
-    )
+private fun Number(label: String, value: Int, modifier: Modifier = Modifier, tagged: Boolean = false) {
+    if (tagged) {
+        val shape = RoundedCornerShape(12.dp)
+        Box(
+            modifier.height(38.dp)
+                .background(FinniColors.Surface, shape)
+                .border(FinniDimens.Outline, FinniColors.StrokeStrong, shape)
+                .semantics(mergeDescendants = true) { contentDescription = "$label $value" },
+            contentAlignment = Alignment.Center,
+        ) { Txt(value.toString(), FinniText.Title.copy(textAlign = TextAlign.Center)) }
+    } else Txt(value.toString(), FinniText.Title.copy(textAlign = TextAlign.Center), modifier.semantics { contentDescription = "$label $value" })
 }
 
 /** «−» слева, «+» справа, по 48 dp, в одну строку на любом шрифте. На подтверждённом плане их место пустое. */

@@ -110,14 +110,20 @@ private fun allowed(sc: Screen, s: GameState, game: Game): Screen {
 @Composable
 fun FinniNavHost(state: GameState) {
     var chosen by rememberSaveable { mutableStateOf(Screen.HOME) }
-    // Раздел взрослого открыт поверх всего, кроме первого запуска: из него запускается демо.
-    val onboarding = startScreen(state).takeIf { it != Screen.HOME && it != Screen.EVENT && !(chosen == Screen.ADULT && state.profile.created) }
+    // Во время первого запуска тестового профиля системная «Назад» возвращает в раздел взрослого:
+    // эксперт может сбросить демо или восстановить игру ребёнка на любом шаге знакомства.
+    val onboarding = startScreen(state).takeIf {
+        it != Screen.HOME && it != Screen.EVENT && !(chosen == Screen.ADULT && (state.profile.created || state.demo))
+    }
     val screen = onboarding ?: if (state.phase == Phase.EVENT && chosen != Screen.SUMMARY && chosen != Screen.ADULT) Screen.EVENT else allowed(chosen, state, app().game)
     // Комната главы: холодная, новый дом, со светом лампы — фон всех экранов с комнатой.
     val room = RoomArt.of(state.progress.chapter, "lampa" in state.progress.inventory)
     SideEffect { RoomArt.name = room }
     val home = { chosen = Screen.HOME }
-    BackHandler(enabled = screen.hasBack) { home() }
+    val demoSetup = state.demo && screen in setOf(Screen.INTRO, Screen.LOOK, Screen.NAME, Screen.GOAL)
+    BackHandler(enabled = screen.hasBack || demoSetup) {
+        if (demoSetup) chosen = Screen.ADULT else home()
+    }
 
     val flights = app().flights
     val animationOn = app().animationOn

@@ -10,6 +10,7 @@ import ru.vinteno.finni.core.engine.Demo
 import ru.vinteno.finni.core.engine.Explain
 import ru.vinteno.finni.core.engine.Game
 import ru.vinteno.finni.core.engine.IllegalMove
+import ru.vinteno.finni.core.engine.Step
 import ru.vinteno.finni.core.model.GameState
 import ru.vinteno.finni.data.GameStore
 import ru.vinteno.finni.ui.motion.CoinFlights
@@ -30,6 +31,9 @@ class AppModel(val game: Game, private val store: GameStore) {
 
     /** Предметы комнаты, которые уже появились: `появление` играется один раз на предмет. */
     val seenInRoom = mutableSetOf<String>()
+
+    /** Первые отблески шагов не повторяются при возвращении на домашний экран. */
+    val seenStepHints = mutableSetOf<Triple<Boolean, Int, Step>>()
 
     /**
      * Системная настройка Android «Удалить анимации» (масштаб длительности анимаций 0). Раздела
@@ -74,8 +78,8 @@ class AppModel(val game: Game, private val store: GameStore) {
     /** Игра ребёнка отложена — идёт демо. */
     val inDemo: Boolean get() = store.childSaved || state.value.demo
 
-    /** «Начать демо» и «Сбросить демо» — готовый питомец без предыстории, цель выбирается, как обычно. */
-    fun startDemo() = store.startDemo(demo.profile())
+    /** Полный путь Приложения А: знакомство, внешность, имя, цель и игровой цикл. */
+    fun startDemo() = store.startDemo(demo.initial())
 
     /** «К неделе N» — начало недели с состоянием канонического пути сценариев. */
     fun demoWeek(n: Int) = store.startDemo(demo.weekStart(n))
@@ -85,6 +89,7 @@ class AppModel(val game: Game, private val store: GameStore) {
     fun wipe() {
         store.wipe()
         seenInRoom.clear()
+        seenStepHints.clear()
     }
 
     fun t(key: String) = texts[key]

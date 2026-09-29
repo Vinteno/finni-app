@@ -22,9 +22,12 @@ class Demo(private val game: Game) {
     /** Цели канонического пути — средние в каждой главе. */
     private val goals = mapOf(1 to "podarok_kniga", 2 to "lezhanka", 3 to "korzina")
 
+    /** Исходный тестовый профиль: весь путь Приложения А, начиная с предыстории и создания питомца. */
+    fun initial(): GameState = GameState(demo = true)
+
     /** Готовый питомец без предыстории: рыжий, шарф, имя «Финни». Цель выбирается, как обычно. */
     fun profile(): GameState {
-        var s = GameState(demo = true)
+        var s = initial()
         s = game.seeIntro(s)
         return game.createPet(s, game.content.texts["create.defaultName"], Fur.GINGER, Accessory.SCARF)
     }

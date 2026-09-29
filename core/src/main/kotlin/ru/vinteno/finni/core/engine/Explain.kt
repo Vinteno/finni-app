@@ -165,7 +165,7 @@ class Explain(private val game: Game) {
         ]
         return listOf(
             texts.format("f4.did", "n" to w.plan.save),
-            texts.format("f4.result.${s.progress.chapter}", "n" to atEvent.coerceAtMost(Game.CEILING)),
+            texts.format("f4.result.${s.progress.chapter}", "n" to atEvent),
             // Ошибочная ветка — способ исправить той же строкой: экран F4 на 360 × 600 не прокручивается.
             if (w.taskMissed) third + ". " + texts["f4.fix"] else third,
         )

@@ -102,11 +102,11 @@ class EconomyTest {
         assertEquals(50, s.progress.wallet)
     }
 
-    @Test fun `E02 посылка не приходит, если кошелёк перевалил бы за 100`() {
+    @Test fun `E02 доход не теряется при остатке больше 100`() {
         val s0 = newGame()
         val s = game.openParcel(s0.copy(progress = s0.progress.copy(wallet = 80)))
-        assertEquals(ParcelResult.NOT_ARRIVED, s.week!!.parcel)
-        assertEquals(80, s.progress.wallet)
+        assertEquals(ParcelResult.ARRIVED, s.week!!.parcel)
+        assertEquals(105, s.progress.wallet)
     }
 
     @Test fun `E03 остаток переносится`() {
@@ -114,6 +114,17 @@ class EconomyTest {
         assertEquals(4, s.progress.wallet)
         s = game.openParcel(game.nextWeek(s))
         assertEquals(29, s.progress.wallet)
+    }
+
+    @Test fun `накопления выше 100 не блокируют план и взнос`() {
+        val ready = game.seeAnnouncement(game.openParcel(newGame()))
+            .let { it.copy(progress = it.progress.copy(savings = 98)) }
+        val planned = game.setPlan(ready, Plan(10, 10, 5))
+        assertTrue(game.canConfirmPlan(planned))
+        val confirmed = game.confirmPlan(planned)
+        val after = game.deposit(confirmed)
+        assertEquals(103, after.progress.savings)
+        assertEquals(20, after.progress.wallet)
     }
 
     @Test fun `E04 канонический путь недели 1 — кошелёк 4, копилка 15`() {
@@ -315,7 +326,7 @@ class EconomyTest {
         assertEquals(wallet, s.progress.wallet)
     }
 
-    @Test fun `E12 кошелёк и копилка не уходят ниже нуля и выше 100 ни на каком пути, игра всегда кончается`() {
+    @Test fun `E12 кошелёк и копилка не уходят в минус ни на каком пути, игра всегда кончается`() {
         val rnd = Random(2026)
         repeat(1500) {
             var s = newGame(content.chapter1.goalIds.random(rnd))
@@ -324,8 +335,8 @@ class EconomyTest {
                 steps++
                 val before = s
                 s = randomMove(s, rnd) ?: continue
-                assertTrue("кошелёк ${s.progress.wallet}", s.progress.wallet in 0..100)
-                assertTrue("копилка ${s.progress.savings}\n${before.week}\n${s.week}\n${before.progress.savings} ${before.phase} ${s.phase}", s.progress.savings in 0..100)
+                assertTrue("кошелёк ${s.progress.wallet}", s.progress.wallet in 0..305)
+                assertTrue("копилка ${s.progress.savings}\n${before.week}\n${s.week}\n${before.progress.savings} ${before.phase} ${s.phase}", s.progress.savings in 0..305)
                 assertTrue("недель ${s.progress.weekTotal}", s.progress.weekTotal <= 11) // 3 + 3 + 5
             }
             assertEquals(Phase.FREE_PLAY, s.phase) // тупиков нет: игра доходит до конца

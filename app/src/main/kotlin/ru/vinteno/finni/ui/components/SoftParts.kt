@@ -306,14 +306,15 @@ fun CoinRoll(value: Int, scaleMax: Int, modifier: Modifier = Modifier) {
     Canvas(modifier.fillMaxWidth().height(20.dp)) {
         val w = size.width
         val h = size.height
-        val len = w * value / 100f
+        val max = maxOf(scaleMax, value, 1)
+        val len = w * value / max
         if (len <= 0f) return@Canvas
         val r = CornerRadius(4.dp.toPx())
         drawRoundRect(
             Brush.verticalGradient(listOf(lerp(FinniColors.Coin, Color.White, 0.3f), FinniColors.Coin, lerp(FinniColors.Coin, FinniColors.CoinEdge, 0.35f))),
             size = Size(len, h), cornerRadius = r,
         )
-        val step = w / 100f
+        val step = w / max
         for (i in 1 until value) {
             val x = step * i
             val ten = i % 10 == 0

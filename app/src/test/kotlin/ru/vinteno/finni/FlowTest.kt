@@ -323,13 +323,30 @@ class FlowTest {
     @Config(qualifiers = "w360dp-h760dp-xxhdpi") @Test fun home800() = homeSteps("360x800")
     @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun home915() = homeSteps("412x915")
 
-    /** Анимации выключены: всё на местах сразу, значок шага и реплика видны. */
+    /** Анимации выключены: предметы доступны сразу, начальный отблеск и реплика видны. */
     @Test fun noAnimation() {
         home(week1(), 1f)
         assertTrue(compose.onAllNodes(hasTestTag("mark")).fetchSemanticsNodes().isNotEmpty())
         tap("Магазин")
         assertTrue(shown("Сначала открой посылку"))
         compose.onRoot().captureRoboImage("build/shots/flow/home_no_anim_say.png")
+    }
+
+    /** Отблеск не висит постоянно: пропадает, а после долгой паузы ненадолго возвращается. */
+    @Test fun contextualHint() {
+        compose.mainClock.autoAdvance = false
+        home(week1(), 1f)
+        fun hasHint() = compose.onAllNodes(hasTestTag("mark")).fetchSemanticsNodes().isNotEmpty()
+        assertTrue(hasHint())
+        compose.mainClock.advanceTimeBy(3_100)
+        assertTrue(!hasHint())
+        compose.mainClock.advanceTimeBy(9_100)
+        assertTrue(hasHint())
+        compose.mainClock.advanceTimeBy(2_600)
+        assertTrue(!hasHint())
+        // Та же неделя после возврата домой: начальное знакомство уже показано.
+        switch(week1())
+        assertTrue(!hasHint())
     }
 
     // ---------- Таблица касаний ----------

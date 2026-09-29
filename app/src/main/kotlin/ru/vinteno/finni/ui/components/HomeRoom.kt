@@ -287,34 +287,35 @@ val NoteTask = FinniText.Caption
 val NoteTaskLabel = FinniText.Caption.copy(color = FinniColors.InkMute)
 val NOTE_GAP = 4.dp
 
-/** Высота полосы над предметом, где стоит значок шага, вместе с зазором до предмета. */
+/** Высота полосы над предметом, где ненадолго появляется визуальная подсказка. */
 val MARK_BAND = 28.dp
 private val MARK_W = 36.dp
 private val MARK_H = 26.dp
 
 /**
- * Значок текущего шага над предметом: синяя плашка цвета главной кнопки с белой стрелкой вниз. Неподвижный — ни
- * мигания, ни пульсации, ни покачивания (инвариант 4). Не нажимается и диктором не читается: шаг
- * читает записка. Стоит серединой на [centerX] от левого края родителя, верхом на [top].
+ * Тихая визуальная подсказка: тёплый отблеск и искра над нужным предметом. Нет постоянной
+ * стрелки, мигания и текста; записка остаётся доступной для чтения и диктора.
  */
 @Composable
 fun StepMark(centerX: Dp, top: Dp, modifier: Modifier = Modifier) {
     Canvas(
         modifier.offset(x = centerX - MARK_W / 2, y = top).size(MARK_W, MARK_H)
-            .background(FinniColors.Action, RoundedCornerShape(FinniDimens.RadiusSmall)).clearAndSetSemantics { testTag = "mark" },
+            .clearAndSetSemantics { testTag = "mark" },
     ) {
         val w = size.width
         val h = size.height
-        val arrow = Path().apply {
-            moveTo(w * 0.5f, h * 0.78f)
-            lineTo(w * 0.28f, h * 0.44f)
-            moveTo(w * 0.5f, h * 0.78f)
-            lineTo(w * 0.72f, h * 0.44f)
-            moveTo(w * 0.5f, h * 0.78f)
-            lineTo(w * 0.5f, h * 0.2f)
+        drawCircle(FinniColors.Coin.copy(alpha = 0.22f), w * 0.35f, Offset(w / 2f, h / 2f))
+        drawCircle(FinniColors.Coin.copy(alpha = 0.42f), w * 0.23f, Offset(w / 2f, h / 2f))
+        val sparkle = Path().apply {
+            moveTo(w * 0.5f, h * 0.08f)
+            quadraticTo(w * 0.55f, h * 0.44f, w * 0.85f, h * 0.5f)
+            quadraticTo(w * 0.55f, h * 0.56f, w * 0.5f, h * 0.92f)
+            quadraticTo(w * 0.45f, h * 0.56f, w * 0.15f, h * 0.5f)
+            quadraticTo(w * 0.45f, h * 0.44f, w * 0.5f, h * 0.08f)
+            close()
         }
-        // Белая стрелка на синем — цвет главной кнопки: светлая плашка на светлой стене терялась (правка 27.09).
-        drawPath(arrow, FinniColors.Surface, style = Stroke(3.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+        drawPath(sparkle, FinniColors.CoinEdge)
+        drawCircle(FinniColors.Surface, w * 0.035f, Offset(w * 0.46f, h * 0.43f))
     }
 }
 

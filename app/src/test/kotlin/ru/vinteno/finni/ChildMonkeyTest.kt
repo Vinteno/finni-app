@@ -93,9 +93,6 @@ class ChildMonkeyTest {
         }
         // Тексты на экране.
         t.forEach { line ->
-            Regex("\\d+").findAll(line).map { it.value.toInt() }.filter { it > 100 }.forEach {
-                note("Инв. 9 число $it > 100", "«$line» на «$screen»; $trail")
-            }
             val low = line.lowercase()
             forbidden.filter { low.contains(it) }.forEach { note("Инв. 11 слово «$it»", "«$line»") }
             if ('!' in line) note("Восклицательный знак", "«$line»")

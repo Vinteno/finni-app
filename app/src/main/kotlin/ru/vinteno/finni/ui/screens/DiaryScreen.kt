@@ -209,7 +209,7 @@ private fun GoalTab(s: GameState) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val cells = (goal.price + 4) / 5
             val cell = ((maxWidth - 4.dp * (cells - 1)) / cells).coerceIn(16.dp, 32.dp)
-            ProgressCells(minOf(s.progress.savings, goal.price) / 5, cells, cell = cell)
+            ProgressCells(minOf(s.progress.savings, goal.price) / 5, cells, cell = cell, partialCoins = minOf(s.progress.savings, goal.price) % 5)
         }
         Txt(
             if (s.progress.savings > goal.price) a.explain.chapterText(s, "piggy.over", "n" to s.progress.savings)

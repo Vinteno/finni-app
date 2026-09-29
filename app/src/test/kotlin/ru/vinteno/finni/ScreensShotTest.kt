@@ -117,6 +117,10 @@ class ScreensShotTest {
     @Test fun homeAnnounce() = shot("05_home_announce", game.openParcel(week1())) { HomeScreen(it) {} }
     @Test fun homeAnnounceBig() = shot("05b_home_announce_x2", game.openParcel(week1()), 2f) { HomeScreen(it) {} }
     @Test fun plan() = shot("06_plan", planned(week1())) { PlanScreen(it, {}, {}) }
+    @Test fun planOver100() = shot(
+        "06b_plan_105",
+        planned(week1().let { it.copy(progress = it.progress.copy(wallet = 80)) }, Plan(30, 35, 40)),
+    ) { PlanScreen(it, {}, {}) }
     @Test fun planOver() = shot("07_plan_over", planned(week1(), Plan(14, 10, 10))) { PlanScreen(it, {}, {}) }
     @Test fun planOverBig() = shot("07b_plan_over_x2", planned(week1(), Plan(14, 10, 10)), 2f) { PlanScreen(it, {}, {}) }
     @Test fun shop() = shot("08_shop", game.confirmPlan(planned(week1()))) { ShopScreen(it) {} }
@@ -144,6 +148,7 @@ class ScreensShotTest {
     }
 
     @Test fun piggy() = shot("10_piggy", week1Done()) { PiggyScreen(it) {} }
+    @Test fun piggyBig() = shot("10b_piggy_x2", week1Done(), 2f) { PiggyScreen(it) {} }
     @Test fun summary() = shot("11_summary", game.leavePiggy(game.deposit(week1Done()))) { SummaryScreen(it, {}, {}) }
     /** На высоком телефоне кнопки итога стоят внизу экрана, хотя на низком они прокручиваются вместе с текстом. */
     @Config(qualifiers = "w360dp-h780dp-xxhdpi")
@@ -321,6 +326,10 @@ class ScreensShotTest {
     @Test fun sPlanZero600() = screen("04_plan_need0_360x600", planned(week1(), Plan(0, 15, 10))) { PlanScreen(it, {}, {}) }
     @Test fun sPlanReady600() = screen("04_plan_ready_360x600", planned(week1().let { it.copy(progress = it.progress.copy(savings = 40)) })) { PlanScreen(it, {}, {}) }
     @Test fun sPlanMax600() = screen("04_plan_max_360x600", planned(week1(), Plan(45, 44, 10))) { PlanScreen(it, {}, {}) }
+    @Test fun sPlanOver100() = screen(
+        "04_plan_over100_360x600",
+        planned(week1().let { it.copy(progress = it.progress.copy(wallet = 80, savings = 120)) }, Plan(30, 35, 40)),
+    ) { PlanScreen(it, {}, {}) }
     @Config(qualifiers = "w360dp-h760dp-xxhdpi") @Test fun sPlan800() = screen("04_plan_360x800", planned(week1())) { PlanScreen(it, {}, {}) }
     @Config(qualifiers = "w412dp-h875dp-xxhdpi") @Test fun sPlan915() = screen("04_plan_412x915", planned(week1(), Plan(14, 10, 10))) { PlanScreen(it, {}, {}) }
     @Test fun sPlanBig() = screen("04_plan_over_360x600_x2", planned(week1(), Plan(14, 10, 10)), 2f) { PlanScreen(it, {}, {}) }

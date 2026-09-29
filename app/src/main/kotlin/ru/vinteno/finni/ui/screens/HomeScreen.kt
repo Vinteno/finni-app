@@ -206,7 +206,7 @@ private enum class Prop { PARCEL, JARS, DOOR, BOWL, SOAP, PIGGY, CALENDAR }
 /** Где неделя сейчас — от этого зависит ответ предмета на касание (таблица I45). */
 private enum class Stage { BEFORE_PARCEL, BEFORE_PLAN, AFTER_PLAN, AFTER_SUMMARY, AFTER_EVENT }
 
-/** Предмет текущего шага: над ним значок. */
+/** Предмет текущего шага: при знакомстве или после паузы над ним появляется отблеск. */
 private fun stepProp(step: Step, canFeed: Boolean): Prop? = when (step) {
     Step.PARCEL -> Prop.PARCEL
     Step.ANNOUNCE, Step.PLAN -> Prop.JARS
@@ -226,8 +226,9 @@ private val STEP_KEYS = listOf(
 /**
  * Дом — сценарий главы 1, §5а; I45. Комната несёт требования ТЗ 2.5.3 сама: питомец, кошелёк,
  * накопления клетками с числом, цель, три потребности, записка с текущим шагом недели.
- * Нижней кнопки нет: шаг показывает записка — она не нажимается, — действие делается касанием предмета комнаты, над
- * предметом шага — неподвижный значок. Ни одно касание не остаётся без ответа: предмет, чей шаг
+ * Нижней кнопки нет: шаг показывает записка — она не нажимается, — действие делается касанием предмета комнаты.
+ * В первую неделю предмет ненадолго подсвечивается, затем подсказка появляется лишь после паузы.
+ * Ни одно касание не остаётся без ответа: предмет, чей шаг
  * ещё не настал, отвечает репликой Финни — что сделать сначала.
  */
 @Composable
@@ -262,6 +263,25 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
     LaunchedEffect(s.transition?.chapter) { fade.animateTo(0f, tween(FinniMotion.SCREEN_MS)) }
     // Плашка на экране: пока её не закрыли, предметы только замечают её.
     val plateUp = parcelNote || step == Step.ANNOUNCE || transitionUp
+    var hintVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(step, target, plateUp, lastTouch, s.progress.weekTotal, s.demo) {
+        hintVisible = false
+        if (target == null || plateUp || step == Step.EVENT || step == Step.NONE) return@LaunchedEffect
+        // Первые действия показываем глазами, а не постоянной стрелкой. После касания — тишина.
+        val firstWeek = s.progress.weekTotal <= 1
+        val stepKey = Triple(s.demo, s.progress.weekTotal, step)
+        val introShown = firstWeek && stepKey !in a.seenStepHints
+        if (introShown) {
+            a.seenStepHints += stepKey
+            hintVisible = true
+            delay(3_000)
+            hintVisible = false
+        }
+        delay(if (introShown) 9_000 else 12_000)
+        hintVisible = true
+        delay(2_500)
+        hintVisible = false
+    }
     val stage = when {
         s.phase == Phase.FREE_PLAY || s.phase == Phase.TRANSITION -> Stage.AFTER_EVENT
         s.phase == Phase.AFTER_SUMMARY || s.phase == Phase.EVENT -> Stage.AFTER_SUMMARY
@@ -538,8 +558,8 @@ fun HomeScreen(s: GameState, open: (HomeTarget) -> Unit) {
                     background = scrolling,
                     // Пока открыта плашка, задания на записке нет (как подсказки, QA-B10): экран до 25 слов; место держится.
                     note = noteStep, task = activeTask.takeIf { fits && !plateUp }, jars = jars, soapShown = soapShown,
-                    // Пока открыта плашка, значка нет: предметы сейчас только замечают её.
-                    mark = target?.takeIf { stage != Stage.AFTER_EVENT && !plateUp },
+                    // Нет постоянной стрелки: только короткое знакомство и помощь после бездействия.
+                    mark = target?.takeIf { stage != Stage.AFTER_EVENT && hintVisible },
                     say = say,
                     onProp = ::tap,
                     onBall = {
@@ -922,7 +942,7 @@ private fun Room(
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         // Колонка с клетками уступает: цена цели справа меряется первой и не рвётся по цифрам.
                         Column(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            goal?.let { gl -> ProgressCells(minOf(s.progress.savings, gl.price) / 5, (gl.price + 4) / 5, cell = p.cell, perRow = cellsPerRow((gl.price + 4) / 5)) }
+                            goal?.let { gl -> ProgressCells(minOf(s.progress.savings, gl.price) / 5, (gl.price + 4) / 5, cell = p.cell, perRow = cellsPerRow((gl.price + 4) / 5), partialCoins = minOf(s.progress.savings, gl.price) % 5) }
                             Txt(saved, PlateText)
                         }
                         goal?.let { gl ->
@@ -1061,7 +1081,7 @@ private fun Room(
             finni(Modifier.align(Alignment.BottomStart).clickable(null, null, onClick = onFinni))
         }
 
-        // Значок над предметом текущего шага — неподвижный (инвариант 4).
+        // Короткий отблеск над предметом текущего шага, без мигания и навязчивого движения.
         mark?.let { m ->
             val top = when (m) {
                 Prop.PARCEL -> floor + DEPTH_PARCEL + front - PARCEL * thingRatio("posylka") - MARK_BAND

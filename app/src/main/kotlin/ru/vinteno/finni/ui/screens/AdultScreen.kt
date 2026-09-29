@@ -54,8 +54,8 @@ private val AdultNote = FinniText.Caption.copy(color = FinniColors.InkMute)
 /**
  * Раздел для взрослого — final-plan §4; ТЗ 2.5.12, 2.5.13, 3.5, 3.6. За барьером удержания на доме.
  * Спокойный, плотнее детских экранов; лимиты 5 и 25 слов здесь не действуют, числа больше 100
- * разрешены. Сверху вниз: чему учит игра, что пройдено (факты без оценок ребёнка), настройки,
- * демо для проверки, удаление данных. Всё, что заметно меняет прогресс, — с подтверждением.
+ * разрешены. Демо для экспертной проверки стоит первым, затем обучение, прогресс, настройки и удаление.
+ * Всё, что заметно меняет прогресс, — с подтверждением.
  */
 @Composable
 fun AdultScreen(s: GameState, onBack: () -> Unit) {
@@ -68,10 +68,10 @@ fun AdultScreen(s: GameState, onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Txt(a.t("adult.title"), FinniText.Title)
+            DemoBlock(onBack)
             Teach()
             Done(s)
             Settings(s)
-            DemoBlock(onBack)
             Wipe(onBack)
             Box(Modifier.height(16.dp))
         }
@@ -189,33 +189,53 @@ private fun Toggle(text: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 /**
- * Демо для проверки (ТЗ 2.5.13, 2.6, 2.5.8): готовый питомец, переход к началу любой из восьми недель с
- * состоянием канонического пути — так любое задание и любая стадия доступны сразу; сброс к исходному
- * тестовому профилю. Игра ребёнка сохраняется отдельно и возвращается кнопкой.
+ * Полный путь Приложения А начинается с предыстории и создания питомца. Подписанные переходы к неделям
+ * открывают все задания сразу; игра ребёнка остаётся отдельной и возвращается без изменений.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun DemoBlock(onBack: () -> Unit) {
     val a = app()
-    var ask by remember { mutableStateOf(false) }
+    // -1 — первый запуск, 0 — сброс, 1..8 — начало недели.
+    var pending by remember { mutableStateOf<Int?>(null) }
+    var restoreFailed by remember { mutableStateOf(false) }
     val inDemo = a.inDemo
     Section(a.t("adult.demo")) {
         Txt(a.t(if (inDemo) "adult.demo.on" else "adult.demo.about"), AdultBody)
-        if (!inDemo) {
-            if (ask) Confirm(a.t("adult.demo.ask"), a.t("adult.demo.yes"), onYes = { ask = false; a.startDemo(); onBack() }, onNo = { ask = false })
-            else SecondaryButton(a.t("adult.demo.start"), onClick = { ask = true })
-        } else {
-            Txt(a.t("adult.demo.week"), AdultStrong)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                (1..8).forEach { n ->
-                    val r = FinniDimens.RadiusSmall + 4.dp
-                    PressBox({ a.demoWeek(n); onBack() }, shape = RoundedCornerShape(r), description = a.t("adult.demo.week") + " $n") { m ->
-                        Box(m.size(FinniDimens.MinTouch + 8.dp).softPlate(r), contentAlignment = Alignment.Center) { Txt(n.toString(), FinniText.Subtitle) }
-                    }
-                }
+        pending?.let { target ->
+            Confirm(
+                question = when (target) {
+                    -1 -> a.t("adult.demo.ask")
+                    0 -> a.t("adult.demo.resetAsk")
+                    else -> a.f("adult.demo.weekAsk", "n" to target)
+                },
+                yes = a.t("adult.demo.yes"),
+                onYes = {
+                    pending = null
+                    if (target <= 0) a.startDemo() else a.demoWeek(target)
+                    onBack()
+                },
+                onNo = { pending = null },
+            )
+        }
+        if (!inDemo) SecondaryButton(a.t("adult.demo.start"), onClick = { pending = -1 })
+        Txt(a.t("adult.demo.week"), AdultStrong)
+        (1..8).forEach { n ->
+            SecondaryButton(a.t("adult.demo.week.$n"), onClick = {
+                if (inDemo) {
+                    a.demoWeek(n)
+                    onBack()
+                } else pending = n
+            })
+        }
+        if (inDemo) {
+            SecondaryButton(a.t("adult.demo.reset"), onClick = { pending = 0 })
+            SecondaryButton(a.t("adult.demo.back"), onClick = {
+                if (a.endDemo()) onBack() else restoreFailed = true
+            })
+            if (restoreFailed) {
+                Txt(a.t("adult.demo.restoreFailed"), AdultBody)
             }
-            SecondaryButton(a.t("adult.demo.reset"), onClick = { a.startDemo(); onBack() })
-            SecondaryButton(a.t("adult.demo.back"), onClick = { a.endDemo(); onBack() })
         }
     }
 }
