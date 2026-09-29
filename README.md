@@ -171,6 +171,7 @@ adb uninstall ru.vinteno.finni
 | [`docs/questions.md`](docs/questions.md) | вопросы к заказчику |
 | [`docs/submission.md`](docs/submission.md) | единый лист промежуточной сдачи и контрольная сумма APK |
 | [`docs/release-signing.md`](docs/release-signing.md) | безопасное создание ключа и подпись финального APK |
+| [`docs/rustore-card.md`](docs/rustore-card.md) | черновик карточки RuStore: описание, категория, снимки, возрастная маркировка |
 | [`docs/screens/`](docs/screens/) | снимки экранов 360 dp |
 
 ## Лицензии
